@@ -119,7 +119,11 @@ pub fn commit(root: &Path, message: &str, paths: Option<Vec<String>>) -> Result<
                 else { let _ = index.remove_path(Path::new(&p)); }
             }
         }
-        _ => { index.add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, None).map_err(|e| e.to_string())?; index.update_all(["*"].iter(), None).map_err(|e| e.to_string())?; }
+        _ => {
+            let mut skip = |path: &Path, _spec: &[u8]| -> i32 { if path.starts_with(".dabir/worktrees") || path.starts_with(".dabir/build") || path.starts_with(".dabir/index") { 1 } else { 0 } };
+            index.add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, Some(&mut skip)).map_err(|e| e.to_string())?;
+            index.update_all(["*"].iter(), None).map_err(|e| e.to_string())?;
+        }
     }
     index.write().map_err(|e| e.to_string())?;
     let tree_id = index.write_tree().map_err(|e| e.to_string())?;
@@ -168,6 +172,15 @@ pub fn worktree_add(root: &Path, run_id: &str) -> Result<PathBuf, String> {
     let repo = Repository::discover(root).map_err(|_| "This folder is not a Git repository. Initialise one first so agent runs can be isolated.".to_string())?;
     if repo.head().is_err() {
         return Err("The repository has no commits yet. Make a first commit so a worktree can branch from it.".into());
+    }
+    // Keep Dabir's own state out of the index without touching the user's .gitignore.
+    if let Ok(git_dir) = repo.path().canonicalize() {
+        let exclude = git_dir.join("info").join("exclude");
+        let existing = std::fs::read_to_string(&exclude).unwrap_or_default();
+        if !existing.contains(".dabir/worktrees/") {
+            let _ = std::fs::create_dir_all(exclude.parent().unwrap());
+            let _ = std::fs::write(&exclude, format!("{}{}.dabir/worktrees/\n.dabir/build/\n.dabir/index/\n", existing, if existing.is_empty() || existing.ends_with('\n') { "" } else { "\n" }));
+        }
     }
     let out = Command::new("git").current_dir(root)
         .args(["worktree", "add", "-b", &format!("dabir/{}", run_id)]).arg(&dir).arg("HEAD")
