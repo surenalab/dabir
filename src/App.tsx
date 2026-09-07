@@ -5,10 +5,10 @@ import { Document } from "./components/Document";
 import { Inspector } from "./components/Inspector";
 import { ShortcutSheet } from "./components/ShortcutSheet";
 import {
-  compile as runCompile, native, onMenu, onWindowFocus, openProject, pickFolder, readText,
+  compile as runCompile, importOverleaf, native, onMenu, onWindowFocus, openProject, pickFolder, readText,
   setWindowTitle, writeText, type CompileResult, type Project,
 } from "./lib/backend";
-import type { OutlineItem } from "./lib/latex";
+import { parseBib, type BibEntry, type OutlineItem } from "./lib/latex";
 
 export type CompileState =
   | { status: "idle" }
@@ -39,6 +39,7 @@ export default function App() {
   const [sheet, setSheet] = useState(false);
   const [askFocus, setAskFocus] = useState(0);
   const [findRequest, setFindRequest] = useState(0);
+  const [bib, setBib] = useState<Record<string, BibEntry>>({});
   const autoCollapsed = useRef(false);
   const sourceRef = useRef<string | null>(null);
   sourceRef.current = source;
@@ -51,16 +52,36 @@ export default function App() {
     } catch (e) { setError(String(e)); }
   }, [mode]);
 
+  const loadBib = useCallback(async (p: Project) => {
+    const bibs: string[] = [];
+    const walk = (es: Project["tree"]) => es.forEach((e) => (e.kind === "dir" ? walk(e.children) : e.kind === "bib" && bibs.push(e.path)));
+    walk(p.tree);
+    const merged: Record<string, BibEntry> = {};
+    for (const b of bibs) { try { Object.assign(merged, parseBib(await readText(b))); } catch { /* unreadable bib is not fatal */ } }
+    setBib(merged);
+  }, []);
+
+  const openFolder = useCallback(async (folder: string) => {
+    const p = await openProject(folder);
+    setProject(p); setCompileState({ status: "idle" }); setError(null);
+    setWindowTitle(p.name);
+    loadBib(p);
+    if (p.mainTex) await selectFile(p.mainTex); else { setFile(null); setSource(null); }
+  }, [selectFile, loadBib]);
+
+  const importFromOverleaf = useCallback(async () => {
+    try { const folder = await importOverleaf(); if (folder) await openFolder(folder); }
+    catch (e) { setError(String(e)); }
+  }, [openFolder]);
+
   const open = useCallback(async () => {
     try {
       const folder = await pickFolder();
       if (!folder) return;
-      const p = await openProject(folder);
-      setProject(p); setCompileState({ status: "idle" }); setError(null);
-      setWindowTitle(p.name);
-      if (p.mainTex) await selectFile(p.mainTex); else { setFile(null); setSource(null); }
+      await openFolder(folder);
     } catch (e) { setError(String(e)); }
-  }, [selectFile]);
+  }, [openFolder]);
+
 
   const save = useCallback(async () => {
     if (!file || sourceRef.current == null) return;
@@ -88,6 +109,7 @@ export default function App() {
   const command = useCallback((id: string) => {
     switch (id) {
       case "open": open(); break;
+      case "import-overleaf": importFromOverleaf(); break;
       case "save": save(); break;
       case "compile": compile(); break;
       case "show-log": setShowLog((v) => !v); break;
@@ -100,7 +122,7 @@ export default function App() {
       case "find": setMode("source"); setFindRequest((n) => n + 1); break;
       case "shortcuts": setSheet((v) => !v); break;
     }
-  }, [open, save, compile, toggleNav, toggleInspector, inspectorOpen]);
+  }, [open, importFromOverleaf, save, compile, toggleNav, toggleInspector, inspectorOpen]);
 
   useEffect(() => onMenu(command), [command]);
   useEffect(() => onWindowFocus(setFocused), []);
@@ -173,10 +195,10 @@ export default function App() {
       />
       <Navigator project={project} current={file} outline={outline} onSelect={selectFile} onJump={(l) => jumpTo(l)} />
       <Document
-        project={project} file={file} source={source} mode={mode} jumpLine={jumpLine}
+        project={project} file={file} source={source} bib={bib} mode={mode} jumpLine={jumpLine}
         compileState={compileState} showLog={showLog} onToggleLog={() => setShowLog((v) => !v)}
         findRequest={findRequest} error={error} onDismissError={() => setError(null)}
-        onOpen={open} onOutline={setOutline} onSourceChange={onSourceChange} onSave={save}
+        onOpen={open} onImport={importFromOverleaf} onOutline={setOutline} onSourceChange={onSourceChange} onSave={save}
         onSelectFile={selectFile} onJump={jumpTo} onCompile={compile}
       />
       <Inspector project={project} askFocus={askFocus} />

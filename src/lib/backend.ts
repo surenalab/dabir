@@ -83,6 +83,14 @@ export async function compile(mainTex: string): Promise<CompileResult> {
   return invoke<CompileResult>("compile", { mainTex });
 }
 
+/** Pick an Overleaf zip and unpack it next to itself. Returns the new project folder, or null if cancelled. */
+export async function importOverleaf(): Promise<string | null> {
+  if (!native) return SAMPLE_PROJECT.root;
+  const picked = await openDialog({ multiple: false, title: "Import from Overleaf", filters: [{ name: "Overleaf project", extensions: ["zip"] }] });
+  if (typeof picked !== "string") return null;
+  return invoke<string>("import_overleaf_zip", { zipPath: picked, dest: null });
+}
+
 /** Menu commands arrive from the native menu bar. In the browser they come from the keyboard fallback. */
 export function onMenu(handler: (id: string) => void): () => void {
   if (!native) return () => {};
