@@ -15,15 +15,17 @@
         "title": "Dabir",
         "width": 1320,
         "height": 860,
-        "minWidth": 900,
-        "minHeight": 560,
+        "minWidth": 1040,
+        "minHeight": 600,
         "titleBarStyle": "Overlay",
-        "hiddenTitle": true
+        "hiddenTitle": true,
+        "transparent": true
       }
     ],
     "security": {
       "csp": null
-    }
+    },
+    "macOSPrivateApi": false
   },
   "bundle": {
     "active": true,
