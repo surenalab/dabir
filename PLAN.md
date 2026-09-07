@@ -33,14 +33,32 @@ The paper is a Git repo that also holds the experiment code. The agent is a coau
 - **Agent runs.** `agent_run` creates `.dabir/worktrees/<id>` on branch `dabir/<id>`, prepends a pointer to the project brief, and spawns the vendor CLI there with permission prompts bypassed. stdout lines are parsed per vendor (Claude and Cursor stream-json, Codex exec json, a generic fallback for Grok and OpenCode) into text, tool, log and done events. On done the front end asks for the worktree diff. Accept applies the patch to the checkout with `git apply --3way --index`, commits, and removes the worktree. Reject removes it. Open Pull Request commits on the branch, pushes, and runs `gh pr create --web`.
 - **Memory.** `memory_setup` writes a deterministic brief (title, class, sections, figure files, provenance commands), an empty provenance file, `AGENTS.md`, `CLAUDE.md` and a Cursor rule, all pointing at the brief. `memory_read` merges provenance from `provenance.json` and `dabir.toml`, and marks an artefact stale when any input is newer than it. Rerun executes the recorded command and stamps the date and commit.
 
+**2026-09-07, live agent runs.** The full worktree pipeline was run against real CLIs with the ignored test `live_agent_run`: Grok finished the edit in 11 s and Codex in 30 s, both diffs applied and committed cleanly. Discoveries folded back into the adapter: Claude Code ships inside the VS Code agent-host cache and Codex inside ChatGPT.app when no standalone CLI is on PATH; Codex's current exec flags are `--json --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox`; Grok's `streaming-messages-json` is the Claude stream format; a child CLI must not inherit the parent session's `ANTHROPIC_BASE_URL` and `CLAUDE_CODE_*` variables; `.dabir/worktrees` has to be excluded through `.git/info/exclude` or the accept commit tries to add it. Then: per-file accept in the review, compile on save, booktabs tables in the visual view.
+
+## Agent CLI status on the development Mac
+
+| Provider | Binary | State |
+|---|---|---|
+| Grok | `~/.grok/bin/grok` | Signed in, live test passes |
+| Codex | `/Applications/ChatGPT.app/Contents/Resources/codex` | Signed in, live test passes |
+| Claude Code | VS Code agent-host cache, 2.1.220 | Found, but "OAuth session expired and could not be refreshed". Needs `claude` login once. |
+| Cursor | `~/.local/bin/cursor-agent` | Found, needs `cursor-agent login` |
+| OpenCode | not installed | |
+
+Run the live test for any provider with:
+
+```
+DABIR_LIVE_PROVIDER=codex cargo test live_agent -- --ignored --nocapture
+```
+
 ## Still open
 
-- **Real-world agent testing.** The Claude Code CLI is not installed on the development machine, so the Claude adapter's parser was written from the documented stream-json shape and verified only by the sample flow. Cursor and Grok are installed; their flags are set but a real end-to-end run against a paper still needs doing.
-- **Per-hunk accept.** The review is whole-run today.
-- **Compile on save**, incremental compile feedback, and cancelling a running compile.
-- **Table environments** are shown as dimmed source in the visual view; a rendered table widget is the next visual-layer item.
-- **Local index** for retrieval over long papers is not built yet; agents currently rely on the brief plus their own file reading.
+- **Claude and Cursor end to end** once they are signed in. The Claude parser is exercised by Grok, which emits the same format, so the risk is low.
+- **Per-hunk accept.** Accept is per file today.
+- **Incremental compile feedback** and cancelling a running compile.
+- **Local index** for retrieval over long papers; agents currently rely on the brief plus their own file reading.
 - **Windows and Linux builds.** The shell is cross-platform, but only macOS has been run.
+- **Packaging.** Bundle Tectonic as a sidecar, sign and notarise, auto-update.
 - **Phase 3.** Yjs live sessions, comments anchored to text, self-hostable relay, Overleaf Git-bridge sync.
 
 ## Decisions
