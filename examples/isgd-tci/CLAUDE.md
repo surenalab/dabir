@@ -1,1 +1,1 @@
-See ../.dabir/PROJECT.md for the project brief, notation and how to regenerate figures.
+Read .dabir/PROJECT.md first: it is this paper's identity, conventions, repo map and how to run its code. Skills for the recurring jobs live in .dabir/skills/ (also linked under .agents/skills and .claude/skills). Never hand-edit generated artefacts; rerun their recorded command. Record durable decisions as one-fact files in .dabir/memory/ with name and description frontmatter.

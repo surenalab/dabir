@@ -272,6 +272,8 @@ pub fn worktree_accept(root: &Path, run_id: &str, message: &str, picks: Option<V
         let out = child.wait_with_output().map_err(|e| e.to_string())?;
         if !out.status.success() { return Err(format!("Could not apply the agent's changes: {}", String::from_utf8_lossy(&out.stderr))); }
     }
+    let mut selected = selected;
+    if root.join(".dabir/memory/runs.md").exists() && !selected.is_empty() { selected.push(".dabir/memory/runs.md".into()); }
     let id = commit(root, message, if selected.is_empty() { None } else { Some(selected) })?;
     worktree_remove(root, run_id)?;
     Ok(id)

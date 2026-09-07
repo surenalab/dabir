@@ -12,3 +12,7 @@ worktree = true          # every run happens on a Git worktree
 # Commands that regenerate generated artefacts. Agents refuse to hand-edit these.
 "figures/psnr-vs-noise.pdf" = "python code/sweep.py --sigma 0.3"
 "tables/psnr-sweep.tex"     = "python code/sweep.py --sigma 0.3"
+
+[env]
+# Prepended to every provenance command and suggested to agents. Examples: "conda run -n myenv", "uv run", ".venv/bin/python -m".
+prefix = ""
