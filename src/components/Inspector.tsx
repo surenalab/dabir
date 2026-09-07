@@ -57,6 +57,7 @@ export function Inspector({ project, askFocus, onChanged, onOpenFile, onNote }: 
   const [busy, setBusy] = useState(false);
   const [memory, setMemory] = useState<Memory | null>(null);
   const [rerunOut, setRerunOut] = useState<Record<string, string>>({});
+  const [excluded, setExcluded] = useState<Set<string>>(new Set());
   const textarea = useRef<HTMLTextAreaElement>(null);
   const runRef = useRef(run); runRef.current = run;
 
@@ -76,6 +77,7 @@ export function Inspector({ project, askFocus, onChanged, onOpenFile, onNote }: 
       const summary = e.text || r.steps.filter((s) => s.kind === "text").map((s) => s.text).join("\n");
       setRun({ phase: "review", runId: r.runId, prompt: r.prompt, steps: r.steps, provider: r.provider, ok: e.ok ?? true, summary, diff, error });
       setMessage(r.prompt.length > 72 ? r.prompt.slice(0, 69) + "…" : r.prompt);
+      setExcluded(new Set());
     } else if (e.kind === "error") {
       setRun({ phase: "review", runId: r.runId, prompt: r.prompt, steps: r.steps, provider: r.provider, ok: false, summary: e.text, diff: null });
     } else {
@@ -101,7 +103,9 @@ export function Inspector({ project, askFocus, onChanged, onOpenFile, onNote }: 
   const accept = async () => {
     if (run.phase !== "review" || !project) return;
     setBusy(true);
-    try { const id = await agentAccept(project.root, run.runId, message.trim() || run.prompt); setRun({ phase: "done", text: `Committed ${id} to your checkout.` }); onChanged(); refreshMemory(); }
+    const all = run.diff?.changes.map((c) => c.path) ?? [];
+    const chosen = all.filter((p) => !excluded.has(p));
+    try { const id = await agentAccept(project.root, run.runId, message.trim() || run.prompt, chosen.length === all.length ? undefined : chosen); setRun({ phase: "done", text: `Committed ${id} to your checkout${chosen.length < all.length ? ` (${chosen.length} of ${all.length} files; the rest was discarded)` : ""}.` }); onChanged(); refreshMemory(); }
     catch (e) { onNote(String(e)); } finally { setBusy(false); }
   };
   const reject = async () => {
@@ -186,8 +190,10 @@ export function Inspector({ project, askFocus, onChanged, onOpenFile, onNote }: 
                       <div className="evidence-heading">What changed</div>
                       <div className="changes">
                         {run.diff.changes.map((c) => (
-                          <div className="change" key={c.path}><span className="file">{c.path}</span>
-                            <span className="meta"><span>{c.binary ? "binary" : ""}</span><span className="stat">{c.binary ? <span className="add">binary</span> : <><span className="add">+{c.add}</span><span className="del">−{c.del}</span></>}</span></span></div>
+                          <label className={`change pick ${excluded.has(c.path) ? "off" : ""}`} key={c.path} title={excluded.has(c.path) ? "Excluded: this file will be discarded" : "Included in Accept"}>
+                            <span className="row"><input type="checkbox" checked={!excluded.has(c.path)} onChange={(e) => setExcluded((x) => { const n = new Set(x); if (e.target.checked) n.delete(c.path); else n.add(c.path); return n; })} aria-label={`Include ${c.path}`} /><span className="file">{c.path}</span></span>
+                            <span className="meta"><span>{c.binary ? "binary" : ""}</span><span className="stat">{c.binary ? <span className="add">binary</span> : <><span className="add">+{c.add}</span><span className="del">−{c.del}</span></>}</span></span>
+                          </label>
                         ))}
                       </div>
                       <DiffView patch={run.diff.patch} />
@@ -199,7 +205,7 @@ export function Inspector({ project, askFocus, onChanged, onOpenFile, onNote }: 
                     <input value={message} onChange={(e) => setMessage(e.target.value)} aria-label="Commit message" placeholder="Commit message" />
                     <span className="target">Accept applies the changes to your checkout and commits. Nothing is pushed.</span>
                     <div className="actions">
-                      <button className="btn primary" disabled={busy || !run.diff || run.diff.changes.length === 0 || !message.trim()} onClick={accept}>Accept and Commit</button>
+                      <button className="btn primary" disabled={busy || !run.diff || run.diff.changes.length === 0 || !message.trim() || excluded.size >= (run.diff?.changes.length ?? 0)} onClick={accept}>{excluded.size ? `Accept ${(run.diff?.changes.length ?? 0) - excluded.size} of ${run.diff?.changes.length}` : "Accept and Commit"}</button>
                       <button className="btn danger" disabled={busy} onClick={reject}>{run.diff && run.diff.changes.length ? "Reject" : "Dismiss"}</button>
                       <button className="btn wide" disabled={busy || !run.diff || run.diff.changes.length === 0 || !message.trim()} onClick={pr} title="Commit on the run's branch, push it, and open a pull request with gh">Open Pull Request…</button>
                     </div>

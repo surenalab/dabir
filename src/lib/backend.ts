@@ -169,9 +169,9 @@ export async function agentDiff(root: string, runId: string): Promise<WorktreeDi
   };
   return invoke<WorktreeDiff>("agent_diff", { root, runId });
 }
-export async function agentAccept(root: string, runId: string, message: string): Promise<string> {
+export async function agentAccept(root: string, runId: string, message: string, paths?: string[]): Promise<string> {
   if (!native) { await wait(400); return "c1d2e3f"; }
-  return invoke<string>("agent_accept", { root, runId, message });
+  return invoke<string>("agent_accept", { root, runId, message, paths: paths ?? null });
 }
 export async function agentReject(root: string, runId: string): Promise<void> { if (native) await invoke("agent_reject", { root, runId }); }
 export async function agentPullRequest(root: string, runId: string, message: string): Promise<string> {

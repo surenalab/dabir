@@ -71,6 +71,8 @@ interface Props {
   onSelectFile: (path: string) => void;
   onJump: (line: number, inSource?: boolean) => void;
   onPdfClick: (page: number, x: number, y: number) => void;
+  compileOnSave: boolean;
+  onToggleCompileOnSave: () => void;
 }
 
 export function Document(p: Props) {
@@ -157,6 +159,7 @@ export function Document(p: Props) {
         {result && result.ok && errors === 0 && <span className={`state ${warnings ? "warn" : "ok"}`}><CheckCircle2 aria-hidden /> Compiled in {(result.millis / 1000).toFixed(1)} s{warnings ? `, ${warnings} warning${warnings > 1 ? "s" : ""}` : ""}</span>}
         {result && (!result.ok || errors > 0) && <span className="state error"><AlertCircle aria-hidden /> Compile failed{errors ? `, ${errors} error${errors > 1 ? "s" : ""}` : ""}</span>}
         {result && <button onClick={p.onToggleLog}>{showLog ? "Hide log" : "Show log"}</button>}
+        <button className={`toggle ${p.compileOnSave ? "on" : ""}`} aria-pressed={p.compileOnSave} onClick={p.onToggleCompileOnSave} title="Compile every time you save (⌘S)">{p.compileOnSave ? "Compiles on save" : "Compile on save"}</button>
         <span className="grow" />
         {mode !== "pdf" && source != null && <span>{source.split("\n").length} lines</span>}
         {mode === "visual" && <span title="Click any equation, figure or citation to edit its source">visual · click to reveal source</span>}

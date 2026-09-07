@@ -38,6 +38,7 @@ export function SourceEditor({ value, visual, onChange, onSave, onCursorLine, ju
   const onChangeRef = useRef(onChange); onChangeRef.current = onChange;
   const onSaveRef = useRef(onSave); onSaveRef.current = onSave;
   const onCursorRef = useRef(onCursorLine); onCursorRef.current = onCursorLine;
+  const loading = useRef(false);
 
   useEffect(() => {
     if (!host.current) return;
@@ -55,7 +56,7 @@ export function SourceEditor({ value, visual, onChange, onSave, onCursorLine, ju
           ...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...historyKeymap, ...completionKeymap, indentWithTab,
         ]),
         EditorView.updateListener.of((u) => {
-          if (u.docChanged) onChangeRef.current(u.state.doc.toString());
+          if (u.docChanged && !loading.current) onChangeRef.current(u.state.doc.toString());
           if (u.selectionSet || u.docChanged) onCursorRef.current(u.state.doc.lineAt(u.state.selection.main.head).number);
         }),
       ],
@@ -75,7 +76,7 @@ export function SourceEditor({ value, visual, onChange, onSave, onCursorLine, ju
     const v = view.current;
     if (!v) return;
     const current = v.state.doc.toString();
-    if (current !== value) v.dispatch({ changes: { from: 0, to: current.length, insert: value } });
+    if (current !== value) { loading.current = true; v.dispatch({ changes: { from: 0, to: current.length, insert: value }, selection: { anchor: 0 } }); loading.current = false; v.scrollDOM.scrollTop = 0; }
   }, [value]);
 
   useEffect(() => {
