@@ -25,3 +25,6 @@ dist-ssr
 
 # Dabir
 .dabir/index/
+
+# Release bundles
+src-tauri/target/

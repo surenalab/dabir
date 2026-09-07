@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowUp, Check, Loader2, Paperclip, RefreshCw, Square, X } from "lucide-react";
 import {
   agentAccept, agentCancel, agentDiff, agentProviders, agentPullRequest, agentReject, agentRun, memoryRead, memorySetup,
-  onAgentEvent, provenanceRerun, type Artefact, type Memory, type Project, type Provider, type WorktreeDiff,
+  onAgentEvent, provenanceRerun, type Artefact, type Memory, type Pick, type Project, type Provider, type WorktreeDiff,
 } from "../lib/backend";
 import { Segmented } from "./Segmented";
 
@@ -15,23 +15,50 @@ type Run =
   | { phase: "review"; runId: string; prompt: string; steps: Step[]; provider: string; ok: boolean; summary: string; diff: WorktreeDiff | null; error?: string }
   | { phase: "done"; text: string };
 
-function DiffView({ patch }: { patch: string }) {
-  const files: { name: string; lines: string[] }[] = [];
+interface Hunk { header: string; lines: string[] }
+interface FileDiff { name: string; hunks: Hunk[]; binary: boolean }
+
+/** Split a unified diff into files and hunks so each can be picked. */
+export function splitPatch(patch: string): FileDiff[] {
+  const files: FileDiff[] = [];
   for (const l of patch.split("\n")) {
     const m = /^diff --git a\/(.*?) b\//.exec(l);
-    if (m) { files.push({ name: m[1], lines: [] }); continue; }
-    if (!files.length || /^(index |--- |\+\+\+ |Binary|GIT binary|literal|delta)/.test(l)) continue;
-    files[files.length - 1].lines.push(l);
+    if (m) { files.push({ name: m[1], hunks: [], binary: false }); continue; }
+    const f = files[files.length - 1];
+    if (!f) continue;
+    if (/^(GIT binary patch|Binary files)/.test(l)) { f.binary = true; continue; }
+    if (/^(index |--- |\+\+\+ |literal|delta|old mode|new mode|similarity|rename|new file|deleted file)/.test(l)) continue;
+    if (l.startsWith("@@")) { f.hunks.push({ header: l, lines: [] }); continue; }
+    if (f.hunks.length) f.hunks[f.hunks.length - 1].lines.push(l);
   }
+  return files;
+}
+
+function DiffView({ files, excluded, onToggle }: { files: FileDiff[]; excluded: Set<string>; onToggle: (key: string, on: boolean) => void }) {
   return (
     <>
       {files.map((f) => {
-        const add = f.lines.filter((l) => l.startsWith("+")).length, del = f.lines.filter((l) => l.startsWith("-")).length;
+        const fileOff = excluded.has(f.name);
         return (
-          <div className="diff" key={f.name}>
-            <header><span className="file">{f.name}</span><span className="stat"><span className="add">+{add}</span><span className="del">−{del}</span></span></header>
-            <pre>{f.lines.slice(0, 200).map((l, i) => <span key={i} className={`l ${l.startsWith("+") ? "add" : l.startsWith("-") ? "del" : l.startsWith("@@") ? "hunk" : "ctx"}`}>{l || " "}</span>)}
-              {f.lines.length > 200 && <span className="l ctx">… {f.lines.length - 200} more lines</span>}</pre>
+          <div className={`diff ${fileOff ? "off" : ""}`} key={f.name}>
+            <header>
+              <label className="pickfile"><input type="checkbox" checked={!fileOff} onChange={(e) => onToggle(f.name, e.target.checked)} aria-label={`Include ${f.name}`} /><span className="file">{f.name}</span></label>
+              <span className="stat">{f.binary ? <span className="add">binary</span> : <><span className="add">+{f.hunks.reduce((n, h) => n + h.lines.filter((l) => l.startsWith("+")).length, 0)}</span><span className="del">−{f.hunks.reduce((n, h) => n + h.lines.filter((l) => l.startsWith("-")).length, 0)}</span></>}</span>
+            </header>
+            {f.hunks.map((h, i) => {
+              const key = `${f.name}#${i}`;
+              const off = fileOff || excluded.has(key);
+              return (
+                <div className={`hunk ${off ? "off" : ""}`} key={key}>
+                  {f.hunks.length > 1 && (
+                    <label className="pickhunk"><input type="checkbox" checked={!off} disabled={fileOff} onChange={(e) => onToggle(key, e.target.checked)} aria-label={`Include hunk ${i + 1} of ${f.name}`} /><span>{h.header.replace(/@@ (.*?) @@.*/, "$1")}</span></label>
+                  )}
+                  <pre>{h.lines.slice(0, 200).map((l, j) => <span key={j} className={`l ${l.startsWith("+") ? "add" : l.startsWith("-") ? "del" : "ctx"}`}>{l || " "}</span>)}
+                    {h.lines.length > 200 && <span className="l ctx">… {h.lines.length - 200} more lines</span>}</pre>
+                </div>
+              );
+            })}
+            {f.binary && <pre><span className="l ctx">binary file</span></pre>}
           </div>
         );
       })}
@@ -103,9 +130,17 @@ export function Inspector({ project, askFocus, onChanged, onOpenFile, onNote }: 
   const accept = async () => {
     if (run.phase !== "review" || !project) return;
     setBusy(true);
-    const all = run.diff?.changes.map((c) => c.path) ?? [];
-    const chosen = all.filter((p) => !excluded.has(p));
-    try { const id = await agentAccept(project.root, run.runId, message.trim() || run.prompt, chosen.length === all.length ? undefined : chosen); setRun({ phase: "done", text: `Committed ${id} to your checkout${chosen.length < all.length ? ` (${chosen.length} of ${all.length} files; the rest was discarded)` : ""}.` }); onChanged(); refreshMemory(); }
+    const files = splitPatch(run.diff?.patch ?? "");
+    const picks: Pick[] = [];
+    let partial = false;
+    for (const f of files) {
+      if (excluded.has(f.name)) { partial = true; continue; }
+      const hunks = f.hunks.map((_, i) => i).filter((i) => !excluded.has(`${f.name}#${i}`));
+      if (hunks.length === f.hunks.length) picks.push({ path: f.name, hunks: null });
+      else { partial = true; if (hunks.length) picks.push({ path: f.name, hunks }); }
+    }
+    if (picks.length === 0) { onNote("Nothing selected to accept."); setBusy(false); return; }
+    try { const id = await agentAccept(project.root, run.runId, message.trim() || run.prompt, partial ? picks : undefined); setRun({ phase: "done", text: `Committed ${id} to your checkout${partial ? " (only the selected changes; the rest was discarded)" : ""}.` }); onChanged(); refreshMemory(); }
     catch (e) { onNote(String(e)); } finally { setBusy(false); }
   };
   const reject = async () => {
@@ -188,15 +223,8 @@ export function Inspector({ project, askFocus, onChanged, onOpenFile, onNote }: 
                   {run.diff && run.diff.changes.length > 0 ? (
                     <div className="evidence">
                       <div className="evidence-heading">What changed</div>
-                      <div className="changes">
-                        {run.diff.changes.map((c) => (
-                          <label className={`change pick ${excluded.has(c.path) ? "off" : ""}`} key={c.path} title={excluded.has(c.path) ? "Excluded: this file will be discarded" : "Included in Accept"}>
-                            <span className="row"><input type="checkbox" checked={!excluded.has(c.path)} onChange={(e) => setExcluded((x) => { const n = new Set(x); if (e.target.checked) n.delete(c.path); else n.add(c.path); return n; })} aria-label={`Include ${c.path}`} /><span className="file">{c.path}</span></span>
-                            <span className="meta"><span>{c.binary ? "binary" : ""}</span><span className="stat">{c.binary ? <span className="add">binary</span> : <><span className="add">+{c.add}</span><span className="del">−{c.del}</span></>}</span></span>
-                          </label>
-                        ))}
-                      </div>
-                      <DiffView patch={run.diff.patch} />
+                      <span className="target">Untick a file or a hunk to leave it out of the commit.</span>
+                      <DiffView files={splitPatch(run.diff.patch)} excluded={excluded} onToggle={(key, on) => setExcluded((x) => { const n = new Set(x); if (on) n.delete(key); else n.add(key); return n; })} />
                     </div>
                   ) : (
                     <p className="composer-note">The agent made no file changes.</p>
@@ -205,7 +233,7 @@ export function Inspector({ project, askFocus, onChanged, onOpenFile, onNote }: 
                     <input value={message} onChange={(e) => setMessage(e.target.value)} aria-label="Commit message" placeholder="Commit message" />
                     <span className="target">Accept applies the changes to your checkout and commits. Nothing is pushed.</span>
                     <div className="actions">
-                      <button className="btn primary" disabled={busy || !run.diff || run.diff.changes.length === 0 || !message.trim() || excluded.size >= (run.diff?.changes.length ?? 0)} onClick={accept}>{excluded.size ? `Accept ${(run.diff?.changes.length ?? 0) - excluded.size} of ${run.diff?.changes.length}` : "Accept and Commit"}</button>
+                      <button className="btn primary" disabled={busy || !run.diff || run.diff.changes.length === 0 || !message.trim()} onClick={accept}>{excluded.size ? "Accept Selected and Commit" : "Accept and Commit"}</button>
                       <button className="btn danger" disabled={busy} onClick={reject}>{run.diff && run.diff.changes.length ? "Reject" : "Dismiss"}</button>
                       <button className="btn wide" disabled={busy || !run.diff || run.diff.changes.length === 0 || !message.trim()} onClick={pr} title="Commit on the run's branch, push it, and open a pull request with gh">Open Pull Request…</button>
                     </div>
