@@ -31,3 +31,6 @@ src-tauri/target/
 
 # Sidecars are fetched at build time
 src-tauri/binaries/
+
+# Bundled relay is built from relay/server.mjs
+relay/dist/
