@@ -6,7 +6,7 @@ import { Inspector } from "./components/Inspector";
 import { ShortcutSheet } from "./components/ShortcutSheet";
 import { CloneSheet } from "./components/CloneSheet";
 import {
-  compile as runCompile, compileCancel, gitClone, gitCommit, gitInit, gitStatus, importOverleaf, native, onMenu, onWindowFocus,
+  checkForUpdates, compile as runCompile, compileCancel, gitClone, isMac, onCompileProgress, gitCommit, gitInit, gitStatus, importOverleaf, native, onMenu, onWindowFocus,
   openProject, pickFolder, readText, setWindowTitle, synctexForward, synctexInverse, writeText,
   type CompileResult, type GitStatus, type PdfPos, type Project,
 } from "./lib/backend";
@@ -37,6 +37,7 @@ export default function App() {
   const [jumpStamp, setJumpStamp] = useState(0);
   const [cursorLine, setCursorLine] = useState(1);
   const [compileState, setCompileState] = useState<CompileState>({ status: "idle" });
+  const [progress, setProgress] = useState<string | null>(null);
   const [pdfTarget, setPdfTarget] = useState<(PdfPos & { stamp: number }) | null>(null);
   const [showLog, setShowLog] = useState(false);
   const [focused, setFocused] = useState(true);
@@ -184,10 +185,15 @@ export default function App() {
       case "ask-agent": if (!inspectorOpen) toggleInspector(); setAskFocus((n) => n + 1); break;
       case "find": setMode("source"); setFindRequest((n) => n + 1); break;
       case "shortcuts": setSheet((v) => (v === "shortcuts" ? null : "shortcuts")); break;
+      case "check-updates":
+        checkForUpdates(async (v, notes) => window.confirm(`Dabir ${v} is available.\n\n${notes}\n\nDownload and restart now?`)).then(setNote).catch((e) => setNote(String(e)));
+        break;
     }
   }, [open, importFromOverleaf, save, compile, showInPdf, toggleNav, toggleInspector, inspectorOpen, navOpen]);
 
   useEffect(() => onMenu(command), [command]);
+  useEffect(() => onCompileProgress((line) => setProgress(line.length > 90 ? line.slice(0, 87) + "…" : line)), []);
+  useEffect(() => { if (compileState.status !== "running") setProgress(null); }, [compileState.status]);
   useEffect(() => onWindowFocus((f) => { setFocused(f); if (f) refreshGit(); }), [refreshGit]);
   useEffect(() => { if (!note) return; const t = setTimeout(() => setNote(null), 6000); return () => clearTimeout(t); }, [note]);
 
@@ -235,7 +241,7 @@ export default function App() {
   const jumpTo = useCallback((line: number, inSource?: boolean) => { if (inSource) setMode("source"); setJumpLine(line); setJumpStamp(Date.now()); }, []);
   const onChanged = useCallback(() => { refreshGit(); reloadProject(); if (file) readText(file).then((t) => { if (!dirty) setSource(t); }).catch(() => {}); }, [refreshGit, reloadProject, file, dirty]);
 
-  const cls = ["app", native ? "native" : "", navOpen ? "" : "nav-hidden", inspectorOpen ? "" : "inspector-hidden", animating ? "animating" : "", focused ? "" : "inactive"].join(" ").trim();
+  const cls = ["app", native ? "native" : "", isMac ? "mac" : "", navOpen ? "" : "nav-hidden", inspectorOpen ? "" : "inspector-hidden", animating ? "animating" : "", focused ? "" : "inactive"].join(" ").trim();
 
   return (
     <div className={cls} style={{ "--nav-w": `${navW}px`, "--inspector-w": `${inspW}px` } as React.CSSProperties}>
@@ -244,7 +250,7 @@ export default function App() {
       <Navigator project={project} current={file} outline={outline} git={git} commitFocus={commitFocus} busy={gitBusy}
         onSelect={selectFile} onJump={(l) => jumpTo(l)} onInitGit={initGit} onCommit={commitAll} />
       <Document project={project} file={file} source={source} bib={bib} mode={mode} jumpLine={jumpLine} jumpStamp={jumpStamp}
-        compileState={compileState} showLog={showLog} onToggleLog={() => setShowLog((v) => !v)} findRequest={findRequest}
+        compileState={compileState} progress={progress} showLog={showLog} onToggleLog={() => setShowLog((v) => !v)} findRequest={findRequest}
         error={error ?? note} onDismissError={() => { setError(null); setNote(null); }} pdfTarget={pdfTarget}
         onOpen={open} onImport={importFromOverleaf} onClone={() => setSheet("clone")} onOutline={setOutline}
         onSourceChange={onSourceChange} onSave={save} onCursorLine={setCursorLine} onSelectFile={selectFile} onJump={jumpTo} onPdfClick={onPdfClick}

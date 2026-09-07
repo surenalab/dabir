@@ -55,6 +55,7 @@ interface Props {
   jumpLine: number | null;
   jumpStamp: number;
   compileState: CompileState;
+  progress: string | null;
   showLog: boolean;
   findRequest: number;
   error: string | null;
@@ -155,7 +156,7 @@ export function Document(p: Props) {
 
       <footer className="status" role="status" aria-live="polite">
         {compileState.status === "idle" && <span className="state"><Circle aria-hidden /> Not compiled yet</span>}
-        {compileState.status === "running" && <span className="state running"><Loader2 aria-hidden /> Compiling…</span>}
+        {compileState.status === "running" && <span className="state running"><Loader2 aria-hidden /> {p.progress ? <span className="progress" title={p.progress}>{p.progress}</span> : "Compiling…"}</span>}
         {result && result.ok && errors === 0 && <span className={`state ${warnings ? "warn" : "ok"}`}><CheckCircle2 aria-hidden /> Compiled in {(result.millis / 1000).toFixed(1)} s{warnings ? `, ${warnings} warning${warnings > 1 ? "s" : ""}` : ""}</span>}
         {result && (!result.ok || errors > 0) && <span className="state error"><AlertCircle aria-hidden /> Compile failed{errors ? `, ${errors} error${errors > 1 ? "s" : ""}` : ""}</span>}
         {result && <button onClick={p.onToggleLog}>{showLog ? "Hide log" : "Show log"}</button>}

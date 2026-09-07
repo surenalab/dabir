@@ -28,3 +28,6 @@ dist-ssr
 
 # Release bundles
 src-tauri/target/
+
+# Sidecars are fetched at build time
+src-tauri/binaries/

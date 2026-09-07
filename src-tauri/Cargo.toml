@@ -30,6 +30,8 @@ flate2 = "1"
 git2 = { version = "0.20", default-features = false, features = ["vendored-libgit2", "https", "vendored-openssl"] }
 uuid = { version = "1", features = ["v4"] }
 toml = "0.8"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

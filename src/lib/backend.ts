@@ -64,6 +64,28 @@ export async function readBinary(path: string): Promise<Uint8Array> {
   return bytes instanceof ArrayBuffer ? new Uint8Array(bytes) : Uint8Array.from(bytes);
 }
 
+export function onCompileProgress(handler: (line: string) => void): () => void {
+  if (!native) return () => {};
+  let un: (() => void) | undefined;
+  listen<string>("compile-progress", (e) => handler(e.payload)).then((u) => { un = u; });
+  return () => un?.();
+}
+
+export const isMac = /Mac|iPhone|iPad/.test(navigator.platform) || /Macintosh/.test(navigator.userAgent);
+
+/** Check GitHub releases for a newer build; download, install and relaunch when the user agrees. */
+export async function checkForUpdates(confirm: (version: string, notes: string) => Promise<boolean>): Promise<string> {
+  if (!native) return "Updates are only available in the desktop app.";
+  const { check } = await import("@tauri-apps/plugin-updater");
+  const { relaunch } = await import("@tauri-apps/plugin-process");
+  const update = await check();
+  if (!update) return "Dabir is up to date.";
+  if (!(await confirm(update.version, update.body ?? ""))) return "Update skipped.";
+  await update.downloadAndInstall();
+  await relaunch();
+  return "Restarting to finish the update.";
+}
+
 export async function compile(mainTex: string): Promise<CompileResult> {
   if (!native) {
     await wait(900);
