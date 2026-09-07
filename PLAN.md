@@ -13,7 +13,7 @@ The paper is a Git repo that also holds the experiment code. The agent is a coau
 | 0 | Foundation: Tauri shell, tokens, DESIGN.md, sample project, skills, first critique | Done |
 | 1 | An editor you would use: source editing, compile, PDF, outline, citations, Overleaf import | Done |
 | 2 | Git and agents: clone, commit, branch, PR; provider adapters; `.dabir` memory and provenance | Done, needs real-world testing |
-| 3 | Collaboration: Yjs live sessions, comments, self-hostable relay, track changes for non-Git coauthors | Later |
+| 3 | Collaboration: Yjs live sessions, comments, self-hostable relay, Overleaf sync | Built, tested with two clients |
 | 4 | Ecosystem: Typst, Zotero, journal templates, plugin API, hosted relay as the optional paid service | Later |
 
 ## Progress log
@@ -53,9 +53,32 @@ DABIR_LIVE_PROVIDER=codex cargo test live_agent -- --ignored --nocapture
 
 **2026-09-07, all four providers live.** After sign-in, Claude Code and Cursor also pass `live_agent_run` in 13 s each, so every adapter has done a real edit-review-commit cycle. Cursor reports tools as `tool_call` events keyed by tool kind (`shellToolCall`, `readToolCall`, …), now parsed. Per-hunk accept: the review shows a checkbox per file and, for multi-hunk files, per hunk; Rust filters the unified diff to the selection before applying, binary files stay all-or-nothing. Compile can be stopped from the toolbar.
 
+**2026-09-07, agent context, packaging, phase 3.** Agents now start every run with a minimal identity preamble (paper identity line, pointer to `.dabir/PROJECT.md`, environment prefix, skill names, and a BM25 context pack of the passages most relevant to the request); six starter skills live in `.dabir/skills` and are linked into `.agents/skills` and `.claude/skills`; `dabir.toml [env] prefix` is shared by provenance reruns and agents; accepted runs append to `.dabir/memory/runs.md`. Packaging: Tectonic ships as a sidecar, the updater is wired with a minisign key and GitHub releases, macOS-only window options moved to `tauri.macos.conf.json`, accelerators use CmdOrCtrl, and GitHub Actions builds macOS arm64/x64, Windows and Linux with signing and notarisation from secrets. Compile progress streams into the status bar and can be cancelled. Phase 3: Yjs live sessions over a bundled relay, presence, anchored comments, Overleaf Git bridge pull and push; verified with two browser clients editing and commenting on the same file.
+
+## Agent context design
+
+Minimal on purpose. Three files an agent reads, in this order, all committed with the paper:
+
+1. **`.dabir/PROJECT.md`, the identity.** Under 80 lines: Identity (abstract-sized), Claims and key numbers, Conventions (macros not to redefine), Repo map (one line per code file with its docstring), How to run (detected from environment.yml, pyproject, requirements, Makefile; the `[env] prefix` every command gets), Generated artefacts (artefact → command), Working rules. Drafted deterministically from the manuscript by Set Up Memory; humans and agents both edit it.
+2. **`.dabir/skills/<job>/SKILL.md`, the know-how.** Six playbooks for the recurring jobs: rerun-experiment, update-figure-and-text, address-reviewer, tighten-prose, check-references, compile-and-fix. Standard Agent Skills format with `name` and `description` frontmatter, so Claude Code, Codex and Cursor discover them through `.claude/skills` and `.agents/skills` symlinks without any vendor-specific glue.
+3. **`.dabir/memory/`, what was learned.** One fact per file with frontmatter, plus `runs.md`, appended on every accepted run (date, provider, request, files).
+
+At run time Dabir prepends a preamble of about ten lines: the identity sentence, the pointer, the env prefix, the skill names, and the context pack (top passages by BM25 over `.tex`, `.bib`, code, the brief and the facts, capped at about 2 KB). In the live tests every provider's first action became reading the brief or jumping straight to the right line.
+
+## Release checklist
+
+- `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` secrets from `~/.tauri/dabir.key` (never commit the key). The public key is in `tauri.conf.json`.
+- Apple: `APPLE_CERTIFICATE` (base64 .p12), `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD` (app-specific), `APPLE_TEAM_ID`. Without them the workflow still produces an unsigned DMG.
+- The updater endpoint points at `github.com/sadeghsalehi/dabir`; change it if the repo lives elsewhere.
+- Tag `v0.1.0` to run the release workflow. It fetches Tectonic per target and builds the relay.
+
 ## Still open
 
-- **Incremental compile feedback** while Tectonic runs (it only reports at the end today).
+- **Windows and Linux have not been run.** The CI matrix builds them; the visual layer, vibrancy fallbacks and menu chords need a pass on a real machine.
+- **Remote cursors** render in Source mode; in Visual mode the widgets hide them.
+- **Relay hosting** needs Node on the host's machine. A Rust relay would remove that dependency.
+- **Track changes** for coauthors who will not use Git, and per-comment threads.
+- **Phase 4:** Typst, Zotero, journal templates, plugin API, hosted relay.
 - **Local index** for retrieval over long papers; agents currently rely on the brief plus their own file reading.
 - **Windows and Linux builds.** The shell is cross-platform, but only macOS has been run.
 - **Packaging.** Bundle Tectonic as a sidecar, sign and notarise, auto-update.
