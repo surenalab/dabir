@@ -5,8 +5,11 @@ import { Document } from "./components/Document";
 import { Inspector } from "./components/Inspector";
 import { ShortcutSheet } from "./components/ShortcutSheet";
 import { CloneSheet } from "./components/CloneSheet";
+import { ShareSheet, type LiveState } from "./components/ShareSheet";
+import { addComment as yAddComment, connect as yConnect, decodeRange, disconnect as yDisconnect, encodeRange, peers as yPeers, randomRoom, removeComment as yRemoveComment, resolveComment as yResolveComment, setCurrentFile, textFor, type Comment, type Peer, type Session } from "./lib/collab";
+import type { CommentRange } from "./components/SourceEditor";
 import {
-  checkForUpdates, compile as runCompile, compileCancel, gitClone, isMac, onCompileProgress, gitCommit, gitInit, gitStatus, importOverleaf, native, onMenu, onWindowFocus,
+  checkForUpdates, compile as runCompile, compileCancel, gitClone, gitPull, gitPush, gitRemoteAdd, gitRemoteUrl, isMac, onCompileProgress, relayStart, relayStop, gitCommit, gitInit, gitStatus, importOverleaf, native, onMenu, onWindowFocus,
   openProject, pickFolder, readText, setWindowTitle, synctexForward, synctexInverse, writeText,
   type CompileResult, type GitStatus, type PdfPos, type Project,
 } from "./lib/backend";
@@ -43,7 +46,15 @@ export default function App() {
   const [focused, setFocused] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  const [sheet, setSheet] = useState<"shortcuts" | "clone" | null>(null);
+  const [sheet, setSheet] = useState<"shortcuts" | "clone" | "share" | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [live, setLive] = useState<LiveState>(null);
+  const [liveBusy, setLiveBusy] = useState<string | null>(null);
+  const [peers, setPeers] = useState<Peer[]>([]);
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [selection, setSelection] = useState<{ from: number; to: number }>({ from: 0, to: 0 });
+  const [jumpOffset, setJumpOffset] = useState<{ pos: number; stamp: number } | null>(null);
+  const [overleafUrl, setOverleafUrl] = useState<string | null>(null);
   const [askFocus, setAskFocus] = useState(0);
   const [commitFocus, setCommitFocus] = useState(0);
   const [findRequest, setFindRequest] = useState(0);
@@ -84,6 +95,7 @@ export default function App() {
     setWindowTitle(p.name);
     loadBib(p);
     refreshGit(p);
+    gitRemoteUrl(p.root, "overleaf").then(setOverleafUrl).catch(() => setOverleafUrl(null));
     if (p.mainTex) await selectFile(p.mainTex); else { setFile(null); setSource(null); }
   }, [selectFile, loadBib, refreshGit]);
 
@@ -163,6 +175,98 @@ export default function App() {
     catch (e) { setError(String(e)); } finally { setGitBusy(false); }
   }, [project, dirty, save, refreshGit]);
 
+  // ---- live sessions
+  const rel = useCallback((path: string | null) => (path && project ? path.replace(project.root + "/", "") : null), [project]);
+
+  const attachSession = useCallback((sess: Session) => {
+    setSession(sess);
+    const refresh = () => { setPeers(yPeers(sess)); };
+    sess.awareness.on("change", refresh);
+    const onComments = () => setComments(sess.comments.toArray());
+    sess.comments.observe(onComments);
+    refresh(); onComments();
+    sess.provider.on("status", (e: { status: string }) => { if (e.status === "disconnected") setNote("Live session: connection lost, retrying…"); });
+  }, []);
+
+  const startSession = useCallback(async (name: string) => {
+    if (!project) return;
+    setLiveBusy("start");
+    try {
+      const info = await relayStart(1234);
+      const room = randomRoom(project.name);
+      const sess = yConnect(info.url, room, name, true);
+      // The host seeds the shared text with the open file once the relay confirms an empty doc.
+      const seed = () => {
+        if (file && source != null) { const t = textFor(sess, rel(file)!); if (t.length === 0 && source.length > 0) t.insert(0, source); }
+        setCurrentFile(sess, rel(file));
+      };
+      sess.provider.once("sync", seed);
+      attachSession(sess);
+      setLive({ url: info.url, lanUrl: info.lanUrl, room, host: true });
+      setNote("Live session started. Share the link from the Share sheet.");
+    } finally { setLiveBusy(null); }
+  }, [project, file, source, rel, attachSession]);
+
+  const joinSession = useCallback(async (name: string, url: string, room: string) => {
+    if (!project) return;
+    setLiveBusy("join");
+    try {
+      const sess = yConnect(url, room, name, false);
+      await new Promise<void>((resolve, reject) => {
+        const t = setTimeout(() => reject(new Error("Could not reach the relay. Check the link and that the host's session is running.")), 8000);
+        sess.provider.once("sync", () => { clearTimeout(t); resolve(); });
+      });
+      setCurrentFile(sess, rel(file));
+      attachSession(sess);
+      setLive({ url, lanUrl: url, room, host: false });
+      setNote("Joined the live session.");
+    } finally { setLiveBusy(null); }
+  }, [project, file, rel, attachSession]);
+
+  const stopSession = useCallback(async () => {
+    if (session) yDisconnect(session);
+    setSession(null); setPeers([]); setComments([]); setLive(null);
+    if (live?.host) await relayStop();
+  }, [session, live]);
+
+  useEffect(() => { if (session) setCurrentFile(session, rel(file)); }, [session, file, rel]);
+
+  const collab = session && file && rel(file) ? { text: textFor(session, rel(file)!), awareness: session.awareness } : null;
+  // When a joiner opens a file the host has not seeded yet, seed from their own copy.
+  useEffect(() => {
+    if (!session || !file || source == null) return;
+    const t = textFor(session, rel(file)!);
+    if (t.length === 0 && source.length > 0 && live?.host) t.insert(0, source);
+  }, [session, file, source, rel, live]);
+
+  const commentRanges: CommentRange[] = (session && file ? comments.filter((c) => c.file === rel(file)) : []).map((c) => {
+    const r = decodeRange(session!.doc, c);
+    return r ? { id: c.id, from: r.from, to: r.to, resolved: c.resolved, color: c.color } : null;
+  }).filter((x): x is CommentRange => !!x);
+
+  const addCommentAtSelection = useCallback((text: string) => {
+    if (!session || !file) return;
+    const me = yPeers(session).find((p) => p.me);
+    const t = textFor(session, rel(file)!);
+    const { from, to } = selection;
+    const range = encodeRange(t, from, to === from ? Math.min(t.length, from + 1) : to);
+    yAddComment(session, { author: me?.name ?? "me", color: me?.color ?? "#8a6414", text, file: rel(file)!, ...range });
+  }, [session, file, rel, selection]);
+
+  const jumpToComment = useCallback(async (c: Comment) => {
+    if (!session || !project) return;
+    if (rel(file) !== c.file) await selectFile(`${project.root}/${c.file}`);
+    const r = decodeRange(session.doc, c);
+    if (r) { setMode("source"); setJumpOffset({ pos: r.from, stamp: Date.now() }); }
+  }, [session, project, file, rel, selectFile]);
+
+  const setOverleaf = useCallback(async (url: string) => {
+    if (!project) return;
+    await gitRemoteAdd(project.root, "overleaf", url); setOverleafUrl(url); setNote("Overleaf remote saved.");
+  }, [project]);
+  const pullOverleaf = useCallback(async () => { if (!project) return; setLiveBusy("pull"); try { setNote(await gitPull(project.root, "overleaf")); await reloadProject(); if (file) setSource(await readText(file)); } finally { setLiveBusy(null); } }, [project, file, reloadProject]);
+  const pushOverleaf = useCallback(async () => { if (!project) return; setLiveBusy("push"); try { setNote(await gitPush(project.root, "overleaf")); } finally { setLiveBusy(null); } }, [project]);
+
   const toggleNav = useCallback(() => { setAnimating(true); setNavOpen((v) => !v); }, []);
   const toggleInspector = useCallback(() => { setAnimating(true); autoCollapsed.current = false; setInspectorOpen((v) => !v); }, []);
 
@@ -172,6 +276,7 @@ export default function App() {
       case "open": open(); break;
       case "import-overleaf": importFromOverleaf(); break;
       case "clone": setSheet("clone"); break;
+      case "share": setSheet("share"); break;
       case "save": save(); break;
       case "compile": compile(); break;
       case "show-log": setShowLog((v) => !v); break;
@@ -246,7 +351,8 @@ export default function App() {
   return (
     <div className={cls} style={{ "--nav-w": `${navW}px`, "--inspector-w": `${inspW}px` } as React.CSSProperties}>
       <Toolbar project={project} file={file} dirty={dirty} mode={mode} navOpen={navOpen} inspectorOpen={inspectorOpen}
-        compiling={compileState.status === "running"} onMode={setMode} onToggleNav={toggleNav} onToggleInspector={toggleInspector} onOpen={open} onCompile={compile} onCancelCompile={() => compileCancel()} />
+        compiling={compileState.status === "running"} onMode={setMode} onToggleNav={toggleNav} onToggleInspector={toggleInspector} onOpen={open} onCompile={compile} onCancelCompile={() => compileCancel()}
+        onShare={() => setSheet("share")} live={!!live} />
       <Navigator project={project} current={file} outline={outline} git={git} commitFocus={commitFocus} busy={gitBusy}
         onSelect={selectFile} onJump={(l) => jumpTo(l)} onInitGit={initGit} onCommit={commitAll} />
       <Document project={project} file={file} source={source} bib={bib} mode={mode} jumpLine={jumpLine} jumpStamp={jumpStamp}
@@ -254,12 +360,19 @@ export default function App() {
         error={error ?? note} onDismissError={() => { setError(null); setNote(null); }} pdfTarget={pdfTarget}
         onOpen={open} onImport={importFromOverleaf} onClone={() => setSheet("clone")} onOutline={setOutline}
         onSourceChange={onSourceChange} onSave={save} onCursorLine={setCursorLine} onSelectFile={selectFile} onJump={jumpTo} onPdfClick={onPdfClick}
-        compileOnSave={compileOnSave} onToggleCompileOnSave={toggleCompileOnSave} />
-      <Inspector project={project} askFocus={askFocus} onChanged={onChanged} onOpenFile={selectFile} onNote={setNote} />
+        compileOnSave={compileOnSave} onToggleCompileOnSave={toggleCompileOnSave}
+        collab={collab} comments={commentRanges} onSelection={(from, to) => setSelection({ from, to })} jumpOffset={jumpOffset} />
+      <Inspector project={project} askFocus={askFocus} onChanged={onChanged} onOpenFile={selectFile} onNote={setNote}
+        live={!!live} peers={peers} comments={comments} currentFile={rel(file)} hasSelection={selection.to > selection.from}
+        onAddComment={addCommentAtSelection} onResolveComment={(id, r) => session && yResolveComment(session, id, r)} onRemoveComment={(id) => session && yRemoveComment(session, id)} onJumpComment={jumpToComment} onShare={() => setSheet("share")} />
       <div className={`divider nav ${dragging === "nav" ? "dragging" : ""}`} onPointerDown={() => setDragging("nav")} role="separator" aria-orientation="vertical" aria-label="Resize sidebar" />
       <div className={`divider inspector ${dragging === "inspector" ? "dragging" : ""}`} onPointerDown={() => setDragging("inspector")} role="separator" aria-orientation="vertical" aria-label="Resize inspector" />
       {sheet === "shortcuts" && <ShortcutSheet onClose={() => setSheet(null)} />}
       {sheet === "clone" && <CloneSheet onClose={() => setSheet(null)} onClone={cloneRepo} />}
+      {sheet === "share" && project && (
+        <ShareSheet projectName={project.name} live={live} overleafUrl={overleafUrl} busy={liveBusy} onClose={() => setSheet(null)}
+          onStart={startSession} onJoin={joinSession} onStop={stopSession} onSetOverleaf={setOverleaf} onPull={pullOverleaf} onPush={pushOverleaf} />
+      )}
     </div>
   );
 }

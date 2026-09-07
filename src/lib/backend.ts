@@ -234,6 +234,20 @@ export async function provenanceRerun(root: string, artefact: string): Promise<R
   return invoke<RunOutput>("provenance_rerun", { root, artefact });
 }
 
+// ---------------------------------------------------------------- live relay and remotes
+
+export interface RelayInfo { url: string; lanUrl: string; pid: number }
+export async function relayStart(port = 1234): Promise<RelayInfo> {
+  if (!native) return { url: `ws://localhost:${port}`, lanUrl: `ws://localhost:${port}`, pid: 0 };
+  return invoke<RelayInfo>("relay_start", { port });
+}
+export async function relayStop(): Promise<void> { if (native) await invoke("relay_stop"); }
+
+export async function gitRemoteAdd(root: string, name: string, url: string): Promise<void> { if (native) await invoke("git_remote_add", { root, name, url }); }
+export async function gitRemoteUrl(root: string, name: string): Promise<string | null> { return native ? invoke<string | null>("git_remote_url", { root, name }) : null; }
+export async function gitPull(root: string, remote: string): Promise<string> { if (!native) { await wait(600); return "Already up to date."; } return invoke<string>("git_pull", { root, remote }); }
+export async function gitPush(root: string, remote: string): Promise<string> { if (!native) { await wait(600); return "Pushed main."; } return invoke<string>("git_push", { root, remote }); }
+
 // ---------------------------------------------------------------- window
 
 export function onMenu(handler: (id: string) => void): () => void {
