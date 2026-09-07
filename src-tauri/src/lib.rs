@@ -221,6 +221,15 @@ fn find_tectonic() -> Option<PathBuf> {
     if let Ok(p) = std::env::var("DABIR_TECTONIC") {
         return Some(PathBuf::from(p));
     }
+    // Bundled sidecar: Tauri places external binaries next to the executable.
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            for name in ["tectonic", "tectonic.exe"] {
+                let p = dir.join(name);
+                if p.is_file() { return Some(p); }
+            }
+        }
+    }
     for c in ["/opt/homebrew/bin/tectonic", "/usr/local/bin/tectonic", "/usr/bin/tectonic"] {
         if Path::new(c).exists() {
             return Some(PathBuf::from(c));
@@ -275,7 +284,7 @@ fn compile_cancel() -> bool {
 }
 
 #[tauri::command]
-fn compile(main_tex: String) -> Result<CompileResult, String> {
+fn compile(app: AppHandle, main_tex: String) -> Result<CompileResult, String> {
     let main = PathBuf::from(&main_tex);
     let root = main.parent().ok_or("The main .tex file has no parent folder")?;
     let outdir = root.join(".dabir").join("build");
@@ -308,20 +317,41 @@ fn compile(main_tex: String) -> Result<CompileResult, String> {
         .spawn()
         .map_err(|e| format!("Could not start Tectonic: {}", e))?;
     *COMPILE_PID.lock().unwrap() = Some(child.id());
-    let output = child.wait_with_output().map_err(|e| e.to_string())?;
+    // Stream Tectonic's progress lines to the status bar while it runs.
+    let mut child = child;
+    let stderr = child.stderr.take();
+    let stdout = child.stdout.take();
+    let app2 = app.clone();
+    let err_thread = std::thread::spawn(move || {
+        use std::io::{BufRead, BufReader};
+        let mut collected = String::new();
+        if let Some(e) = stderr {
+            for line in BufReader::new(e).lines().flatten() {
+                let msg = line.trim_start_matches("note: ").to_string();
+                if !msg.is_empty() && !msg.starts_with("\"version 2\"") { let _ = app2.emit("compile-progress", msg); }
+                collected.push_str(&line); collected.push('\n');
+            }
+        }
+        collected
+    });
+    let out_text = {
+        use std::io::Read;
+        let mut s = String::new();
+        if let Some(mut o) = stdout { let _ = o.read_to_string(&mut s); }
+        s
+    };
+    let status = child.wait().map_err(|e| e.to_string())?;
+    let err_text = err_thread.join().unwrap_or_default();
+    let output = (status, out_text, err_text);
     let cancelled = COMPILE_PID.lock().unwrap().take().is_none();
     let millis = started.elapsed().as_millis();
     if cancelled {
         return Ok(CompileResult { ok: false, pdf: None, log: "Compile cancelled.".into(), diagnostics: vec![], engine: "tectonic".into(), millis });
     }
-    let log = format!(
-        "{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
+    let log = format!("{}{}", output.1, output.2);
     let stem = main.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or("main".into());
     let pdf = outdir.join(format!("{}.pdf", stem));
-    let ok = output.status.success() && pdf.exists();
+    let ok = output.0.success() && pdf.exists();
     Ok(CompileResult {
         ok,
         pdf: if pdf.exists() { Some(pdf.to_string_lossy().to_string()) } else { None },
@@ -455,7 +485,8 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
     let app_menu = SubmenuBuilder::new(app, "Dabir")
         .item(&PredefinedMenuItem::about(app, Some("About Dabir"), Some(about))?)
         .separator()
-        .item(&MenuItemBuilder::with_id("settings", "Settings…").accelerator("Cmd+,").build(app)?)
+        .item(&MenuItemBuilder::with_id("settings", "Settings…").accelerator("CmdOrCtrl+,").build(app)?)
+        .item(&MenuItemBuilder::with_id("check-updates", "Check for Updates…").build(app)?)
         .separator()
         .services()
         .separator()
@@ -467,11 +498,11 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
         .build()?;
 
     let file = SubmenuBuilder::new(app, "File")
-        .item(&MenuItemBuilder::with_id("open", "Open Paper…").accelerator("Cmd+O").build(app)?)
+        .item(&MenuItemBuilder::with_id("open", "Open Paper…").accelerator("CmdOrCtrl+O").build(app)?)
         .item(&MenuItemBuilder::with_id("import-overleaf", "Import from Overleaf…").build(app)?)
-        .item(&MenuItemBuilder::with_id("clone", "Clone from GitHub…").accelerator("Cmd+Shift+O").build(app)?)
+        .item(&MenuItemBuilder::with_id("clone", "Clone from GitHub…").accelerator("CmdOrCtrl+Shift+O").build(app)?)
         .separator()
-        .item(&MenuItemBuilder::with_id("save", "Save").accelerator("Cmd+S").build(app)?)
+        .item(&MenuItemBuilder::with_id("save", "Save").accelerator("CmdOrCtrl+S").build(app)?)
         .separator()
         .close_window()
         .build()?;
@@ -485,35 +516,35 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
         .paste()
         .select_all()
         .separator()
-        .item(&MenuItemBuilder::with_id("find", "Find…").accelerator("Cmd+F").build(app)?)
+        .item(&MenuItemBuilder::with_id("find", "Find…").accelerator("CmdOrCtrl+F").build(app)?)
         .build()?;
 
     let view = SubmenuBuilder::new(app, "View")
-        .item(&MenuItemBuilder::with_id("view-visual", "Visual").accelerator("Cmd+1").build(app)?)
-        .item(&MenuItemBuilder::with_id("view-source", "Source").accelerator("Cmd+2").build(app)?)
-        .item(&MenuItemBuilder::with_id("view-pdf", "PDF").accelerator("Cmd+3").build(app)?)
+        .item(&MenuItemBuilder::with_id("view-visual", "Visual").accelerator("CmdOrCtrl+1").build(app)?)
+        .item(&MenuItemBuilder::with_id("view-source", "Source").accelerator("CmdOrCtrl+2").build(app)?)
+        .item(&MenuItemBuilder::with_id("view-pdf", "PDF").accelerator("CmdOrCtrl+3").build(app)?)
         .separator()
-        .item(&MenuItemBuilder::with_id("toggle-sidebar", "Show/Hide Sidebar").accelerator("Ctrl+Cmd+S").build(app)?)
-        .item(&MenuItemBuilder::with_id("toggle-inspector", "Show/Hide Inspector").accelerator("Alt+Cmd+I").build(app)?)
+        .item(&MenuItemBuilder::with_id("toggle-sidebar", "Show/Hide Sidebar").accelerator(if cfg!(target_os = "macos") { "Ctrl+Cmd+S" } else { "CmdOrCtrl+Shift+S" }).build(app)?)
+        .item(&MenuItemBuilder::with_id("toggle-inspector", "Show/Hide Inspector").accelerator(if cfg!(target_os = "macos") { "Alt+Cmd+I" } else { "CmdOrCtrl+Shift+I" }).build(app)?)
         .separator()
         .fullscreen()
         .build()?;
 
     let paper = SubmenuBuilder::new(app, "Paper")
-        .item(&MenuItemBuilder::with_id("compile", "Compile").accelerator("Cmd+B").build(app)?)
-        .item(&MenuItemBuilder::with_id("show-log", "Show Compile Log").accelerator("Cmd+Shift+L").build(app)?)
-        .item(&MenuItemBuilder::with_id("sync-pdf", "Show Line in PDF").accelerator("Cmd+Shift+J").build(app)?)
+        .item(&MenuItemBuilder::with_id("compile", "Compile").accelerator("CmdOrCtrl+B").build(app)?)
+        .item(&MenuItemBuilder::with_id("show-log", "Show Compile Log").accelerator("CmdOrCtrl+Shift+L").build(app)?)
+        .item(&MenuItemBuilder::with_id("sync-pdf", "Show Line in PDF").accelerator("CmdOrCtrl+Shift+J").build(app)?)
         .separator()
-        .item(&MenuItemBuilder::with_id("commit", "Commit…").accelerator("Cmd+Shift+C").build(app)?)
+        .item(&MenuItemBuilder::with_id("commit", "Commit…").accelerator("CmdOrCtrl+Shift+C").build(app)?)
         .separator()
-        .item(&MenuItemBuilder::with_id("ask-agent", "Ask the Agent…").accelerator("Cmd+K").build(app)?)
+        .item(&MenuItemBuilder::with_id("ask-agent", "Ask the Agent…").accelerator("CmdOrCtrl+K").build(app)?)
         .build()?;
 
     let window = SubmenuBuilder::new(app, "Window")
         .minimize()
         .maximize()
         .separator()
-        .item(&MenuItemBuilder::with_id("shortcuts", "Keyboard Shortcuts").accelerator("Cmd+/").build(app)?)
+        .item(&MenuItemBuilder::with_id("shortcuts", "Keyboard Shortcuts").accelerator("CmdOrCtrl+/").build(app)?)
         .build()?;
 
     let menu = MenuBuilder::new(app)
@@ -529,6 +560,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             build_menu(app.handle())?;
             #[cfg(target_os = "macos")]
