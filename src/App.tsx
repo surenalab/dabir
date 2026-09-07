@@ -49,6 +49,8 @@ export default function App() {
   const [bib, setBib] = useState<Record<string, BibEntry>>({});
   const [git, setGit] = useState<GitStatus | null>(null);
   const [gitBusy, setGitBusy] = useState(false);
+  const [compileOnSave, setCompileOnSave] = useState<boolean>(() => { try { return localStorage.getItem("dabir.compileOnSave") === "1"; } catch { return false; } });
+  const compileRef = useRef<() => void>(() => {});
   const autoCollapsed = useRef(false);
   const sourceRef = useRef<string | null>(null);
   sourceRef.current = source;
@@ -107,13 +109,13 @@ export default function App() {
 
   const save = useCallback(async () => {
     if (!file || sourceRef.current == null) return;
-    try { await writeText(file, sourceRef.current); setDirty(false); refreshGit(); }
+    try { await writeText(file, sourceRef.current); setDirty(false); refreshGit(); if (compileOnSave) compileRef.current(); }
     catch (e) { setError(String(e)); }
-  }, [file, refreshGit]);
+  }, [file, refreshGit, compileOnSave]);
 
   const compile = useCallback(async () => {
     if (!project?.mainTex || compileState.status === "running") return;
-    if (dirty) await save();
+    if (dirty && sourceRef.current != null && file) { try { await writeText(file, sourceRef.current); setDirty(false); } catch (e) { setError(String(e)); return; } }
     setCompileState({ status: "running", startedAt: Date.now() });
     try {
       const result = await runCompile(project.mainTex);
@@ -122,7 +124,9 @@ export default function App() {
     } catch (e) {
       setCompileState({ status: "done", at: Date.now(), result: { ok: false, pdf: null, log: String(e), engine: "", millis: 0, diagnostics: [{ severity: "error", file: null, line: null, message: String(e) }] } });
     }
-  }, [project, dirty, save, compileState.status]);
+  }, [project, dirty, file, compileState.status]);
+  compileRef.current = compile;
+  const toggleCompileOnSave = useCallback(() => { setCompileOnSave((v) => { try { localStorage.setItem("dabir.compileOnSave", v ? "0" : "1"); } catch { /* private mode */ } return !v; }); }, []);
 
   const showInPdf = useCallback(async () => {
     if (!project?.mainTex || !file) return;
@@ -243,7 +247,8 @@ export default function App() {
         compileState={compileState} showLog={showLog} onToggleLog={() => setShowLog((v) => !v)} findRequest={findRequest}
         error={error ?? note} onDismissError={() => { setError(null); setNote(null); }} pdfTarget={pdfTarget}
         onOpen={open} onImport={importFromOverleaf} onClone={() => setSheet("clone")} onOutline={setOutline}
-        onSourceChange={onSourceChange} onSave={save} onCursorLine={setCursorLine} onSelectFile={selectFile} onJump={jumpTo} onPdfClick={onPdfClick} />
+        onSourceChange={onSourceChange} onSave={save} onCursorLine={setCursorLine} onSelectFile={selectFile} onJump={jumpTo} onPdfClick={onPdfClick}
+        compileOnSave={compileOnSave} onToggleCompileOnSave={toggleCompileOnSave} />
       <Inspector project={project} askFocus={askFocus} onChanged={onChanged} onOpenFile={selectFile} onNote={setNote} />
       <div className={`divider nav ${dragging === "nav" ? "dragging" : ""}`} onPointerDown={() => setDragging("nav")} role="separator" aria-orientation="vertical" aria-label="Resize sidebar" />
       <div className={`divider inspector ${dragging === "inspector" ? "dragging" : ""}`} onPointerDown={() => setDragging("inspector")} role="separator" aria-orientation="vertical" aria-label="Resize inspector" />
