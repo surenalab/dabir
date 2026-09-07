@@ -4,7 +4,7 @@
 
 Dabir (دبیر, Persian for *scribe*) opens a folder that holds your manuscript and the code that made its figures. It shows LaTeX like a document, compiles locally, and lets the agent you already pay for, whether Claude Code, Codex, Cursor, Grok or OpenCode, rerun an experiment, update the figure and the table, and open the pull request. Nothing is uploaded. Delete the app and your project is still a plain Git repo.
 
-> Status: phases 0 to 2 built, macOS only. Open a folder, an Overleaf zip or a GitHub repo; edit the paper visually or as source in one buffer; compile with Tectonic; click the PDF to jump to the line; commit from the sidebar; ask Claude Code, Codex, Cursor, Grok or OpenCode to change the paper on a worktree and review the diff hunk by hunk before it touches your checkout (verified live with Claude Code, Codex, Cursor and Grok); keep the project brief, facts and provenance in `.dabir/` so every agent shares them. Live collaboration is phase 3. Progress and next steps are in [PLAN.md](PLAN.md).
+> Status: phases 0 to 3 built, run on macOS; Windows and Linux build in CI but are untested. Open a folder, an Overleaf zip or a GitHub repo; edit the paper visually or as source in one buffer; compile with Tectonic; click the PDF to jump to the line; commit from the sidebar; ask Claude Code, Codex, Cursor, Grok or OpenCode to change the paper on a worktree and review the diff hunk by hunk before it touches your checkout (verified live with Claude Code, Codex, Cursor and Grok); keep the project brief, facts and provenance in `.dabir/` so every agent shares them. Start a live session from Share and coauthors edit with you in real time, with presence and comments; pull and push to Overleaf's Git bridge. Progress and next steps are in [PLAN.md](PLAN.md).
 
 ## Why
 
@@ -17,6 +17,10 @@ Overleaf is where coauthors are, but it is paid, remote, and cannot run your cod
 - **Agents are coauthors, not chatbots.** They get the repo, a terminal and the compile log, run on a worktree, and produce diffs you review.
 - **Memory lives in the repo.** `.dabir/` holds a project brief, one-fact memory files and a provenance graph, committed with the paper, so every coauthor's agent shares it whichever vendor they use.
 - **Design is the product.** Every screen follows Apple's Human Interface Guidelines and is reviewed with Impeccable before merge.
+
+## Agents, briefly
+
+Set Up Memory (Memory tab) writes three small things into the paper's repo: `.dabir/PROJECT.md`, the paper's identity and how its code runs; `.dabir/skills/`, six playbooks every CLI discovers; and `.dabir/memory/`, one fact per file plus a log of accepted runs. Every run starts with a ten-line preamble built from them and the passages most relevant to your request. Runs happen on a Git worktree; you review the diff hunk by hunk.
 
 ## Run it
 
