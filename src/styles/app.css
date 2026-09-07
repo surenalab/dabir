@@ -543,3 +543,12 @@ button { background: none; border: 0; padding: 0; cursor: default; }
 /* Status bar toggle */
 .status .toggle { text-decoration: none; padding: 0 6px; border-radius: 3px; border: 1px solid var(--line); color: var(--ink-3); }
 .status .toggle.on { color: var(--ok); border-color: var(--ok); }
+
+/* Hunk picking */
+.diff header .pickfile { display: flex; align-items: center; gap: 6px; }
+.diff header input, .hunk input { margin: 0; accent-color: var(--accent); }
+.diff.off header .file { color: var(--ink-4); text-decoration: line-through; }
+.diff.off pre { opacity: .4; }
+.hunk { border-top: 1px solid var(--line); }
+.hunk .pickhunk { display: flex; align-items: center; gap: 6px; padding: 3px var(--space-3) 0; font-family: var(--font-mono); font-size: 10px; color: var(--ink-4); }
+.hunk.off pre { opacity: .4; }

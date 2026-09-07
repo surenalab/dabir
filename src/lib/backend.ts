@@ -169,10 +169,12 @@ export async function agentDiff(root: string, runId: string): Promise<WorktreeDi
   };
   return invoke<WorktreeDiff>("agent_diff", { root, runId });
 }
-export async function agentAccept(root: string, runId: string, message: string, paths?: string[]): Promise<string> {
+export interface Pick { path: string; hunks: number[] | null }
+export async function agentAccept(root: string, runId: string, message: string, picks?: Pick[]): Promise<string> {
   if (!native) { await wait(400); return "c1d2e3f"; }
-  return invoke<string>("agent_accept", { root, runId, message, paths: paths ?? null });
+  return invoke<string>("agent_accept", { root, runId, message, picks: picks ?? null });
 }
+export async function compileCancel(): Promise<boolean> { return native ? invoke<boolean>("compile_cancel") : true; }
 export async function agentReject(root: string, runId: string): Promise<void> { if (native) await invoke("agent_reject", { root, runId }); }
 export async function agentPullRequest(root: string, runId: string, message: string): Promise<string> {
   if (!native) { await wait(400); return "https://github.com/sadegh/isgd-tci/pull/12"; }

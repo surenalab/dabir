@@ -1,4 +1,4 @@
-import { PanelLeft, PanelRight, Play, Share2, Loader2 } from "lucide-react";
+import { PanelLeft, PanelRight, Play, Share2, Square } from "lucide-react";
 import type { Project } from "../lib/backend";
 import { Segmented } from "./Segmented";
 
@@ -17,9 +17,10 @@ interface Props {
   onToggleInspector: () => void;
   onOpen: () => void;
   onCompile: () => void;
+  onCancelCompile: () => void;
 }
 
-export function Toolbar({ project, file, dirty, mode, navOpen, inspectorOpen, compiling, onMode, onToggleNav, onToggleInspector, onCompile }: Props) {
+export function Toolbar({ project, file, dirty, mode, navOpen, inspectorOpen, compiling, onMode, onToggleNav, onToggleInspector, onCompile, onCancelCompile }: Props) {
   const rel = file && project ? file.replace(project.root + "/", "") : null;
   const canCompile = !!project?.mainTex && !compiling;
   return (
@@ -46,10 +47,11 @@ export function Toolbar({ project, file, dirty, mode, navOpen, inspectorOpen, co
             { value: "pdf", label: "PDF", title: "Compiled PDF (⌘3)", disabled: !project },
           ]}
         />
-        <button className={`tb-btn ${compiling ? "busy" : ""}`} onClick={onCompile} disabled={!canCompile}
-          title={project?.mainTex ? (compiling ? "Compiling…" : "Compile (⌘B)") : "Compile needs a .tex file with \\documentclass"}>
-          {compiling ? <Loader2 /> : <Play />} {compiling ? "Compiling" : "Compile"}
-        </button>
+        {compiling ? (
+          <button className="tb-btn" onClick={onCancelCompile} title="Stop the running compile"><Square /> Stop</button>
+        ) : (
+          <button className="tb-btn" onClick={onCompile} disabled={!canCompile} title={project?.mainTex ? "Compile (⌘B)" : "Compile needs a .tex file with \\documentclass"}><Play /> Compile</button>
+        )}
         <span className="spacer" />
         <button className="tb-btn icon" aria-label="Share" title="Share (coming in phase 3)" disabled>
           <Share2 />

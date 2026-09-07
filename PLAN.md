@@ -41,8 +41,8 @@ The paper is a Git repo that also holds the experiment code. The agent is a coau
 |---|---|---|
 | Grok | `~/.grok/bin/grok` | Signed in, live test passes |
 | Codex | `/Applications/ChatGPT.app/Contents/Resources/codex` | Signed in, live test passes |
-| Claude Code | VS Code agent-host cache, 2.1.220 | Found, but "OAuth session expired and could not be refreshed". Needs `claude` login once. |
-| Cursor | `~/.local/bin/cursor-agent` | Found, needs `cursor-agent login` |
+| Claude Code | VS Code agent-host cache, 2.1.220 | Signed in, live test passes (13 s) |
+| Cursor | `~/.local/bin/cursor-agent` | Signed in, live test passes (13 s) |
 | OpenCode | not installed | |
 
 Run the live test for any provider with:
@@ -51,11 +51,11 @@ Run the live test for any provider with:
 DABIR_LIVE_PROVIDER=codex cargo test live_agent -- --ignored --nocapture
 ```
 
+**2026-09-07, all four providers live.** After sign-in, Claude Code and Cursor also pass `live_agent_run` in 13 s each, so every adapter has done a real edit-review-commit cycle. Cursor reports tools as `tool_call` events keyed by tool kind (`shellToolCall`, `readToolCall`, …), now parsed. Per-hunk accept: the review shows a checkbox per file and, for multi-hunk files, per hunk; Rust filters the unified diff to the selection before applying, binary files stay all-or-nothing. Compile can be stopped from the toolbar.
+
 ## Still open
 
-- **Claude and Cursor end to end** once they are signed in. The Claude parser is exercised by Grok, which emits the same format, so the risk is low.
-- **Per-hunk accept.** Accept is per file today.
-- **Incremental compile feedback** and cancelling a running compile.
+- **Incremental compile feedback** while Tectonic runs (it only reports at the end today).
 - **Local index** for retrieval over long papers; agents currently rely on the brief plus their own file reading.
 - **Windows and Linux builds.** The shell is cross-platform, but only macOS has been run.
 - **Packaging.** Bundle Tectonic as a sidecar, sign and notarise, auto-update.
