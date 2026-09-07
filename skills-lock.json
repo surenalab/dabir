@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "apple-design-skill": {
+      "source": "NutshellEngineering/apple-design-skill",
+      "sourceType": "github",
+      "skillPath": "skills/apple-design-skill/SKILL.md",
+      "computedHash": "d6a1301b18617ff2ce2237a8d49701ad4737dc75f63384133818e07c3acebf39"
+    }
+  }
+}

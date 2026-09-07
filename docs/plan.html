@@ -1,0 +1,258 @@
+<title>Dabir Project Plan</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&family=Source+Sans+3:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#fbfaf7; --surface:#f2f0ea; --line:#d9d6cd; --ink:#1d1f24; --ink-2:#4b4e57; --ink-3:#666973;
+  --accent:#a8322d; --accent-soft:#f4e3e1; --ok:#2f6b3a; --warn:#8a6414;
+  --serif:"STIX Two Text",Georgia,"Times New Roman",serif;
+  --sans:"Source Sans 3","Helvetica Neue",Arial,sans-serif;
+  --mono:"IBM Plex Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#16171a; --surface:#1f2024; --line:#33353b; --ink:#ebe9e2; --ink-2:#b6b4ad; --ink-3:#83858d;
+    --accent:#e06a63; --accent-soft:#3a2321; --ok:#7dc48a; --warn:#d9b35a;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#16171a; --surface:#1f2024; --line:#33353b; --ink:#ebe9e2; --ink-2:#b6b4ad; --ink-3:#83858d;
+  --accent:#e06a63; --accent-soft:#3a2321; --ok:#7dc48a; --warn:#d9b35a;
+}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:17px;line-height:1.55;margin:0}
+main{max-width:72ch;margin:0 auto;padding:56px 24px 96px}
+h1,h2,h3{font-family:var(--serif);font-weight:600;text-wrap:balance;line-height:1.15;margin:0}
+h1{font-size:2.6rem;letter-spacing:-.01em}
+h2{font-size:1.7rem;margin-top:3.2rem;padding-top:1.2rem;border-top:1px solid var(--line)}
+h3{font-size:1.2rem;margin-top:1.8rem}
+p{margin:.9rem 0}
+.eyebrow{font-family:var(--mono);font-size:.78rem;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin-bottom:.8rem}
+.lede{font-family:var(--serif);font-size:1.25rem;color:var(--ink-2);margin-top:1rem}
+.meta{display:flex;flex-wrap:wrap;gap:1.5rem;margin-top:1.6rem;font-family:var(--mono);font-size:.82rem;color:var(--ink-3)}
+.meta b{color:var(--ink);font-weight:500;display:block}
+ul,ol{padding-left:1.3rem;margin:.6rem 0}
+li{margin:.35rem 0}
+li b,p b{font-weight:600}
+table{border-collapse:collapse;width:100%;font-size:.95rem;margin:1rem 0}
+.tbl{overflow-x:auto}
+th{text-align:left;font-family:var(--mono);font-size:.75rem;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);font-weight:500;padding:.5rem .6rem;border-bottom:1px solid var(--ink-2)}
+td{padding:.55rem .6rem;border-bottom:1px solid var(--line);vertical-align:top}
+td:first-child{font-weight:600;white-space:nowrap}
+code{font-family:var(--mono);font-size:.86em;background:var(--surface);padding:.1em .35em;border-radius:3px}
+pre{font-family:var(--mono);font-size:.85rem;background:var(--surface);border:1px solid var(--line);padding:.9rem 1rem;overflow-x:auto;line-height:1.5;border-radius:4px}
+pre code{background:none;padding:0}
+.callout{border:1px solid var(--line);background:var(--surface);padding:.9rem 1.1rem;margin:1.2rem 0;border-radius:4px}
+.callout p b{color:var(--accent)}
+.callout p{margin:.3rem 0}
+.phase{display:grid;grid-template-columns:7.5rem 1fr;gap:.4rem 1.2rem;margin:1rem 0}
+.phase .k{font-family:var(--mono);font-size:.8rem;color:var(--ink-3);padding-top:.25rem}
+.phase .v{border-bottom:1px solid var(--line);padding-bottom:.7rem}
+.phase .v b{display:block;font-family:var(--serif);font-size:1.1rem;font-weight:600}
+.frame{border:1px solid var(--line);border-radius:6px;overflow:hidden;margin:1.2rem 0;background:var(--surface)}
+.frame svg{display:block;width:100%;height:auto}
+.cap{font-size:.85rem;color:var(--ink-3);padding:.5rem .8rem;border-top:1px solid var(--line)}
+.tag{display:inline-block;font-family:var(--mono);font-size:.72rem;padding:.1em .5em;border:1px solid var(--line);border-radius:3px;color:var(--ink-2);margin-left:.4rem;vertical-align:middle}
+.tag.ok{color:var(--ok);border-color:var(--ok)}
+.tag.warn{color:var(--warn);border-color:var(--warn)}
+@media (max-width:600px){h1{font-size:2rem}.phase{grid-template-columns:1fr}}
+</style>
+<main>
+<div class="eyebrow">Project plan · v0.1 · September 2026</div>
+<h1>Dabir</h1>
+<p class="lede">An open source, local-first workspace where a paper, its code, its Git history, and its AI agents live in one window. Overleaf-quality editing with the control of your own machine.</p>
+<div class="meta">
+  <div><b>Name</b>Dabir (دبیر), the Persian word for scribe, from Middle Persian <i>dibīr</i>: the person who wrote, kept and copied the texts. Alternatives considered: Resaleh (رساله, treatise) and Daftar (دفتر, notebook).</div>
+  <div><b>Licence</b>AGPL-3.0 for the app, MIT for the editor packages.</div>
+  <div><b>Owner</b>Sadegh Salehi</div>
+</div>
+
+<h2>1. The thesis</h2>
+<p>Overleaf is where coauthors are, but it is paid for anything beyond the basics, keeps your files on its servers, and cannot run your experiments. VS Code plus LaTeX Workshop plus Claude Code can do everything, but writing a paper in it feels like editing config files. LMMs-Lab Writer sits between the two and already has a local AI panel and Git, but no collaboration story and a generic UI.</p>
+<p>Dabir's bet is narrow on purpose: <b>the paper is a Git repo that also contains the experiment code, and the agent is a coauthor that can rerun figures and edit the manuscript in the same change.</b> Collaboration rides on GitHub first and real-time editing second. The visual editor is the thing people will screenshot, so it has to be the best-looking LaTeX surface that exists.</p>
+<div class="callout">
+<p><b>One-line pitch.</b> "T3 Code for scientists": a beautiful native app that opens your paper repo, shows LaTeX like a document, compiles locally, and lets the agent you already pay for, whether Claude, Codex, Grok or Cursor, regenerate the figure, update the table, and open the pull request.</p>
+</div>
+
+<h2>2. Principles</h2>
+<ul>
+<li><b>Git is the truth.</b> No proprietary project format. A Dabir project is a folder with a <code>main.tex</code> and optionally a <code>dabir.toml</code>. Delete the app and nothing is lost.</li>
+<li><b>Local by default, cloud by choice.</b> Compile, Git, search and agents work offline. Sync, sharing and live cursors are opt-in services you can self-host.</li>
+<li><b>Agents are coauthors, not chatbots.</b> They get the whole repo, a terminal, the compile log, and produce diffs you review, never silent edits.</li>
+<li><b>Meet coauthors where they are.</b> Import and export Overleaf projects; push and pull through the Overleaf Git bridge for people who have it.</li>
+<li><b>Design is the product.</b> If a screen would not pass an Apple design review, it is not done.</li>
+</ul>
+
+<h2>3. What it looks like</h2>
+<div class="frame">
+<svg viewBox="0 0 960 560" xmlns="http://www.w3.org/2000/svg" font-family="Source Sans 3, Helvetica, Arial, sans-serif">
+  <rect width="960" height="560" fill="var(--bg)"/>
+  <!-- title bar -->
+  <rect x="0" y="0" width="960" height="40" fill="var(--surface)"/>
+  <circle cx="20" cy="20" r="6" fill="#e5604f"/><circle cx="40" cy="20" r="6" fill="#e0b13a"/><circle cx="60" cy="20" r="6" fill="#5fbd57"/>
+  <text x="480" y="25" font-size="13" text-anchor="middle" fill="var(--ink-2)">isgd-tci — main.tex</text>
+  <rect x="700" y="11" width="64" height="18" rx="4" fill="var(--accent)"/><text x="732" y="24" font-size="11" text-anchor="middle" fill="#fff">Compile</text>
+  <rect x="772" y="11" width="56" height="18" rx="4" fill="var(--line)"/><text x="800" y="24" font-size="11" text-anchor="middle" fill="var(--ink)">Source</text>
+  <rect x="836" y="11" width="56" height="18" rx="4" fill="var(--line)"/><text x="864" y="24" font-size="11" text-anchor="middle" fill="var(--ink)">Share</text>
+  <!-- navigator -->
+  <rect x="0" y="40" width="200" height="520" fill="var(--surface)"/>
+  <line x1="200" y1="40" x2="200" y2="560" stroke="var(--line)"/>
+  <text x="16" y="66" font-size="10" fill="var(--ink-3)" letter-spacing="1">FILES</text>
+  <text x="16" y="88" font-size="12" fill="var(--ink)">main.tex</text>
+  <text x="16" y="108" font-size="12" fill="var(--ink-2)">sections/method.tex</text>
+  <text x="16" y="128" font-size="12" fill="var(--ink-2)">sections/results.tex</text>
+  <text x="16" y="148" font-size="12" fill="var(--ink-2)">figures/</text>
+  <text x="16" y="168" font-size="12" fill="var(--ink-2)">code/train.py</text>
+  <text x="16" y="188" font-size="12" fill="var(--ink-2)">refs.bib</text>
+  <text x="16" y="226" font-size="10" fill="var(--ink-3)" letter-spacing="1">OUTLINE</text>
+  <text x="16" y="248" font-size="12" fill="var(--ink-2)">1 Introduction</text>
+  <text x="16" y="268" font-size="12" fill="var(--ink-2)">2 Method</text>
+  <text x="28" y="288" font-size="12" fill="var(--ink)">2.2 Injectivity</text>
+  <text x="16" y="308" font-size="12" fill="var(--ink-2)">3 Results</text>
+  <text x="16" y="346" font-size="10" fill="var(--ink-3)" letter-spacing="1">CHANGES</text>
+  <rect x="16" y="358" width="168" height="40" rx="4" fill="var(--bg)" stroke="var(--line)"/>
+  <text x="26" y="374" font-size="11" fill="var(--ink)">fig/psnr-vs-noise.pdf</text>
+  <text x="26" y="390" font-size="11" fill="var(--ok)">+ regenerated by agent</text>
+  <!-- editor -->
+  <text x="240" y="90" font-size="20" font-family="STIX Two Text, Georgia, serif" font-weight="600" fill="var(--ink)">2.2 Injectivity of the forward map</text>
+  <text x="240" y="122" font-size="13" font-family="STIX Two Text, Georgia, serif" fill="var(--ink)">We show that the sampling operator is injective on the</text>
+  <text x="240" y="142" font-size="13" font-family="STIX Two Text, Georgia, serif" fill="var(--ink)">class of band-limited signals when the mask satisfies</text>
+  <text x="240" y="162" font-size="13" font-family="STIX Two Text, Georgia, serif" fill="var(--ink)">the density condition below.</text>
+  <rect x="270" y="182" width="300" height="34" rx="3" fill="var(--surface)"/>
+  <text x="420" y="204" font-size="15" font-family="STIX Two Text, Georgia, serif" font-style="italic" text-anchor="middle" fill="var(--ink)">‖A x‖₂ ≥ c ‖x‖₂  for all x ∈ B_Ω   (4)</text>
+  <text x="240" y="244" font-size="13" font-family="STIX Two Text, Georgia, serif" fill="var(--ink)">Figure 3 reports PSNR against noise level for three</text>
+  <text x="240" y="264" font-size="13" font-family="STIX Two Text, Georgia, serif" fill="var(--ink)">baselines; the proposed method holds a 1.8 dB margin.</text>
+  <rect x="240" y="284" width="360" height="110" rx="4" fill="var(--surface)" stroke="var(--line)"/>
+  <polyline points="260,370 300,352 340,340 380,322 420,310 460,304 500,300 540,298" fill="none" stroke="var(--accent)" stroke-width="2"/>
+  <polyline points="260,380 300,368 340,360 380,350 420,346 460,343 500,342 540,341" fill="none" stroke="var(--ink-3)" stroke-width="1.5"/>
+  <text x="420" y="392" font-size="10" text-anchor="middle" fill="var(--ink-3)">Figure 3: PSNR vs noise σ</text>
+  <text x="240" y="424" font-size="12" fill="var(--ink-3)">\cite{salehi2026isgd}</text>
+  <rect x="240" y="415" width="118" height="14" rx="2" fill="none" stroke="var(--accent)" stroke-dasharray="3 2"/>
+  <line x1="640" y1="40" x2="640" y2="560" stroke="var(--line)"/>
+  <!-- inspector / agent -->
+  <rect x="640" y="40" width="320" height="520" fill="var(--surface)"/>
+  <text x="656" y="66" font-size="10" fill="var(--ink-3)" letter-spacing="1">AGENT · CLAUDE CODE ▾</text>
+  <rect x="656" y="80" width="288" height="60" rx="6" fill="var(--bg)" stroke="var(--line)"/>
+  <text x="668" y="100" font-size="12" fill="var(--ink)">Rerun the noise sweep with σ up to 0.3</text>
+  <text x="668" y="118" font-size="12" fill="var(--ink)">and update Figure 3 and Table 2.</text>
+  <text x="656" y="168" font-size="12" fill="var(--ink-2)">▸ ran  python code/sweep.py --sigma 0.3</text>
+  <text x="656" y="188" font-size="12" fill="var(--ink-2)">▸ wrote figures/psnr-vs-noise.pdf</text>
+  <text x="656" y="208" font-size="12" fill="var(--ink-2)">▸ edited sections/results.tex  +6 −4</text>
+  <text x="656" y="228" font-size="12" fill="var(--ink-2)">▸ compiled  0 errors, 1 warning</text>
+  <rect x="656" y="246" width="288" height="112" rx="6" fill="var(--bg)" stroke="var(--line)"/>
+  <text x="668" y="266" font-size="10" fill="var(--ink-3)" letter-spacing="1">DIFF · sections/results.tex</text>
+  <text x="668" y="288" font-size="11" font-family="IBM Plex Mono, monospace" fill="var(--accent)">− holds a 1.6 dB margin.</text>
+  <text x="668" y="306" font-size="11" font-family="IBM Plex Mono, monospace" fill="var(--ok)">+ holds a 1.8 dB margin up to σ = 0.3.</text>
+  <text x="668" y="330" font-size="11" font-family="IBM Plex Mono, monospace" fill="var(--ok)">+ \input{tables/psnr-sweep}</text>
+  <rect x="656" y="372" width="136" height="26" rx="5" fill="var(--accent)"/><text x="724" y="389" font-size="12" text-anchor="middle" fill="#fff">Accept and commit</text>
+  <rect x="800" y="372" width="144" height="26" rx="5" fill="none" stroke="var(--line)"/><text x="872" y="389" font-size="12" text-anchor="middle" fill="var(--ink)">Open pull request</text>
+  <text x="656" y="430" font-size="10" fill="var(--ink-3)" letter-spacing="1">COAUTHORS</text>
+  <circle cx="666" cy="450" r="8" fill="var(--accent)"/><text x="682" y="454" font-size="12" fill="var(--ink)">Sadegh · editing §2.2</text>
+  <circle cx="666" cy="474" r="8" fill="var(--ink-3)"/><text x="682" y="478" font-size="12" fill="var(--ink-2)">Marta · via Overleaf, synced 4 min ago</text>
+</svg>
+<div class="cap">Three-pane macOS layout: navigator, document, inspector. The visual editor renders math, figures and citations inline while the underlying file stays plain LaTeX.</div>
+</div>
+<p>The UI follows Apple's Human Interface Guidelines for a document-based Mac app: a translucent sidebar, a unified toolbar, an inspector on the right, sheets for share and settings, native menus and shortcuts. It should feel like Pages or Xcode, not like a web app in a frame. On Windows and Linux the same structure holds with platform-appropriate chrome.</p>
+
+<h3>Core screens</h3>
+<ol>
+<li><b>Open or clone.</b> Recent projects, "Clone from GitHub", "Import from Overleaf (.zip or Git link)". The first thing a new user sees, so it has to sell the product in one glance.</li>
+<li><b>Document.</b> Visual mode by default, source mode one keystroke away, split PDF preview with SyncTeX click-through.</li>
+<li><b>Agent inspector.</b> Prompt, live tool log, diff, accept or reject per hunk, commit or open PR. Provider picker in the header: Claude Code and Codex on day one, Cursor, Grok and OpenCode after.</li>
+<li><b>Changes.</b> Git history as a document timeline. Each commit shows the rendered pages that changed, not just lines.</li>
+<li><b>Share sheet.</b> Invite via GitHub collaborators, or start a live session with a link.</li>
+</ol>
+
+<h2>4. Architecture</h2>
+<div class="tbl"><table>
+<tr><th>Layer</th><th>Choice</th><th>Why</th></tr>
+<tr><td>Shell</td><td>Tauri 2 (Rust core, system WebView)</td><td>Small binaries, native menus and window chrome, and Rust gives us libgit2 and process control. Electron is the fallback if WebView rendering inconsistencies bite.</td></tr>
+<tr><td>Frontend</td><td>React 19 + TypeScript, Vite, Tailwind with a strict token layer</td><td>Largest contributor pool. Tokens are enforced so the design system cannot drift.</td></tr>
+<tr><td>Editor</td><td>CodeMirror 6 with a LaTeX parser and decoration layer</td><td>Overleaf's visual editor is exactly this: CM6 with widgets that render math (KaTeX), hide markup, and show citations as chips. Same file, two views, no lossy conversion.</td></tr>
+<tr><td>Compiler</td><td>Tectonic bundled as a sidecar, plus "use my TeX Live" option</td><td>One-click install, auto-fetches packages, reproducible. Compile runs in a Rust task with the log parsed into inline diagnostics.</td></tr>
+<tr><td>PDF</td><td>PDF.js with SyncTeX both ways</td><td>Standard, well understood.</td></tr>
+<tr><td>Git</td><td>git2-rs in the core; GitHub via the <code>gh</code>-style OAuth device flow</td><td>Clone, branch, commit, PR without leaving the app.</td></tr>
+<tr><td>Agents</td><td>Provider adapters over one event protocol; Claude Code, Codex, Cursor, Grok, OpenCode as sidecars; BYO API key as fallback</td><td>The T3 Code pattern: we are the control plane, not the model. Every agent run is on a worktree so you can discard it. Details in section 5.</td></tr>
+<tr><td>Agent memory</td><td>Committed <code>.dabir/</code> folder of Markdown plus a provenance graph, and a local gitignored index</td><td>Memory travels with the repo so every coauthor's agent shares it, whichever vendor they use. Details in section 5.</td></tr>
+<tr><td>Bibliography</td><td>Built-in BibTeX index, Zotero and DOI lookup</td><td>Citation chips need metadata to render nicely.</td></tr>
+<tr><td>Live collaboration</td><td>Yjs + y-codemirror over a small relay (Rust, self-hostable), phase 3</td><td>CRDT text is the only sane way to do live editing on top of Git. Sessions are ephemeral; Git stays the record.</td></tr>
+<tr><td>Overleaf interop</td><td>Zip import/export in phase 1; Git bridge sync in phase 2</td><td>Note: Overleaf's Git bridge is a premium feature on their side, so zip round-trips are the universal path.</td></tr>
+</table></div>
+
+<h2>5. Agents: any subscription, shared memory</h2>
+<h3>Bring the agent you already pay for</h3>
+<p>Dabir never proxies model calls through its own servers. Each vendor's own agent runs as a local sidecar process, signed in with the user's existing subscription, and Dabir talks to it over one internal event protocol: prompt in, tool calls and file edits out, diff at the end. The user picks a provider per project, or per task, from a menu in the inspector.</p>
+<div class="tbl"><table>
+<tr><th>Provider</th><th>How it runs</th><th>What you sign in with</th></tr>
+<tr><td>Claude</td><td>Claude Code CLI via the Agent SDK</td><td>Claude Pro or Max, or an Anthropic API key</td></tr>
+<tr><td>OpenAI</td><td>Codex CLI</td><td>ChatGPT Plus or Pro, or an OpenAI API key</td></tr>
+<tr><td>Cursor</td><td>Cursor agent CLI</td><td>Cursor subscription</td></tr>
+<tr><td>Grok</td><td>Grok Build CLI</td><td>SuperGrok subscription or xAI key</td></tr>
+<tr><td>Anything else</td><td>OpenCode, or any Agent Client Protocol server</td><td>Whatever that tool accepts, including local models via Ollama</td></tr>
+</table></div>
+<p>The adapter layer targets the Agent Client Protocol (ACP) first, since Claude Code, Codex and Gemini already speak it through adapters, and adds thin native adapters where a vendor exposes richer events. New providers are a single file. The mock in section 3 shows the provider name in the inspector header for this reason.</p>
+<div class="callout">
+<p><b>Terms of service risk.</b> Whether a subscription may be driven from a third-party app is decided by each vendor and has changed before. Dabir only ever launches the vendor's own official CLI, exactly as the user could from a terminal, and always keeps the API-key path working so no provider can strand a project.</p>
+</div>
+
+<h3>Memory that lives in the repo</h3>
+<p>The problem with agent memory in a paper project is that three coauthors use three different agents, and none of them remember what the others learned. Dabir solves this by making memory a set of plain files, committed to Git, that every agent reads and maintains.</p>
+<div class="tbl"><table>
+<tr><th>Layer</th><th>Where</th><th>Holds</th></tr>
+<tr><td>Project brief</td><td><code>.dabir/PROJECT.md</code>, committed</td><td>What the paper claims, target venue and page limit, notation conventions, macro list, which script produces which figure and table, how to run the experiments. Auto-drafted on first open, then maintained by agents and reviewed like any other diff.</td></tr>
+<tr><td>Facts</td><td><code>.dabir/memory/*.md</code>, committed</td><td>One fact per file with frontmatter: a reviewer's comment and how it was addressed, a decision about a baseline, a dataset quirk. Agents write these after an accepted run; humans can edit them in the app like notes.</td></tr>
+<tr><td>Provenance</td><td><code>.dabir/provenance.json</code>, committed</td><td>A graph from every figure, table and number in the text back to the command, script, data hash and commit that produced it. This is what makes "rerun what feeds Figure 3" and "which results are stale after this code change" possible.</td></tr>
+<tr><td>Index</td><td><code>.dabir/index/</code>, gitignored</td><td>Local embedding and symbol index over .tex, code, .bib and compile logs, updated incrementally on save. Gives agents retrieval over a 40-page paper plus a codebase without stuffing it all into context.</td></tr>
+<tr><td>Personal</td><td><code>~/.dabir/&lt;project&gt;/</code>, never committed</td><td>Your own writing preferences, provider choice, and session transcripts. Keys live in the OS keychain.</td></tr>
+</table></div>
+<p>Every vendor CLI looks for its own instructions file, so Dabir generates <code>AGENTS.md</code>, <code>CLAUDE.md</code> and <code>.cursor/rules</code> as one-line pointers into <code>.dabir/PROJECT.md</code>. One source of truth, no drift between agents. Each agent run starts on a Git worktree, gets the brief, the relevant facts by retrieval, and the provenance subgraph for whatever it was asked to touch. When the user accepts the diff, the agent's proposed memory updates are shown as part of the same review and committed together with the change, so memory is never ahead of or behind the code.</p>
+<p>The provenance graph is also what lets agents <b>manage</b> the repo rather than just edit it: mark a result stale when its script changes, refuse to edit a number in the text that is generated from a table, propose a commit message that names the figure and the experiment, and keep the manuscript and the code in one reviewed change.</p>
+
+<h2>6. Design workflow</h2>
+<p>Two agent skills drive every UI change, and they are installed in the repo so every contributor's agent uses them.</p>
+<ul>
+<li><b>Impeccable</b> for direction and craft: run <code>/impeccable init</code> once to produce <code>DESIGN.md</code> from the brief below, then <code>/audit</code>, <code>/critique</code> and <code>/polish</code> on every screen before merge. Its typography procedure rejects default faces, which suits us.</li>
+<li><b>Apple design skill</b> for platform correctness: sidebar and inspector behaviour, toolbar density, sheet versus popover, keyboard and accessibility expectations, dark mode and vibrancy. Used as a reviewer on every PR that touches UI.</li>
+</ul>
+<pre><code># in the repo root
+npx impeccable install
+npx skills add https://github.com/NutshellEngineering/apple-design-skill
+# then inside Claude Code
+/impeccable init</code></pre>
+
+<h3>Design brief (input to Impeccable init)</h3>
+<ul>
+<li><b>Subject.</b> A manuscript editor for researchers. The world is paper, ink, proof marks, journal typography.</li>
+<li><b>Feel.</b> Quiet, dense, precise. Think Pages meets Xcode with the calm of a printed page. No gradients, no glass for its own sake.</li>
+<li><b>Type.</b> System UI face for chrome (SF Pro on Mac). Document view uses a serif that resembles the compiled paper: STIX Two or Latin Modern. Mono for source and logs: a face with a real italic.</li>
+<li><b>Colour.</b> Warm paper ground, graphite text, one accent: proofreader's red (madder, near #A8322D) for actions, diffs and the compile button. Semantic green and amber only for status.</li>
+<li><b>Density.</b> Editor is generous; navigator and inspector are compact. Reading text stays near 65 characters.</li>
+<li><b>Motion.</b> Only where it explains state: a diff hunk sliding in, a compile progress ring, a cursor arriving. Respect reduced motion.</li>
+</ul>
+
+<h2>7. Milestones</h2>
+<div class="phase">
+<div class="k">Phase 0<br>2 weeks</div><div class="v"><b>Foundation</b>Repo, Tauri shell, design tokens, DESIGN.md, CI for three OSes, landing page with the mock above. Decide the real name.</div>
+<div class="k">Phase 1<br>6 weeks</div><div class="v"><b>Editor you would actually use</b>Open folder, source and visual modes, Tectonic compile with inline errors, PDF preview with SyncTeX, outline, BibTeX chips, Overleaf zip import. Ship a macOS alpha.</div>
+<div class="k">Phase 2<br>6 weeks</div><div class="v"><b>Git and agents</b>Clone from GitHub, commit, branch, PR. Agent inspector with Claude Code and Codex first, then Cursor and Grok; the .dabir memory layer and provenance graph; worktree-per-run, per-hunk accept, "rerun figure" as the demo. Overleaf Git bridge sync. Windows and Linux builds.</div>
+<div class="k">Phase 3<br>8 weeks</div><div class="v"><b>Collaboration</b>Yjs live sessions with presence, comments anchored to text, self-hostable relay, share sheet. Track-changes view for coauthors who will not use Git.</div>
+<div class="k">Phase 4<br>ongoing</div><div class="v"><b>Ecosystem</b>Typst support (same editor, different compiler), Zotero, journal templates, plugin API, hosted relay as the optional paid service that funds the project.</div>
+</div>
+
+<h2>8. Risks and how we hold them</h2>
+<ul>
+<li><b>Visual LaTeX is a tar pit.</b> Ship source plus preview first. Visual mode covers headings, paragraphs, math, figures, citations, lists and tables, and drops to source for anything else. Never pretend.</li>
+<li><b>Overleaf adds agents.</b> They will. Our moat is local control, running code, and Git-native review. Keep those three ahead.</li>
+<li><b>Real-time editing on top of Git.</b> Hard. Delay it to phase 3 and design the data model for it from phase 0 so it does not need a rewrite.</li>
+<li><b>TeX distribution across OSes.</b> Tectonic solves most of it. Keep "use system TeX Live" for the long tail.</li>
+<li><b>Vendors close their CLIs to third parties.</b> Keep the API-key path first-class and the adapter layer thin, so losing one provider costs a menu entry, not the product.</li>
+<li><b>Solo maintainer burnout.</b> Phases 1 and 2 are cuttable to a compelling alpha on their own. Recruit two contributors before phase 3.</li>
+</ul>
+
+<h2>9. First week</h2>
+<ol>
+<li>Create <code>~/Documents/Open Source/dabir</code>, initialise Git, scaffold Tauri 2 with React and TypeScript.</li>
+<li>Install Impeccable and the Apple design skill, run <code>/impeccable init</code> with the brief above, commit <code>DESIGN.md</code>.</li>
+<li>Build the token file and the three-pane shell with real content from an existing paper (the ISGD TCI manuscript is a good dogfood project).</li>
+<li>Get Tectonic compiling that paper from inside the app with the log parsed into diagnostics.</li>
+<li>Write the README with the thesis and the screenshot, and open the repo publicly so early feedback shapes the editor.</li>
+</ol>
+</main>

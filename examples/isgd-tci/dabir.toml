@@ -1,0 +1,14 @@
+# Dabir project file. Optional: Dabir works on any folder with a .tex in it.
+[paper]
+main = "main.tex"
+engine = "tectonic"      # or "system" to use an installed TeX Live
+venue = "IEEE Transactions on Computational Imaging"
+
+[agents]
+default = "claude"       # claude | codex | cursor | grok | opencode
+worktree = true          # every run happens on a Git worktree
+
+[provenance]
+# Commands that regenerate generated artefacts. Agents refuse to hand-edit these.
+"figures/psnr-vs-noise.pdf" = "python code/sweep.py --sigma 0.3"
+"tables/psnr-sweep.tex"     = "python code/sweep.py --sigma 0.3"
