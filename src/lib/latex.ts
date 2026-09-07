@@ -85,7 +85,7 @@ export function parseDocument(source: string): { blocks: Block[]; outline: Outli
       const t = /\\title\{(.*)\}/.exec(line);
       const a = /\\author\{(.*)\}/.exec(line);
       if (t) meta.title = t[1];
-      if (a) meta.authors = a[1].replace(/\\and/g, ",").replace(/\\thanks\{[^}]*\}/g, "");
+      if (a) meta.authors = a[1].replace(/\\thanks\{[^}]*\}/g, "").split(/\\and/).map((x) => x.trim()).filter(Boolean).join(", ");
       if (/\\begin\{document\}/.test(line)) {
         inBody = true;
         if (meta.title) blocks.push({ kind: "title", text: meta.title });

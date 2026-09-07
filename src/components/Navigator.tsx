@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ChevronRight, FileText, BookMarked, Code2, Image, Database, File, Folder } from "lucide-react";
 import type { Entry, Project } from "../lib/backend";
 import type { OutlineItem } from "../lib/latex";
@@ -8,29 +8,29 @@ const ICON = { tex: FileText, bib: BookMarked, code: Code2, figure: Image, data:
 function Node({ entry, current, onSelect, depth }: { entry: Entry; current: string | null; onSelect: (p: string) => void; depth: number }) {
   const [open, setOpen] = useState(depth < 1);
   const Icon = ICON[entry.kind];
-  if (entry.kind === "dir") {
-    return (
-      <li>
-        <button className="tree-row" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
-          <ChevronRight className={`chev ${open ? "open" : ""}`} />
-          <Icon />
-          <span className="label">{entry.name}</span>
-        </button>
-        {open && (
-          <ul>
-            {entry.children.map((c) => <Node key={c.path} entry={c} current={current} onSelect={onSelect} depth={depth + 1} />)}
-          </ul>
-        )}
-      </li>
-    );
-  }
+  const isDir = entry.kind === "dir";
+  const onKey = (e: React.KeyboardEvent) => {
+    if (!isDir) return;
+    if (e.key === "ArrowRight" && !open) { e.preventDefault(); setOpen(true); }
+    if (e.key === "ArrowLeft" && open) { e.preventDefault(); setOpen(false); }
+  };
   return (
-    <li>
-      <button className="tree-row" aria-current={current === entry.path ? "true" : undefined} onClick={() => onSelect(entry.path)}>
-        <span style={{ width: 12 }} />
-        <Icon />
+    <li role="treeitem" aria-level={depth + 1} aria-expanded={isDir ? open : undefined} aria-selected={current === entry.path}>
+      <button
+        className="tree-row" tabIndex={-1}
+        aria-current={!isDir && current === entry.path ? "true" : undefined}
+        onClick={() => (isDir ? setOpen((o) => !o) : onSelect(entry.path))}
+        onKeyDown={onKey}
+      >
+        {isDir ? <ChevronRight className={`chev ${open ? "open" : ""}`} aria-hidden /> : <span style={{ width: 12 }} />}
+        <Icon aria-hidden />
         <span className="label">{entry.name}</span>
       </button>
+      {isDir && open && (
+        <ul role="group">
+          {entry.children.map((c) => <Node key={c.path} entry={c} current={current} onSelect={onSelect} depth={depth + 1} />)}
+        </ul>
+      )}
     </li>
   );
 }
@@ -48,9 +48,20 @@ interface Props {
 }
 
 export function Navigator({ project, current, outline, onSelect, onJump }: Props) {
+  const ref = useRef<HTMLElement>(null);
+
+  // Up and down move between rows in the whole navigator; left and right are handled by folders.
+  const onKey = (e: React.KeyboardEvent) => {
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    const rows = Array.from(ref.current?.querySelectorAll<HTMLButtonElement>(".tree-row, .outline-row") ?? []);
+    const i = rows.indexOf(document.activeElement as HTMLButtonElement);
+    const next = rows[i + (e.key === "ArrowDown" ? 1 : -1)];
+    if (next) { e.preventDefault(); next.focus(); }
+  };
+
   if (!project) {
     return (
-      <aside className="navigator">
+      <aside className="navigator" ref={ref}>
         <div className="empty-nav">
           <strong>No paper open</strong>
           Open a folder that contains your manuscript and its code. Dabir reads it in place and changes nothing.
@@ -59,10 +70,11 @@ export function Navigator({ project, current, outline, onSelect, onJump }: Props
     );
   }
   return (
-    <aside className="navigator">
+    <aside className="navigator" ref={ref} onKeyDown={onKey}>
       <section className="nav-section">
         <div className="nav-heading"><span>Files</span><span className="count">{countFiles(project.tree)}</span></div>
-        <ul className="tree">
+        <ul className="tree" role="tree" aria-label="Project files" tabIndex={0}
+          onFocus={(e) => { if (e.target === e.currentTarget) e.currentTarget.querySelector<HTMLButtonElement>('.tree-row[aria-current="true"], .tree-row')?.focus(); }}>
           {project.tree.map((e) => <Node key={e.path} entry={e} current={current} onSelect={onSelect} depth={0} />)}
         </ul>
       </section>
@@ -71,7 +83,7 @@ export function Navigator({ project, current, outline, onSelect, onJump }: Props
         <section className="nav-section">
           <div className="nav-heading"><span>Outline</span></div>
           {outline.map((o) => (
-            <button key={`${o.number}-${o.line}`} className={`outline-row l${o.level}`} onClick={() => onJump(o.line)}>
+            <button key={`${o.number}-${o.line}`} className={`outline-row l${o.level}`} onClick={() => onJump(o.line)} title={`Line ${o.line}`}>
               <span className="num">{o.number}</span>
               <span>{o.text}</span>
             </button>
@@ -80,7 +92,10 @@ export function Navigator({ project, current, outline, onSelect, onJump }: Props
       )}
 
       <section className="nav-section">
-        <div className="nav-heading"><span>Changes</span><span className="count">{project.hasGit ? "on main" : "no git"}</span></div>
+        <div className="nav-heading">
+          <span>Changes<span className="sample-tag" title="Real Git status arrives in phase 2">sample</span></span>
+          <span className="count">{project.hasGit ? "on main" : "no git"}</span>
+        </div>
         {project.hasGit ? (
           <div className="changes">
             <div className="change">

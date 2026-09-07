@@ -17,7 +17,7 @@
   --ink: #1d1f24;
   --ink-2: #4b4e57;
   --ink-3: #676a74;
-  --ink-4: #9a9ca4;
+  --ink-4: #7a7c84;
 
   --accent: #a8322d;
   --accent-hover: #8f2823;
@@ -31,8 +31,10 @@
   --warn-wash: #f5ecd6;
   --diff-add: #2f6b3a;
   --diff-add-wash: #e6f1e6;
-  --diff-del: #a8322d;
-  --diff-del-wash: #f6e6e4;
+  --diff-del: #c8102e;
+  --diff-del-wash: #fbe7ea;
+  --focus: -webkit-focus-ring-color;
+  --selection-inactive: rgba(29, 31, 36, 0.08);
 
   --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   --font-doc: "STIX Two Text", "Latin Modern Roman", "Times New Roman", Georgia, serif;
@@ -61,7 +63,8 @@
 
   --titlebar-h: 52px;
   --nav-w: 232px;
-  --inspector-w: 348px;
+  --inspector-w: 380px;
+  --nav-min: 180px; --nav-max: 340px; --inspector-min: 280px; --inspector-max: 480px;
 
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --dur-fast: 120ms;
@@ -80,7 +83,7 @@
     --ink: #ebe9e2;
     --ink-2: #b8b6ae;
     --ink-3: #8f9199;
-    --ink-4: #6a6c74;
+    --ink-4: #8a8c94;
 
     --accent: #e06a63;
     --accent-hover: #ea7f78;
@@ -94,8 +97,9 @@
     --warn-wash: #332c18;
     --diff-add: #7dc48a;
     --diff-add-wash: #1f2e22;
-    --diff-del: #e06a63;
-    --diff-del-wash: #3a2624;
+    --diff-del: #ff6b6b;
+    --diff-del-wash: #3d2224;
+    --selection-inactive: rgba(255, 255, 255, 0.08);
 
     --shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 14px rgba(0, 0, 0, 0.35);
     --shadow-popover: 0 2px 6px rgba(0, 0, 0, 0.5), 0 12px 32px rgba(0, 0, 0, 0.5);
@@ -113,7 +117,7 @@
   --ink: #ebe9e2;
   --ink-2: #b8b6ae;
   --ink-3: #8f9199;
-  --ink-4: #6a6c74;
+  --ink-4: #8a8c94;
 
   --accent: #e06a63;
   --accent-hover: #ea7f78;
@@ -127,9 +131,18 @@
   --warn-wash: #332c18;
   --diff-add: #7dc48a;
   --diff-add-wash: #1f2e22;
-  --diff-del: #e06a63;
-  --diff-del-wash: #3a2624;
+  --diff-del: #ff6b6b;
+  --diff-del-wash: #3d2224;
+  --selection-inactive: rgba(255, 255, 255, 0.08);
 
   --shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 14px rgba(0, 0, 0, 0.35);
   --shadow-popover: 0 2px 6px rgba(0, 0, 0, 0.5), 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+
+/* Increased contrast: pull the quiet greys toward ink and strengthen hairlines. */
+@media (prefers-contrast: more) {
+  :root { --ink-3: #4b4e57; --ink-4: #5d6069; --line: #b9b5ab; --line-strong: #8f8b82; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --ink-3: #c9c7c0; --ink-4: #adabA4; --line: #4b4d54; --line-strong: #6a6c74; }
+  }
 }
