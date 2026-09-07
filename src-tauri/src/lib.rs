@@ -375,16 +375,41 @@ fn agent_run(app: AppHandle, root: String, provider: String, prompt: String) -> 
     let run_id = uuid::Uuid::new_v4().to_string()[..8].to_string();
     let root_p = PathBuf::from(&root);
     let wt = git::worktree_add(&root_p, &run_id)?;
-    let brief = if root_p.join(".dabir").join("PROJECT.md").exists() {
-        "Read .dabir/PROJECT.md first; it holds the project brief, notation and the commands that regenerate figures and tables. Never hand-edit generated artefacts; rerun their command. If you learn something durable, add a one-fact Markdown file under .dabir/memory/ with name and description frontmatter.\n\n"
-    } else { "" };
-    let full = format!("{}{}", brief, prompt);
+    let full = agent_preamble(&root_p, &prompt);
     if let Err(e) = agents::run(app, provider, full, wt.clone(), run_id.clone()) {
         let _ = git::worktree_remove(&root_p, &run_id);
         return Err(e);
     }
     Ok(RunStarted { run_id, worktree: wt.to_string_lossy().to_string() })
 }
+
+/// The minimal context every run starts with: who the paper is, where to read more,
+/// the environment prefix, and the passages most likely relevant to this request.
+fn agent_preamble(root: &Path, prompt: &str) -> String {
+    let has_brief = root.join(".dabir").join("PROJECT.md").exists();
+    if !has_brief {
+        return format!("You are editing a LaTeX paper in a Git worktree. Make the smallest change that does the job and compile before you finish.\n\n{}", prompt);
+    }
+    let mem = memory::read(root).ok();
+    let identity = mem.as_ref().and_then(|m| m.identity.clone()).unwrap_or_default();
+    let prefix = mem.as_ref().and_then(|m| m.env_prefix.clone());
+    let skills = mem.as_ref().map(|m| m.skills.iter().map(|s| s.name.trim_start_matches("dabir-").to_string()).collect::<Vec<_>>().join(", ")).unwrap_or_default();
+    let pack = memory::context_pack(root, prompt, 2200);
+    let mut out = String::new();
+    out.push_str("You are a coauthor on this paper, working in a Git worktree that will be reviewed hunk by hunk before it touches the author's checkout.\n");
+    if !identity.is_empty() { out.push_str(&format!("Paper: {}\n", identity.chars().take(300).collect::<String>())); }
+    out.push_str("Read .dabir/PROJECT.md before changing anything (identity, conventions, repo map, how to run). ");
+    if let Some(p) = prefix { out.push_str(&format!("Run code with the prefix `{}`. ", p)); }
+    if !skills.is_empty() { out.push_str(&format!("Skills in .dabir/skills/: {}. Follow the matching one. ", skills)); }
+    out.push_str("Never hand-edit generated artefacts; rerun their recorded command. Record durable decisions as one-fact files in .dabir/memory/.\n");
+    if !pack.is_empty() { out.push_str("\nLikely relevant places (path:lines):\n"); out.push_str(&pack); }
+    out.push_str("\n---\nRequest:\n");
+    out.push_str(prompt);
+    out
+}
+
+#[tauri::command]
+fn context_pack(root: String, query: String) -> String { memory::context_pack(Path::new(&root), &query, 2200) }
 
 #[tauri::command]
 fn agent_cancel(run_id: String) -> bool { agents::cancel(&run_id) }
@@ -393,7 +418,12 @@ fn agent_cancel(run_id: String) -> bool { agents::cancel(&run_id) }
 fn agent_diff(root: String, run_id: String) -> Result<git::WorktreeDiff, String> { git::worktree_diff(Path::new(&root), &run_id) }
 
 #[tauri::command]
-fn agent_accept(root: String, run_id: String, message: String, picks: Option<Vec<git::Pick>>) -> Result<String, String> { git::worktree_accept(Path::new(&root), &run_id, &message, picks) }
+fn agent_accept(root: String, run_id: String, message: String, picks: Option<Vec<git::Pick>>, provider: Option<String>, prompt: Option<String>) -> Result<String, String> {
+    let root_p = Path::new(&root);
+    let files: Vec<String> = match &picks { Some(ps) => ps.iter().map(|p| p.path.clone()).collect(), None => git::worktree_diff(root_p, &run_id).map(|d| d.changes.iter().map(|c| c.path.clone()).collect()).unwrap_or_default() };
+    memory::log_run(root_p, provider.as_deref().unwrap_or("agent"), prompt.as_deref().unwrap_or(&message), &files);
+    git::worktree_accept(root_p, &run_id, &message, picks)
+}
 
 #[tauri::command]
 fn agent_reject(root: String, run_id: String) -> Result<(), String> { git::worktree_remove(Path::new(&root), &run_id) }
@@ -518,7 +548,7 @@ pub fn run() {
             synctex_forward, synctex_inverse,
             git_status, git_init, git_commit, git_clone,
             agent_providers, agent_run, agent_cancel, agent_diff, agent_accept, agent_reject, agent_pull_request,
-            memory_read, memory_setup, provenance_rerun
+            memory_read, memory_setup, provenance_rerun, context_pack
         ])
         .run(tauri::generate_context!())
         .expect("error while running Dabir");
@@ -567,6 +597,10 @@ mod tests {
         assert_eq!(m.provenance.len(), 1);
         assert!(m.provenance[0].missing);
         assert!(m.pointers.contains(&"AGENTS.md".to_string()));
+        assert_eq!(m.skills.len(), 6, "starter skills");
+        assert!(dir.join(".agents/skills/dabir-compile-and-fix/SKILL.md").exists(), "skill symlink resolves");
+        let pack = memory::context_pack(&dir, "intro section", 2000);
+        assert!(pack.contains("main.tex:"), "context pack finds the manuscript: {}", pack);
         // worktree round trip
         git::commit(&dir, "memory", None).unwrap();
         let wt = git::worktree_add(&dir, "t1").unwrap();
@@ -604,6 +638,17 @@ mod tests {
         let inv = st.inverse(1, 73.0, 145.0).unwrap();
         assert_eq!(inv.line, 13);
         let _ = fs::remove_file(&tmp);
+    }
+
+    /// Regenerate a project's memory scaffold in place. Run with:
+    ///   DABIR_SETUP_DIR=/path/to/paper cargo test setup_dir -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn setup_dir() {
+        let dir = PathBuf::from(std::env::var("DABIR_SETUP_DIR").expect("DABIR_SETUP_DIR"));
+        let main = find_main_tex(&dir);
+        let written = memory::setup(&dir, main.as_deref()).unwrap();
+        eprintln!("wrote: {:?}", written);
     }
 
     /// Full pipeline against a real agent CLI. Run with:

@@ -552,3 +552,9 @@ button { background: none; border: 0; padding: 0; cursor: default; }
 .hunk { border-top: 1px solid var(--line); }
 .hunk .pickhunk { display: flex; align-items: center; gap: 6px; padding: 3px var(--space-3) 0; font-family: var(--font-mono); font-size: 10px; color: var(--ink-4); }
 .hunk.off pre { opacity: .4; }
+
+/* Memory: skills and runs */
+.skills { display: flex; flex-wrap: wrap; gap: 4px; }
+.skill { font-size: var(--text-xs); padding: 2px 8px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--raised); color: var(--ink); }
+.skill:hover { border-color: var(--accent); color: var(--accent); }
+.runline { display: block; font-size: var(--text-xs); color: var(--ink-2); padding: 3px 0; border-bottom: 1px solid var(--line); line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

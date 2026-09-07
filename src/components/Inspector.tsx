@@ -140,7 +140,7 @@ export function Inspector({ project, askFocus, onChanged, onOpenFile, onNote }: 
       else { partial = true; if (hunks.length) picks.push({ path: f.name, hunks }); }
     }
     if (picks.length === 0) { onNote("Nothing selected to accept."); setBusy(false); return; }
-    try { const id = await agentAccept(project.root, run.runId, message.trim() || run.prompt, partial ? picks : undefined); setRun({ phase: "done", text: `Committed ${id} to your checkout${partial ? " (only the selected changes; the rest was discarded)" : ""}.` }); onChanged(); refreshMemory(); }
+    try { const id = await agentAccept(project.root, run.runId, message.trim() || run.prompt, partial ? picks : undefined, run.provider, run.prompt); setRun({ phase: "done", text: `Committed ${id} to your checkout${partial ? " (only the selected changes; the rest was discarded)" : ""}.` }); onChanged(); refreshMemory(); }
     catch (e) { onNote(String(e)); } finally { setBusy(false); }
   };
   const reject = async () => {
@@ -261,11 +261,18 @@ export function Inspector({ project, askFocus, onChanged, onOpenFile, onNote }: 
           ) : (
             <>
               <div className="field">
-                <label>Project brief</label>
+                <label>Identity</label>
                 <button className="brief" onClick={() => onOpenFile(memory.briefPath)} title="Open .dabir/PROJECT.md">
-                  {memory.brief.split("\n").filter((l) => l.trim() && !l.startsWith("#")).slice(0, 3).join(" ").slice(0, 220)}…
+                  {memory.identity ?? memory.brief.split("\n").filter((l) => l.trim() && !l.startsWith("#")).slice(0, 2).join(" ").slice(0, 220)}
                 </button>
-                <span className="target">Read by {memory.pointers.length ? memory.pointers.join(", ") : "no agent yet"}.</span>
+                <span className="target">Every run starts with this line, a pointer to the brief, the environment prefix{memory.envPrefix ? <> <code>{memory.envPrefix}</code></> : " (none set)"}, and the passages most relevant to the request. Read by {memory.pointers.length ? memory.pointers.join(", ") : "no agent yet"}.</span>
+              </div>
+              <div className="field">
+                <label>Skills</label>
+                <div className="skills">
+                  {memory.skills.map((sk) => <button key={sk.path} className="skill" onClick={() => onOpenFile(sk.path)} title={sk.description}>{sk.name.replace(/^dabir-/, "")}</button>)}
+                  {memory.skills.length === 0 && <span className="target">No skills yet. Set Up Memory adds six playbooks.</span>}
+                </div>
               </div>
               <div className="field">
                 <label>Provenance</label>
@@ -283,6 +290,12 @@ export function Inspector({ project, askFocus, onChanged, onOpenFile, onNote }: 
                   </div>
                 ))}
               </div>
+              {memory.runs.length > 0 && (
+                <div className="field">
+                  <label>Accepted runs</label>
+                  {memory.runs.map((r, i) => <span key={i} className="runline">{r}</span>)}
+                </div>
+              )}
               <div className="field">
                 <label>Facts</label>
                 {memory.facts.length === 0 && <span className="target">No facts yet. Agents add one file per durable decision under <code>.dabir/memory/</code>.</span>}
