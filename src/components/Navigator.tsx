@@ -1,6 +1,6 @@
-import { useRef, useState } from "react";
-import { ChevronRight, FileText, BookMarked, Code2, Image, Database, File, Folder } from "lucide-react";
-import type { Entry, Project } from "../lib/backend";
+import { useEffect, useRef, useState } from "react";
+import { ChevronRight, FileText, BookMarked, Code2, Image, Database, File, Folder, GitCommitHorizontal } from "lucide-react";
+import type { Entry, GitStatus, Project } from "../lib/backend";
 import type { OutlineItem } from "../lib/latex";
 
 const ICON = { tex: FileText, bib: BookMarked, code: Code2, figure: Image, data: Database, other: File, dir: Folder } as const;
@@ -16,43 +16,49 @@ function Node({ entry, current, onSelect, depth }: { entry: Entry; current: stri
   };
   return (
     <li role="treeitem" aria-level={depth + 1} aria-expanded={isDir ? open : undefined} aria-selected={current === entry.path}>
-      <button
-        className="tree-row" tabIndex={-1}
-        aria-current={!isDir && current === entry.path ? "true" : undefined}
-        onClick={() => (isDir ? setOpen((o) => !o) : onSelect(entry.path))}
-        onKeyDown={onKey}
-      >
+      <button className="tree-row" tabIndex={-1} aria-current={!isDir && current === entry.path ? "true" : undefined}
+        onClick={() => (isDir ? setOpen((o) => !o) : onSelect(entry.path))} onKeyDown={onKey}>
         {isDir ? <ChevronRight className={`chev ${open ? "open" : ""}`} aria-hidden /> : <span style={{ width: 12 }} />}
         <Icon aria-hidden />
         <span className="label">{entry.name}</span>
       </button>
-      {isDir && open && (
-        <ul role="group">
-          {entry.children.map((c) => <Node key={c.path} entry={c} current={current} onSelect={onSelect} depth={depth + 1} />)}
-        </ul>
-      )}
+      {isDir && open && <ul role="group">{entry.children.map((c) => <Node key={c.path} entry={c} current={current} onSelect={onSelect} depth={depth + 1} />)}</ul>}
     </li>
   );
 }
 
-function countFiles(entries: Entry[]): number {
-  return entries.reduce((n, e) => n + (e.kind === "dir" ? countFiles(e.children) : 1), 0);
+const countFiles = (entries: Entry[]): number => entries.reduce((n, e) => n + (e.kind === "dir" ? countFiles(e.children) : 1), 0);
+
+function ago(when: number): string {
+  const s = Math.max(0, Date.now() / 1000 - when);
+  if (s < 3600) return `${Math.max(1, Math.round(s / 60))} min ago`;
+  if (s < 86400) return `${Math.round(s / 3600)} h ago`;
+  return `${Math.round(s / 86400)} d ago`;
 }
 
 interface Props {
   project: Project | null;
   current: string | null;
   outline: OutlineItem[];
+  git: GitStatus | null;
+  commitFocus: number;
+  busy: boolean;
   onSelect: (path: string) => void;
   onJump: (line: number) => void;
+  onInitGit: () => void;
+  onCommit: (message: string) => Promise<void>;
 }
 
-export function Navigator({ project, current, outline, onSelect, onJump }: Props) {
+export function Navigator({ project, current, outline, git, commitFocus, busy, onSelect, onJump, onInitGit, onCommit }: Props) {
   const ref = useRef<HTMLElement>(null);
+  const commitInput = useRef<HTMLInputElement>(null);
+  const [message, setMessage] = useState("");
 
-  // Up and down move between rows in the whole navigator; left and right are handled by folders.
+  useEffect(() => { if (commitFocus) commitInput.current?.focus(); }, [commitFocus]);
+
   const onKey = (e: React.KeyboardEvent) => {
     if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    if ((e.target as HTMLElement).tagName === "INPUT") return;
     const rows = Array.from(ref.current?.querySelectorAll<HTMLButtonElement>(".tree-row, .outline-row") ?? []);
     const i = rows.indexOf(document.activeElement as HTMLButtonElement);
     const next = rows[i + (e.key === "ArrowDown" ? 1 : -1)];
@@ -62,13 +68,14 @@ export function Navigator({ project, current, outline, onSelect, onJump }: Props
   if (!project) {
     return (
       <aside className="navigator" ref={ref}>
-        <div className="empty-nav">
-          <strong>No paper open</strong>
-          Open a folder that contains your manuscript and its code. Dabir reads it in place and changes nothing.
-        </div>
+        <div className="empty-nav"><strong>No paper open</strong>Open a folder that contains your manuscript and its code. Dabir reads it in place and changes nothing.</div>
       </aside>
     );
   }
+
+  const changes = git?.changes ?? [];
+  const submit = async () => { if (!message.trim() || busy) return; await onCommit(message.trim()); setMessage(""); };
+
   return (
     <aside className="navigator" ref={ref} onKeyDown={onKey}>
       <section className="nav-section">
@@ -84,8 +91,7 @@ export function Navigator({ project, current, outline, onSelect, onJump }: Props
           <div className="nav-heading"><span>Outline</span></div>
           {outline.map((o) => (
             <button key={`${o.number}-${o.line}`} className={`outline-row l${o.level}`} onClick={() => onJump(o.line)} title={`Line ${o.line}`}>
-              <span className="num">{o.number}</span>
-              <span>{o.text}</span>
+              <span className="num">{o.number}</span><span>{o.text}</span>
             </button>
           ))}
         </section>
@@ -93,22 +99,43 @@ export function Navigator({ project, current, outline, onSelect, onJump }: Props
 
       <section className="nav-section">
         <div className="nav-heading">
-          <span>Changes<span className="sample-tag" title="Real Git status arrives in phase 2">sample</span></span>
-          <span className="count">{project.hasGit ? "on main" : "no git"}</span>
+          <span>Changes</span>
+          <span className="count">{git?.isRepo ? (git.branch ? `on ${git.branch}` : "no commits") : "no git"}</span>
         </div>
-        {project.hasGit ? (
-          <div className="changes">
-            <div className="change">
-              <span className="file">figures/psnr-vs-noise.pdf</span>
-              <span className="meta"><span>regenerated by agent</span><span className="stat"><span className="add">binary</span></span></span>
-            </div>
-            <div className="change">
-              <span className="file">main.tex</span>
-              <span className="meta"><span>you, unsaved</span><span className="stat"><span className="add">+6</span><span className="del">−4</span></span></span>
-            </div>
+        {!git?.isRepo ? (
+          <div className="empty-nav">
+            This folder is not a Git repository yet. Agent runs need one, so each run can work on its own branch.
+            <div style={{ marginTop: 8 }}><button className="btn" onClick={onInitGit}>Initialise Repository</button></div>
           </div>
+        ) : changes.length === 0 ? (
+          <div className="empty-nav">No uncommitted changes.</div>
         ) : (
-          <div className="empty-nav">This folder is not a Git repository yet. Dabir can initialise one when you make your first change.</div>
+          <>
+            <div className="changes">
+              {changes.map((c) => (
+                <div className="change" key={c.path}>
+                  <span className="file" title={c.path}>{c.path}</span>
+                  <span className="meta"><span>{c.status}</span>
+                    <span className="stat">{c.binary ? <span className="add">binary</span> : <><span className="add">+{c.add}</span><span className="del">−{c.del}</span></>}</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div className="commit-box">
+              <input ref={commitInput} value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Commit message" aria-label="Commit message"
+                onKeyDown={(e) => { if (e.key === "Enter") submit(); }} disabled={busy} />
+              <button className="btn" onClick={submit} disabled={!message.trim() || busy} title="Commit all changes (⇧⌘C)"><GitCommitHorizontal /> Commit</button>
+            </div>
+          </>
+        )}
+        {git?.recent && git.recent.length > 0 && (
+          <div className="recent">
+            {git.recent.slice(0, 3).map((c) => (
+              <div className="commit-row" key={c.id} title={`${c.id} · ${c.author}`}>
+                <span className="id">{c.id}</span><span className="summary">{c.summary}</span><span className="when">{ago(c.when)}</span>
+              </div>
+            ))}
+          </div>
         )}
       </section>
     </aside>
