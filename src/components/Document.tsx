@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef } from "react";
-import { AlertCircle, AlertTriangle, CheckCircle2, FolderOpen, GitBranch, Loader2, Circle } from "lucide-react";
+import { AlertCircle, AlertTriangle, CheckCircle2, FolderOpen, GitBranch, Loader2, Circle, Upload } from "lucide-react";
 import katex from "katex";
-import { parseDocument, type Block, type Inline } from "../lib/latex";
+import { parseDocument, type BibEntry, type Block, type Inline } from "../lib/latex";
 import type { Project } from "../lib/backend";
 import type { ViewMode } from "./Toolbar";
 import type { CompileState } from "../App";
@@ -14,6 +14,7 @@ function Math({ tex, display, macros }: { tex: string; display: boolean; macros:
 }
 
 let currentMacros: Record<string, string> = {};
+let currentBib: Record<string, BibEntry> = {};
 
 /** Pull \newcommand definitions from the preamble so KaTeX can expand them. */
 function collectMacros(src: string): Record<string, string> {
@@ -41,7 +42,7 @@ function Inlines({ items }: { items: Inline[] }) {
           case "math": return <Math key={i} tex={it.tex} display={false} macros={currentMacros} />;
           case "em": return <em key={i}>{it.text}</em>;
           case "bold": return <b key={i}>{it.text}</b>;
-          case "cite": return <span key={i} className="cite" title={`\\cite{${it.keys.join(", ")}}`}>{it.keys.map(citeLabel).join("; ")}</span>;
+          case "cite": return <span key={i} className="cite" title={it.keys.map((k) => currentBib[k]?.title ?? k).join("\n")}>{it.keys.map((k) => currentBib[k]?.label ?? citeLabel(k)).join("; ")}</span>;
           case "ref": return <span key={i} className="ref" title={`\\ref{${it.key}}`}>{it.key.replace(/^(fig|eq|sec|tab):/, "")}</span>;
           case "cmd": return <span key={i} className="unknown" title="Shown as source: this command has no visual form yet">{it.tex}</span>;
         }
@@ -96,6 +97,7 @@ interface Props {
   project: Project | null;
   file: string | null;
   source: string | null;
+  bib: Record<string, BibEntry>;
   mode: ViewMode;
   jumpLine: number | null;
   compileState: CompileState;
@@ -105,6 +107,7 @@ interface Props {
   onDismissError: () => void;
   onToggleLog: () => void;
   onOpen: () => void;
+  onImport: () => void;
   onOutline: (o: ReturnType<typeof parseDocument>["outline"]) => void;
   onSourceChange: (text: string) => void;
   onSave: () => void;
@@ -119,6 +122,7 @@ export function Document(p: Props) {
   const { project, source, mode, jumpLine, compileState, showLog, error } = p;
   const parsed = useMemo(() => (source && mode === "visual" ? parseDocument(source) : null), [source, mode]);
   currentMacros = useMemo(() => (source ? collectMacros(source) : {}), [source]);
+  currentBib = p.bib;
   const scroll = useRef<HTMLDivElement>(null);
 
   useEffect(() => { if (source) p.onOutline(parseDocument(source).outline); else p.onOutline([]); }, [source]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -145,6 +149,7 @@ export function Document(p: Props) {
             <p>Dabir works on a folder: your manuscript, its figures, and the code that made them. Nothing is uploaded, nothing is converted.</p>
             <div className="actions">
               <button className="btn primary" onClick={p.onOpen}><FolderOpen /> Open Folder…</button>
+              <button className="btn" onClick={p.onImport} title="Unpack an Overleaf source zip into a folder"><Upload /> Import from Overleaf…</button>
               <button className="btn" disabled title="Coming in phase 2"><GitBranch /> Clone from GitHub…</button>
             </div>
             <div className="hint">Try the bundled sample at <code>examples/isgd-tci</code>. Press <kbd>⌘/</kbd> for shortcuts.</div>

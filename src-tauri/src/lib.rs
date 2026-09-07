@@ -152,6 +152,44 @@ fn read_binary(path: String) -> Result<tauri::ipc::Response, String> {
         .map_err(|e| format!("Could not read {}: {}", path, e))
 }
 
+// ---------------------------------------------------------------- import
+
+/// Unpack an Overleaf project zip (File › Download › Source) into a new folder
+/// next to the zip, or into `dest` when given. Returns the folder path.
+#[tauri::command]
+fn import_overleaf_zip(zip_path: String, dest: Option<String>) -> Result<String, String> {
+    let zip_path = PathBuf::from(&zip_path);
+    let file = fs::File::open(&zip_path).map_err(|e| format!("Could not open {}: {}", zip_path.display(), e))?;
+    let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("Not a zip file: {}", e))?;
+    let stem = zip_path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or("overleaf-project".into());
+    let target = match dest {
+        Some(d) => PathBuf::from(d),
+        None => zip_path.parent().unwrap_or(Path::new(".")).join(&stem),
+    };
+    if target.exists() && fs::read_dir(&target).map(|mut d| d.next().is_some()).unwrap_or(false) {
+        return Err(format!("{} already exists and is not empty", target.display()));
+    }
+    fs::create_dir_all(&target).map_err(|e| e.to_string())?;
+    for i in 0..archive.len() {
+        let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
+        let Some(rel) = entry.enclosed_name().map(|p| p.to_path_buf()) else { continue };
+        let out = target.join(rel);
+        if entry.is_dir() {
+            fs::create_dir_all(&out).map_err(|e| e.to_string())?;
+        } else {
+            if let Some(parent) = out.parent() { fs::create_dir_all(parent).map_err(|e| e.to_string())?; }
+            let mut f = fs::File::create(&out).map_err(|e| e.to_string())?;
+            std::io::copy(&mut entry, &mut f).map_err(|e| e.to_string())?;
+        }
+    }
+    // Overleaf zips have no .gitignore; give the project the Dabir defaults.
+    let gi = target.join(".gitignore");
+    if !gi.exists() {
+        let _ = fs::write(&gi, ".dabir/build/\n.dabir/index/\n*.aux\n*.log\n*.bbl\n*.blg\n*.out\n*.synctex.gz\n");
+    }
+    Ok(target.to_string_lossy().to_string())
+}
+
 // ---------------------------------------------------------------- compile
 
 #[derive(Serialize, Clone, Debug)]
@@ -297,6 +335,7 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
 
     let file = SubmenuBuilder::new(app, "File")
         .item(&MenuItemBuilder::with_id("open", "Open Paper…").accelerator("Cmd+O").build(app)?)
+        .item(&MenuItemBuilder::with_id("import-overleaf", "Import from Overleaf…").build(app)?)
         .item(&MenuItemBuilder::with_id("clone", "Clone from GitHub…").accelerator("Cmd+Shift+O").enabled(false).build(app)?)
         .separator()
         .item(&MenuItemBuilder::with_id("save", "Save").accelerator("Cmd+S").build(app)?)
@@ -368,7 +407,37 @@ pub fn run() {
         .on_menu_event(|app, event| {
             let _ = app.emit("menu", event.id().0.clone());
         })
-        .invoke_handler(tauri::generate_handler![open_project, read_text, write_text, read_binary, compile])
+        .invoke_handler(tauri::generate_handler![open_project, read_text, write_text, read_binary, compile, import_overleaf_zip])
         .run(tauri::generate_context!())
         .expect("error while running Dabir");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_tectonic_diagnostics() {
+        let log = "note: generating format\nerror: main.tex:36: Unable to load picture or PDF file 'figures/x.pdf'\nwarning: main.tex:40: Citation `foo' undefined\nerror: something bad happened inside XeTeX; its output follows:\n";
+        let d = parse_log(log);
+        assert_eq!(d.len(), 3);
+        assert_eq!(d[0].severity, "error");
+        assert_eq!(d[0].file.as_deref(), Some("main.tex"));
+        assert_eq!(d[0].line, Some(36));
+        assert_eq!(d[1].severity, "warning");
+        assert_eq!(d[1].line, Some(40));
+        assert_eq!(d[2].line, None);
+    }
+
+    #[test]
+    fn imports_overleaf_zip() {
+        let zip = std::env::var("DABIR_TEST_ZIP").unwrap_or_default();
+        if zip.is_empty() { return; }
+        let dest = std::env::temp_dir().join(format!("dabir-import-{}", std::process::id()));
+        let out = import_overleaf_zip(zip, Some(dest.to_string_lossy().to_string())).unwrap();
+        let p = open_project(out).unwrap();
+        assert!(p.main_tex.is_some(), "main.tex should be detected");
+        assert!(dest.join(".gitignore").exists());
+        let _ = fs::remove_dir_all(dest);
+    }
 }

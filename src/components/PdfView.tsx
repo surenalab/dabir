@@ -6,13 +6,16 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.m
 
 export function PdfView({ path, stamp }: { path: string | null; stamp: number }) {
   const host = useRef<HTMLDivElement>(null);
+  const outer = useRef<HTMLDivElement>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [pages, setPages] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     const el = host.current;
     if (!el) return;
     el.replaceChildren();
+    setPages(0);
     if (!path) { setNote("Compile the paper to see its PDF here."); return; }
     setNote(null);
     (async () => {
@@ -21,7 +24,8 @@ export function PdfView({ path, stamp }: { path: string | null; stamp: number })
         if (bytes.length === 0) { setNote("The compiled PDF is only available in the desktop app."); return; }
         const doc = await pdfjs.getDocument({ data: bytes }).promise;
         if (cancelled) return;
-        const width = Math.min(el.clientWidth - 32, 820);
+        const avail = (outer.current?.clientWidth ?? 800) - 32;
+        const width = Math.max(320, Math.min(avail, 820));
         const dpr = window.devicePixelRatio || 1;
         for (let n = 1; n <= doc.numPages; n++) {
           const page = await doc.getPage(n);
@@ -35,6 +39,7 @@ export function PdfView({ path, stamp }: { path: string | null; stamp: number })
           canvas.setAttribute("aria-label", `Page ${n} of ${doc.numPages}`);
           el.appendChild(canvas);
           await page.render({ canvas, canvasContext: canvas.getContext("2d")!, viewport }).promise;
+          if (!cancelled) setPages(n);
         }
       } catch (e) {
         if (!cancelled) setNote(`Could not render the PDF: ${String(e)}`);
@@ -44,7 +49,7 @@ export function PdfView({ path, stamp }: { path: string | null; stamp: number })
   }, [path, stamp]);
 
   return (
-    <div className="pdf">
+    <div className="pdf" ref={outer} aria-label={pages ? `${pages} page PDF` : undefined}>
       <div ref={host} style={{ display: "contents" }} />
       {note && <p className="note">{note}</p>}
     </div>
