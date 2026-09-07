@@ -4,6 +4,7 @@
 @import "@fontsource/ibm-plex-mono/400.css";
 @import "@fontsource/ibm-plex-mono/400-italic.css";
 @import "@fontsource/ibm-plex-mono/500.css";
+@import "katex/dist/katex.min.css";
 @import "./tokens.css";
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -153,16 +154,12 @@ button { background: none; border: 0; padding: 0; cursor: default; }
 .outline-row.l2 { padding-left: 22px; }
 .outline-row.l3 { padding-left: 36px; font-size: var(--text-sm); }
 
-.changes { display: flex; flex-direction: column; gap: var(--space-1); }
-.change {
-  display: grid; grid-template-columns: 1fr auto; gap: 2px 8px;
-  padding: 6px var(--space-2); border-radius: var(--radius-sm);
-  font-size: var(--text-sm);
-}
+.changes { display: flex; flex-direction: column; gap: 2px; }
+.change { display: flex; flex-direction: column; gap: 1px; padding: 5px var(--space-2); border-radius: var(--radius-sm); font-size: var(--text-xs); }
 .change:hover { background: rgba(29,31,36,0.05); }
-.change .file { color: var(--ink); font-family: var(--font-mono); font-size: var(--text-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.change .who { color: var(--ink-3); grid-column: 1; }
-.change .stat { grid-row: 1 / span 2; align-self: center; font-family: var(--font-mono); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
+.change .file { color: var(--ink); font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.change .meta { display: flex; justify-content: space-between; gap: var(--space-2); color: var(--ink-3); }
+.change .stat { font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .change .stat .add { color: var(--diff-add); }
 .change .stat .del { color: var(--diff-del); margin-left: 4px; }
 
@@ -203,6 +200,7 @@ button { background: none; border: 0; padding: 0; cursor: default; }
   margin: .6em 0 1em; padding: .5em 1.2em .5em 2em;
   font-style: italic;
 }
+.page .eq .katex-display { margin: 0; text-align: left; }
 .page .eq .tex { font-family: var(--font-mono); font-style: normal; font-size: .8em; color: var(--ink-2); white-space: pre-wrap; }
 .page .eq .tag { font-style: normal; color: var(--ink-3); font-variant-numeric: tabular-nums; }
 .page .figure {
