@@ -28,7 +28,8 @@ export interface WorktreeDiff { patch: string; changes: Change[] }
 
 export interface Fact { name: string; description: string; body: string; path: string }
 export interface Artefact { artefact: string; command: string; inputs: string[]; producedAt: string | null; commit: string | null; dataHash: string | null; stale: boolean; missing: boolean }
-export interface Memory { brief: string | null; briefPath: string; facts: Fact[]; provenance: Artefact[]; pointers: string[] }
+export interface Skill { name: string; description: string; path: string }
+export interface Memory { brief: string | null; briefPath: string; identity: string | null; envPrefix: string | null; facts: Fact[]; skills: Skill[]; runs: string[]; provenance: Artefact[]; pointers: string[] }
 export interface RunOutput { ok: boolean; output: string; millis: number }
 
 export const native = isTauri();
@@ -170,9 +171,13 @@ export async function agentDiff(root: string, runId: string): Promise<WorktreeDi
   return invoke<WorktreeDiff>("agent_diff", { root, runId });
 }
 export interface Pick { path: string; hunks: number[] | null }
-export async function agentAccept(root: string, runId: string, message: string, picks?: Pick[]): Promise<string> {
+export async function agentAccept(root: string, runId: string, message: string, picks: Pick[] | undefined, provider: string, prompt: string): Promise<string> {
   if (!native) { await wait(400); return "c1d2e3f"; }
-  return invoke<string>("agent_accept", { root, runId, message, picks: picks ?? null });
+  return invoke<string>("agent_accept", { root, runId, message, picks: picks ?? null, provider, prompt });
+}
+export async function contextPack(root: string, query: string): Promise<string> {
+  if (!native) return "main.tex:38-52\n\\subsection{Guided sampling}\n…";
+  return invoke<string>("context_pack", { root, query });
 }
 export async function compileCancel(): Promise<boolean> { return native ? invoke<boolean>("compile_cancel") : true; }
 export async function agentReject(root: string, runId: string): Promise<void> { if (native) await invoke("agent_reject", { root, runId }); }
@@ -185,7 +190,10 @@ export async function agentPullRequest(root: string, runId: string, message: str
 
 export async function memoryRead(root: string): Promise<Memory> {
   if (!native) return {
-    brief: "# Project brief\n\n## Claim\nA density condition on the mask makes diffusion-guided reconstruction well-posed…", briefPath: `${root}/.dabir/PROJECT.md`,
+    brief: "# Injective Sampling…\n\n## Identity\nWe study when a masked measurement operator admits a unique reconstruction under a diffusion prior…", briefPath: `${root}/.dabir/PROJECT.md`,
+    identity: "We study when a masked measurement operator admits a unique reconstruction under a diffusion prior.", envPrefix: "",
+    skills: ["rerun-experiment", "update-figure-and-text", "address-reviewer", "tighten-prose", "check-references", "compile-and-fix"].map((n) => ({ name: `dabir-${n}`, description: "", path: `${root}/.dabir/skills/${n}/SKILL.md` })),
+    runs: ["2026-09-07 · grok · Rerun the noise sweep to σ = 0.3 · figures/psnr-vs-noise.pdf, tables/psnr-sweep.tex, main.tex"],
     facts: [{ name: "reviewer-2-injectivity-proof", description: "Reviewer 2 asked for the injectivity constant to be made explicit; addressed in Appendix A", body: "", path: `${root}/.dabir/memory/reviewer-2-injectivity-proof.md` }],
     provenance: [
       { artefact: "figures/psnr-vs-noise.pdf", command: "python code/sweep.py --sigma 0.3", inputs: ["code/sweep.py"], producedAt: "2026-09-05", commit: "a41b9c2", dataHash: null, stale: false, missing: false },
