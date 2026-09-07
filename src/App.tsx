@@ -6,7 +6,7 @@ import { Inspector } from "./components/Inspector";
 import { ShortcutSheet } from "./components/ShortcutSheet";
 import { CloneSheet } from "./components/CloneSheet";
 import {
-  compile as runCompile, gitClone, gitCommit, gitInit, gitStatus, importOverleaf, native, onMenu, onWindowFocus,
+  compile as runCompile, compileCancel, gitClone, gitCommit, gitInit, gitStatus, importOverleaf, native, onMenu, onWindowFocus,
   openProject, pickFolder, readText, setWindowTitle, synctexForward, synctexInverse, writeText,
   type CompileResult, type GitStatus, type PdfPos, type Project,
 } from "./lib/backend";
@@ -240,7 +240,7 @@ export default function App() {
   return (
     <div className={cls} style={{ "--nav-w": `${navW}px`, "--inspector-w": `${inspW}px` } as React.CSSProperties}>
       <Toolbar project={project} file={file} dirty={dirty} mode={mode} navOpen={navOpen} inspectorOpen={inspectorOpen}
-        compiling={compileState.status === "running"} onMode={setMode} onToggleNav={toggleNav} onToggleInspector={toggleInspector} onOpen={open} onCompile={compile} />
+        compiling={compileState.status === "running"} onMode={setMode} onToggleNav={toggleNav} onToggleInspector={toggleInspector} onOpen={open} onCompile={compile} onCancelCompile={() => compileCancel()} />
       <Navigator project={project} current={file} outline={outline} git={git} commitFocus={commitFocus} busy={gitBusy}
         onSelect={selectFile} onJump={(l) => jumpTo(l)} onInitGit={initGit} onCommit={commitAll} />
       <Document project={project} file={file} source={source} bib={bib} mode={mode} jumpLine={jumpLine} jumpStamp={jumpStamp}

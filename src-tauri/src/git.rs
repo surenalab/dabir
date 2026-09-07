@@ -212,23 +212,63 @@ pub fn worktree_diff(root: &Path, run_id: &str) -> Result<WorktreeDiff, String> 
     Ok(WorktreeDiff { patch: String::from_utf8_lossy(&patch.stdout).to_string(), changes })
 }
 
-/// Apply the worktree's changes to the user's checkout and commit them there.
-/// With `paths`, only those files are applied and committed; the rest is discarded with the worktree.
-pub fn worktree_accept(root: &Path, run_id: &str, message: &str, paths: Option<Vec<String>>) -> Result<String, String> {
-    let dir = worktree_dir(root, run_id);
-    let mut args: Vec<String> = ["diff", "--cached", "--binary", "HEAD"].iter().map(|s| s.to_string()).collect();
-    let selected: Vec<String> = match &paths {
-        Some(ps) if !ps.is_empty() => { args.push("--".into()); args.extend(ps.iter().cloned()); ps.clone() }
-        _ => {
-            let stat = Command::new("git").current_dir(&dir).args(["diff", "--cached", "--name-only", "HEAD"]).output().map_err(|e| e.to_string())?;
-            String::from_utf8_lossy(&stat.stdout).lines().map(|l| l.to_string()).filter(|l| !l.is_empty()).collect()
+#[derive(serde::Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct Pick { pub path: String, pub hunks: Option<Vec<usize>> }
+
+/// Keep only the selected files and hunks of a unified diff. Binary files are all or nothing.
+pub fn filter_patch(patch: &str, picks: &[Pick]) -> String {
+    let mut out = String::new();
+    let mut file_block: Vec<&str> = vec![];
+    let flush = |block: &Vec<&str>, out: &mut String| {
+        if block.is_empty() { return; }
+        let header = block[0];
+        let Some(name) = header.strip_prefix("diff --git a/").and_then(|r| r.split(" b/").next()) else { return };
+        let Some(pick) = picks.iter().find(|p| p.path == name) else { return };
+        let first_hunk = block.iter().position(|l| l.starts_with("@@"));
+        match (&pick.hunks, first_hunk) {
+            (Some(wanted), Some(h0)) => {
+                let mut kept: Vec<&str> = block[..h0].to_vec();
+                let mut idx = 0usize;
+                let mut i = h0;
+                let mut any = false;
+                while i < block.len() {
+                    let mut j = i + 1;
+                    while j < block.len() && !block[j].starts_with("@@") { j += 1; }
+                    if wanted.contains(&idx) { kept.extend_from_slice(&block[i..j]); any = true; }
+                    idx += 1;
+                    i = j;
+                }
+                if any { for l in kept { out.push_str(l); out.push('\n'); } }
+            }
+            _ => { for l in block { out.push_str(l); out.push('\n'); } }
         }
     };
-    let patch = Command::new("git").current_dir(&dir).args(&args).output().map_err(|e| e.to_string())?;
-    if !patch.stdout.is_empty() {
+    for line in patch.lines() {
+        if line.starts_with("diff --git ") { flush(&file_block, &mut out); file_block = vec![line]; }
+        else if !file_block.is_empty() { file_block.push(line); }
+    }
+    flush(&file_block, &mut out);
+    out
+}
+
+/// Apply the worktree's changes to the user's checkout and commit them there.
+/// With `paths`, only those files are applied and committed; the rest is discarded with the worktree.
+pub fn worktree_accept(root: &Path, run_id: &str, message: &str, picks: Option<Vec<Pick>>) -> Result<String, String> {
+    let dir = worktree_dir(root, run_id);
+    let full = Command::new("git").current_dir(&dir).args(["diff", "--cached", "--binary", "HEAD"]).output().map_err(|e| e.to_string())?;
+    let full = String::from_utf8_lossy(&full.stdout).to_string();
+    let (patch, selected): (String, Vec<String>) = match &picks {
+        Some(ps) if !ps.is_empty() => (filter_patch(&full, ps), ps.iter().map(|p| p.path.clone()).collect()),
+        _ => {
+            let stat = Command::new("git").current_dir(&dir).args(["diff", "--cached", "--name-only", "HEAD"]).output().map_err(|e| e.to_string())?;
+            (full.clone(), String::from_utf8_lossy(&stat.stdout).lines().map(|l| l.to_string()).filter(|l| !l.is_empty()).collect())
+        }
+    };
+    if !patch.trim().is_empty() {
         let mut child = Command::new("git").current_dir(root).args(["apply", "--3way", "--index", "-"]).stdin(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn().map_err(|e| e.to_string())?;
         use std::io::Write;
-        child.stdin.take().unwrap().write_all(&patch.stdout).map_err(|e| e.to_string())?;
+        child.stdin.take().unwrap().write_all(patch.as_bytes()).map_err(|e| e.to_string())?;
         let out = child.wait_with_output().map_err(|e| e.to_string())?;
         if !out.status.success() { return Err(format!("Could not apply the agent's changes: {}", String::from_utf8_lossy(&out.stderr))); }
     }

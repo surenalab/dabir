@@ -144,6 +144,18 @@ fn parse_line(id: &str, line: &str) -> Vec<(String, String, Option<String>, Opti
                     }
                     out.push(("done".into(), text, None, Some(!err)));
                 }
+                Some("tool_call") if v["subtype"] == "started" => {
+                    // Cursor: {"tool_call": {"shellToolCall": {"args": {...}}}}
+                    if let Some(obj) = v["tool_call"].as_object() {
+                        if let Some((k, val)) = obj.iter().next() {
+                            let name = k.trim_end_matches("ToolCall");
+                            let name = format!("{}{}", name[..1].to_uppercase(), &name[1..]);
+                            let args = &val["args"];
+                            let detail = args.get("command").or(args.get("path")).or(args.get("file_path")).or(args.get("pattern")).or(args.get("query")).map(short).unwrap_or_else(|| short(args));
+                            out.push(("tool".into(), detail, Some(name), None));
+                        }
+                    }
+                }
                 Some("system") => {
                     if v["subtype"] == "api_retry" {
                         let e = v["error"].as_str().unwrap_or("");

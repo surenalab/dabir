@@ -266,6 +266,14 @@ fn parse_log(log: &str) -> Vec<Diagnostic> {
     out
 }
 
+static COMPILE_PID: std::sync::Mutex<Option<u32>> = std::sync::Mutex::new(None);
+
+#[tauri::command]
+fn compile_cancel() -> bool {
+    let pid = COMPILE_PID.lock().unwrap().take();
+    match pid { Some(pid) => { let _ = Command::new("kill").arg(pid.to_string()).output(); true } None => false }
+}
+
 #[tauri::command]
 fn compile(main_tex: String) -> Result<CompileResult, String> {
     let main = PathBuf::from(&main_tex);
@@ -290,14 +298,22 @@ fn compile(main_tex: String) -> Result<CompileResult, String> {
     };
 
     let started = std::time::Instant::now();
-    let output = Command::new(&tectonic)
+    let child = Command::new(&tectonic)
         .current_dir(root)
         .args(["-X", "compile", "--keep-logs", "--synctex", "--outdir"])
         .arg(&outdir)
         .arg(&main)
-        .output()
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
         .map_err(|e| format!("Could not start Tectonic: {}", e))?;
+    *COMPILE_PID.lock().unwrap() = Some(child.id());
+    let output = child.wait_with_output().map_err(|e| e.to_string())?;
+    let cancelled = COMPILE_PID.lock().unwrap().take().is_none();
     let millis = started.elapsed().as_millis();
+    if cancelled {
+        return Ok(CompileResult { ok: false, pdf: None, log: "Compile cancelled.".into(), diagnostics: vec![], engine: "tectonic".into(), millis });
+    }
     let log = format!(
         "{}{}",
         String::from_utf8_lossy(&output.stdout),
@@ -377,7 +393,7 @@ fn agent_cancel(run_id: String) -> bool { agents::cancel(&run_id) }
 fn agent_diff(root: String, run_id: String) -> Result<git::WorktreeDiff, String> { git::worktree_diff(Path::new(&root), &run_id) }
 
 #[tauri::command]
-fn agent_accept(root: String, run_id: String, message: String, paths: Option<Vec<String>>) -> Result<String, String> { git::worktree_accept(Path::new(&root), &run_id, &message, paths) }
+fn agent_accept(root: String, run_id: String, message: String, picks: Option<Vec<git::Pick>>) -> Result<String, String> { git::worktree_accept(Path::new(&root), &run_id, &message, picks) }
 
 #[tauri::command]
 fn agent_reject(root: String, run_id: String) -> Result<(), String> { git::worktree_remove(Path::new(&root), &run_id) }
@@ -498,7 +514,7 @@ pub fn run() {
             let _ = app.emit("menu", event.id().0.clone());
         })
         .invoke_handler(tauri::generate_handler![
-            open_project, read_text, write_text, read_binary, compile, import_overleaf_zip,
+            open_project, read_text, write_text, read_binary, compile, compile_cancel, import_overleaf_zip,
             synctex_forward, synctex_inverse,
             git_status, git_init, git_commit, git_clone,
             agent_providers, agent_run, agent_cancel, agent_diff, agent_accept, agent_reject, agent_pull_request,
@@ -566,6 +582,17 @@ mod tests {
     }
 
     #[test]
+    fn filters_patch_by_file_and_hunk() {
+        let patch = "diff --git a/a.tex b/a.tex\n--- a/a.tex\n+++ b/a.tex\n@@ -1,1 +1,1 @@\n-x\n+y\n@@ -10,1 +10,1 @@\n-p\n+q\ndiff --git a/b.tex b/b.tex\n--- a/b.tex\n+++ b/b.tex\n@@ -1,1 +1,1 @@\n-m\n+n\n";
+        let only_b = git::filter_patch(patch, &[git::Pick { path: "b.tex".into(), hunks: None }]);
+        assert!(only_b.contains("+n") && !only_b.contains("+y"));
+        let second_hunk = git::filter_patch(patch, &[git::Pick { path: "a.tex".into(), hunks: Some(vec![1]) }]);
+        assert!(second_hunk.contains("+q") && !second_hunk.contains("+y") && second_hunk.contains("+++ b/a.tex"));
+        let none = git::filter_patch(patch, &[git::Pick { path: "a.tex".into(), hunks: Some(vec![]) }]);
+        assert!(none.trim().is_empty());
+    }
+
+    #[test]
     fn synctex_parses_records() {
         let text = "SyncTeX Version:1\nInput:1:/tmp/x/main.tex\nOutput:pdf\nMagnification:1000\nUnit:1\nX Offset:0\nY Offset:0\nContent:\n{1\n[1,1:4736286,4736286:0,0,0\nh1,12:4736286,9000000:100,10,2\nx1,13:4800000,9500000\n]\n}1\n";
         let tmp = std::env::temp_dir().join(format!("dabir-synctex-{}.synctex", std::process::id()));
@@ -612,7 +639,7 @@ mod tests {
         eprintln!("changed: {:?}", d.changes.iter().map(|c| &c.path).collect::<Vec<_>>());
         assert!(d.changes.iter().any(|c| c.path == "main.tex"), "main.tex should have changed");
         assert!(d.patch.contains("PSNR margin"));
-        let id = git::worktree_accept(&dir, &run_id, "live agent change", Some(vec!["main.tex".into()])).unwrap();
+        let id = git::worktree_accept(&dir, &run_id, "live agent change", Some(vec![git::Pick { path: "main.tex".into(), hunks: None }])).unwrap();
         assert_eq!(id.len(), 7);
         assert!(fs::read_to_string(dir.join("main.tex")).unwrap().contains("1.8 dB PSNR margin"));
         assert!(!wt.exists());

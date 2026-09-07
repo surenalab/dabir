@@ -4,7 +4,7 @@
 
 Dabir (دبیر, Persian for *scribe*) opens a folder that holds your manuscript and the code that made its figures. It shows LaTeX like a document, compiles locally, and lets the agent you already pay for, whether Claude Code, Codex, Cursor, Grok or OpenCode, rerun an experiment, update the figure and the table, and open the pull request. Nothing is uploaded. Delete the app and your project is still a plain Git repo.
 
-> Status: phases 0 to 2 built, macOS only. Open a folder, an Overleaf zip or a GitHub repo; edit the paper visually or as source in one buffer; compile with Tectonic; click the PDF to jump to the line; commit from the sidebar; ask Claude Code, Codex, Cursor, Grok or OpenCode to change the paper on a worktree and review the diff file by file before it touches your checkout (verified live with Grok and Codex); keep the project brief, facts and provenance in `.dabir/` so every agent shares them. Live collaboration is phase 3. Progress and next steps are in [PLAN.md](PLAN.md).
+> Status: phases 0 to 2 built, macOS only. Open a folder, an Overleaf zip or a GitHub repo; edit the paper visually or as source in one buffer; compile with Tectonic; click the PDF to jump to the line; commit from the sidebar; ask Claude Code, Codex, Cursor, Grok or OpenCode to change the paper on a worktree and review the diff hunk by hunk before it touches your checkout (verified live with Claude Code, Codex, Cursor and Grok); keep the project brief, facts and provenance in `.dabir/` so every agent shares them. Live collaboration is phase 3. Progress and next steps are in [PLAN.md](PLAN.md).
 
 ## Why
 
