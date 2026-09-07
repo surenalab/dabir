@@ -12,8 +12,10 @@ A manuscript editor for researchers. Paper, ink, proof marks, journal typography
 | `--paper-2` | #f3f1ec | #202125 | Navigator, inspector, quiet fills |
 | `--raised` | #ffffff | #26272c | Composer, diff, popovers |
 | `--line` | #ddd9d0 | #34363c | Hairlines |
-| `--ink` / `-2` / `-3` / `-4` | #1d1f24 → #9a9ca4 | #ebe9e2 → #6a6c74 | Text hierarchy; ink-3 is the floor for body-size text |
-| `--accent` | #a8322d | #e06a63 | Proofreader's red: primary action, current selection, citations, deletions |
+| `--ink` / `-2` / `-3` / `-4` | #1d1f24 → #7a7c84 | #ebe9e2 → #8a8c94 | Text hierarchy; every step meets 4.5:1 on its ground |
+| `--accent` | #a8322d | #e06a63 | Proofreader's red: primary action, current selection, citations |
+| `--diff-del` | #c8102e | #ff6b6b | Deleted lines and Reject. Never the accent |
+| `--focus` | system focus ring | system focus ring | Keyboard focus, 3 px, never the accent |
 | `--ok` / `--warn` | #2f6b3a / #8a6414 | #7dc48a / #d9b35a | Status only, never decoration |
 
 ## Type
@@ -22,18 +24,23 @@ A manuscript editor for researchers. Paper, ink, proof marks, journal typography
 - **Code, logs, diffs:** IBM Plex Mono 12–13 px with a real italic. Tabular numerals wherever digits align.
 
 ## Layout
-Three-pane macOS document window: navigator (232 px), document, inspector (348 px). Unified title bar with traffic lights overlaid, leading pane toggles, centred document title and path, trailing view switch, Compile, Share and inspector toggle. Panes collapse with a 220 ms ease-out. Status bar is sticky at the bottom of the document.
+Three-pane macOS document window: navigator (232 px, 180–340), document, inspector (380 px, 280–480). Dividers drag; the inspector auto-hides under 1100 px. Unified title bar with traffic lights overlaid, sidebar toggle leading, true-centred document title and path, trailing segmented view switch, borderless Compile, a fixed spacer, Share and the inspector toggle. Sidebar and inspector are transparent over macOS vibrancy. Window inactive state greys the selection and primary button. Status bar sits at the bottom of the document with a live region.
 
 ## Components
-- **Segmented control** for Visual / Source.
+- **Segmented control** for Visual / Source / PDF and for inspector panes; radio semantics, arrow keys.
 - **Tree rows** 26 px, current row in accent wash.
 - **Citation chips** in accent wash inside the document; cross-reference chips in paper-2.
 - **Composer** is a raised card with a round accent send button.
-- **Diff** is a bordered card with add/del washes; per-hunk accept comes in phase 2.
+- **Diff** is a bordered card with add/del washes and wrapped lines with a hanging indent; per-hunk accept comes in phase 2.
+- **Review** shows evidence first (figure card, table diff, text diff), then a commit message, then Accept and Commit, Reject, Open Pull Request…. Actions stay disabled until the run is terminal.
+- **Sample tag**: an amber outline chip marks any data that is not yet real.
 - **Buttons:** `.btn` bordered on raised; `.btn.primary` filled accent; toolbar buttons are borderless per HIG.
 
 ## Motion
-Pane collapse, spinner on a running step, smooth scroll on outline jump. Nothing else. `prefers-reduced-motion` disables all three.
+Pane collapse, spinner on a running step or compile, smooth scroll on outline jump. Nothing else. `prefers-reduced-motion` disables all three and adds a text “(running)” marker so state is never colour- or motion-only.
 
 ## Do not
 Side-tab borders, gradients, glass as decoration, emoji icons, section-number eyebrows, hero metrics, nested cards.
+
+## Keyboard
+Owned by the native menu bar; the browser preview mirrors it. ⌘O open, ⌘S save, ⌘B compile, ⇧⌘L log, ⌘1/2/3 views, ⌃⌘S sidebar, ⌥⌘I inspector, ⌘K ask the agent, ⌘↩ send, ⌘F find, ⌘/ shortcut sheet. Trees take ↑↓ and ←→; segmented controls take ←→.

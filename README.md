@@ -4,7 +4,7 @@
 
 Dabir (دبیر, Persian for *scribe*) opens a folder that holds your manuscript and the code that made its figures. It shows LaTeX like a document, compiles locally, and lets the agent you already pay for, whether Claude Code, Codex, Cursor, Grok or OpenCode, rerun an experiment, update the figure and the table, and open the pull request. Nothing is uploaded. Delete the app and your project is still a plain Git repo.
 
-> Status: phase 0. The shell runs, opens a real folder, renders a paper in visual and source views, and shows where agents, memory and collaboration go. Compile, Git and agents land in phases 1 and 2. See [PLAN.md](PLAN.md).
+> Status: phase 1 in progress. The app opens a real folder, renders the paper in a visual view, edits it in a CodeMirror source editor, compiles with Tectonic into an inline PDF view with clickable diagnostics, and has a native menu bar with standard Mac shortcuts. The agent inspector shows the review surface with sample data; real agents, Git and memory land in phase 2. See [PLAN.md](PLAN.md).
 
 ## Why
 
@@ -20,7 +20,7 @@ Overleaf is where coauthors are, but it is paid, remote, and cannot run your cod
 
 ## Run it
 
-Prerequisites: Node 22, Rust stable (`rustup`), and on macOS the Xcode command line tools.
+Prerequisites: Node 22, Rust stable (`rustup`), the Xcode command line tools, and Tectonic for compiling (`brew install tectonic`). Dabir looks for Tectonic in the usual Homebrew paths and on PATH, or at `DABIR_TECTONIC`.
 
 ```bash
 npm install
@@ -33,15 +33,16 @@ To preview the UI in a browser without Tauri (uses the bundled sample paper):
 npm run dev
 ```
 
-Open `examples/isgd-tci` from the toolbar to see a real project with memory and provenance files.
+Open `examples/isgd-tci` (File › Open Paper…) to see a real project with memory and provenance files. Run `python3 examples/isgd-tci/code/sweep.py` to regenerate its figure and table, then ⌘B to compile.
 
 ## Layout
 
 ```
 src/            React + TypeScript front end
   styles/       tokens.css is the design system; app.css the shell
-  lib/latex.ts  phase-0 LaTeX reader for the visual view
-src-tauri/      Rust core: project discovery, file access, later Git, compile and agents
+  lib/latex.ts  LaTeX reader for the visual view (CodeMirror decorations replace it later)
+  components/   Toolbar, Navigator, Document (visual, SourceEditor, PdfView), Inspector
+src-tauri/      Rust core: project discovery, file access, Tectonic compile, native menu; later Git and agents
 examples/       sample paper projects
 .dabir/         (in a paper repo) PROJECT.md, memory/, provenance.json
 ```
