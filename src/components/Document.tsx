@@ -1,7 +1,24 @@
 import { Fragment, useEffect, useMemo, useRef } from "react";
 import { FolderOpen, GitBranch } from "lucide-react";
+import katex from "katex";
 import { highlightLine, parseDocument, type Block, type Inline } from "../lib/latex";
 import type { ViewMode } from "./Toolbar";
+
+function Math({ tex, display, macros }: { tex: string; display: boolean; macros: Record<string, string> }) {
+  const html = useMemo(() => katex.renderToString(tex, { displayMode: display, throwOnError: false, macros, strict: false }), [tex, display, macros]);
+  return <span className={display ? "math-display" : "math-inline"} dangerouslySetInnerHTML={{ __html: html }} />;
+}
+
+let currentMacros: Record<string, string> = {};
+
+/** Pull \newcommand definitions from the preamble so KaTeX can expand them. */
+function collectMacros(src: string): Record<string, string> {
+  const macros: Record<string, string> = {};
+  const re = /\\(?:re)?newcommand\*?\{?(\\[a-zA-Z]+)\}?(?:\[\d+\])?\{((?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*)\}/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(src))) macros[m[1]] = m[2];
+  return macros;
+}
 
 function Inlines({ items }: { items: Inline[] }) {
   return (
@@ -9,7 +26,7 @@ function Inlines({ items }: { items: Inline[] }) {
       {items.map((it, i) => {
         switch (it.kind) {
           case "text": return <Fragment key={i}>{it.text}</Fragment>;
-          case "math": return <i key={i}>{it.tex}</i>;
+          case "math": return <Math key={i} tex={it.tex} display={false} macros={currentMacros} />;
           case "em": return <em key={i}>{it.text}</em>;
           case "bold": return <b key={i}>{it.text}</b>;
           case "cite": return <span key={i} className="cite" title={it.keys.join(", ")}>{it.keys.map((k) => k.split(/(?=\d)/)[0]).join(", ")}</span>;
@@ -31,7 +48,7 @@ function BlockView({ b }: { b: Block }) {
       return <Tag id={`line-${b.line}`}><span className="num">{b.number}</span>{b.text}</Tag>;
     }
     case "para": return <p><Inlines items={b.inlines} /></p>;
-    case "equation": return <div className="eq"><span className="tex">{b.tex}</span><span className="tag">{b.tag}</span></div>;
+    case "equation": return <div className="eq"><Math tex={b.tex} display macros={currentMacros} /><span className="tag">{b.tag}</span></div>;
     case "figure":
       return (
         <figure className="figure">
@@ -57,6 +74,7 @@ interface Props {
 
 export function Document({ source, mode, jumpLine, onOpen, onOutline }: Props) {
   const parsed = useMemo(() => (source ? parseDocument(source) : null), [source]);
+  currentMacros = useMemo(() => (source ? collectMacros(source) : {}), [source]);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => { onOutline(parsed?.outline ?? []); }, [parsed, onOutline]);
