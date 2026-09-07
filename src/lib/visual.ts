@@ -215,6 +215,10 @@ export function buildDecorations(state: EditorState): DecorationSet {
         const open = l.from + sec[1].length + sec[2].length + 2 + (s.includes("*{") ? 1 : 0);
         push(l.from + sec[1].length, open, hide);
         push(l.from + s.lastIndexOf("}"), l.to, hide);
+        if (sec[2] === "author") {
+          const andRe = /\\and\b/g; let am: RegExpExecArray | null;
+          while ((am = andRe.exec(s))) push(l.from + am.index, l.from + am.index + am[0].length, Decoration.replace({ widget: new TextWidget(", ", l.from + am.index) }));
+        }
       }
       continue;
     }
