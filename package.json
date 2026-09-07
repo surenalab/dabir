@@ -4,10 +4,12 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "npm run relay:build && vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "relay:build": "esbuild relay/server.mjs --bundle --platform=node --format=cjs --outfile=relay/dist/relay.cjs --log-level=warning",
+    "relay": "node relay/dist/relay.cjs --port 1234"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",
@@ -28,10 +30,15 @@
     "@tauri-apps/plugin-updater": "^2.11.0",
     "codemirror-lang-latex": "^0.6.1",
     "katex": "^0.18.7",
+    "lib0": "^0.2.117",
     "lucide-react": "^1.42.0",
     "pdfjs-dist": "^6.3.289",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "y-codemirror.next": "^0.3.6",
+    "y-protocols": "^1.0.7",
+    "y-websocket": "^3.1.0",
+    "yjs": "^13.6.32"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
@@ -40,6 +47,7 @@
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^6.0.2",
     "typescript": "~6.0.3",
-    "vite": "^8.0.16"
+    "vite": "^8.0.16",
+    "ws": "^8.21.3"
   }
 }

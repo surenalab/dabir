@@ -5,6 +5,7 @@ import {
   onAgentEvent, provenanceRerun, type Artefact, type Memory, type Pick, type Project, type Provider, type WorktreeDiff,
 } from "../lib/backend";
 import { Segmented } from "./Segmented";
+import type { Comment, Peer } from "../lib/collab";
 
 type Tab = "agent" | "memory" | "people";
 
@@ -67,6 +68,16 @@ function DiffView({ files, excluded, onToggle }: { files: FileDiff[]; excluded: 
 }
 
 interface Props {
+  live: boolean;
+  peers: Peer[];
+  comments: Comment[];
+  currentFile: string | null;
+  hasSelection: boolean;
+  onAddComment: (text: string) => void;
+  onResolveComment: (id: string, resolved: boolean) => void;
+  onRemoveComment: (id: string) => void;
+  onJumpComment: (c: Comment) => void;
+  onShare: () => void;
   project: Project | null;
   askFocus: number;
   onChanged: () => void;         // git status or files changed
@@ -74,7 +85,8 @@ interface Props {
   onNote: (text: string) => void;
 }
 
-export function Inspector({ project, askFocus, onChanged, onOpenFile, onNote }: Props) {
+export function Inspector({ project, askFocus, onChanged, onOpenFile, onNote, live, peers, comments, currentFile, hasSelection, onAddComment, onResolveComment, onRemoveComment, onJumpComment, onShare }: Props) {
+  const [commentDraft, setCommentDraft] = useState("");
   const [tab, setTab] = useState<Tab>("agent");
   const [providers, setProviders] = useState<Provider[]>([]);
   const [provider, setProvider] = useState("claude");
@@ -312,7 +324,49 @@ export function Inspector({ project, askFocus, onChanged, onOpenFile, onNote }: 
 
       {tab === "people" && (
         <div className="inspector-body">
-          <p className="memory-note">Collaboration is through Git for now: commit, push, and pull request. Live sessions with presence and comments, and Overleaf sync, arrive in phase 3.</p>
+          {!live ? (
+            <>
+              <p className="memory-note">Nobody else is here. Start a live session to edit together with presence and comments, or add an Overleaf remote to pull and push.</p>
+              <div className="actions"><button className="btn primary" onClick={onShare} disabled={!project}>Share…</button></div>
+            </>
+          ) : (
+            <>
+              <div className="field">
+                <label>In this session</label>
+                <div className="peers">
+                  {peers.map((pr) => (
+                    <div className="peer" key={pr.clientId}>
+                      <span className="avatar" style={{ background: pr.color }}>{pr.name.slice(0, 2).toUpperCase()}</span>
+                      <span className="name">{pr.name}{pr.me ? " (you)" : ""}</span>
+                      <span className="where">{pr.file ?? ""}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="field">
+                <label>Comments{currentFile ? <> on <code>{currentFile}</code></> : ""}</label>
+                <div className="comment-box">
+                  <input value={commentDraft} onChange={(e) => setCommentDraft(e.target.value)} placeholder={hasSelection ? "Comment on the selection" : "Select text, then comment"} aria-label="New comment"
+                    onKeyDown={(e) => { if (e.key === "Enter" && commentDraft.trim()) { onAddComment(commentDraft.trim()); setCommentDraft(""); } }} disabled={!currentFile} />
+                  <button className="btn" onClick={() => { if (commentDraft.trim()) { onAddComment(commentDraft.trim()); setCommentDraft(""); } }} disabled={!commentDraft.trim() || !currentFile}>Add</button>
+                </div>
+                <div className="comments">
+                  {comments.filter((c) => !currentFile || c.file === currentFile).sort((a, b) => Number(a.resolved) - Number(b.resolved) || b.at - a.at).map((c) => (
+                    <div className={`comment ${c.resolved ? "resolved" : ""}`} key={c.id} style={{ "--comment-color": c.color } as React.CSSProperties}>
+                      <div className="who"><b>{c.author}</b><span>{new Date(c.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></div>
+                      <div className="text">{c.text}</div>
+                      <div className="row">
+                        <button onClick={() => onJumpComment(c)}>Show</button>
+                        <button onClick={() => onResolveComment(c.id, !c.resolved)}>{c.resolved ? "Reopen" : "Resolve"}</button>
+                        <button onClick={() => onRemoveComment(c.id)}>Delete</button>
+                      </div>
+                    </div>
+                  ))}
+                  {comments.length === 0 && <span className="target">No comments yet.</span>}
+                </div>
+              </div>
+            </>
+          )}
         </div>
       )}
     </aside>

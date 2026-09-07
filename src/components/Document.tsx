@@ -6,7 +6,9 @@ import { readBinary, type PdfPos, type Project } from "../lib/backend";
 import * as pdfjs from "pdfjs-dist";
 import type { ViewMode } from "./Toolbar";
 import type { CompileState } from "../App";
-import { SourceEditor } from "./SourceEditor";
+import { SourceEditor, type CommentRange } from "./SourceEditor";
+import type * as Y from "yjs";
+import type { Awareness } from "y-protocols/awareness";
 import { PdfView } from "./PdfView";
 
 /** Pull \newcommand definitions from the preamble so KaTeX can expand them. */
@@ -74,6 +76,10 @@ interface Props {
   onPdfClick: (page: number, x: number, y: number) => void;
   compileOnSave: boolean;
   onToggleCompileOnSave: () => void;
+  collab: { text: Y.Text; awareness: Awareness } | null;
+  comments: CommentRange[];
+  onSelection: (from: number, to: number) => void;
+  jumpOffset: { pos: number; stamp: number } | null;
 }
 
 export function Document(p: Props) {
@@ -137,7 +143,8 @@ export function Document(p: Props) {
       <div className="scroll" hidden={mode === "pdf"}>
         {source != null && isTex && (
           <SourceEditor value={source} visual={mode === "visual" && /\.tex$/i.test(p.file ?? "")} onChange={p.onSourceChange} onSave={p.onSave}
-            onCursorLine={p.onCursorLine} jumpLine={p.jumpLine} jumpStamp={p.jumpStamp} findRequest={p.findRequest} />
+            onCursorLine={p.onCursorLine} jumpLine={p.jumpLine} jumpStamp={p.jumpStamp} findRequest={p.findRequest}
+            collab={p.collab} comments={p.comments} onSelection={p.onSelection} jumpOffset={p.jumpOffset} />
         )}
         {source != null && !isTex && <div className="doc-empty"><div className="card"><p>This file type is not editable in Dabir yet.</p></div></div>}
       </div>

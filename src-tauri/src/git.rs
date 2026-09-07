@@ -304,3 +304,36 @@ pub fn worktree_pull_request(root: &Path, run_id: &str, message: &str) -> Result
         Err(_) => Ok(format!("Pushed {}. Install the GitHub CLI (gh) to open pull requests from Dabir.", branch)),
     }
 }
+
+// ---------------------------------------------------------------- remotes (Overleaf Git bridge and friends)
+
+fn git_out(root: &Path, args: &[&str]) -> Result<String, String> {
+    let o = Command::new("git").current_dir(root).args(args).output().map_err(|e| e.to_string())?;
+    let text = format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
+    if o.status.success() { Ok(text.trim().to_string()) } else { Err(text.trim().to_string()) }
+}
+
+pub fn remote_url(root: &Path, name: &str) -> Option<String> {
+    git_out(root, &["remote", "get-url", name]).ok().filter(|s| !s.is_empty())
+}
+
+pub fn remote_add(root: &Path, name: &str, url: &str) -> Result<(), String> {
+    if remote_url(root, name).is_some() { git_out(root, &["remote", "set-url", name, url])?; } else { git_out(root, &["remote", "add", name, url])?; }
+    Ok(())
+}
+
+/// Pull with rebase so local commits stay on top of coauthors' Overleaf edits.
+pub fn pull(root: &Path, remote: &str) -> Result<String, String> {
+    let branch = git_out(root, &["rev-parse", "--abbrev-ref", "HEAD"]).unwrap_or_else(|_| "master".into());
+    let remote_branch = if git_out(root, &["ls-remote", "--heads", remote, "master"]).map(|s| !s.is_empty()).unwrap_or(false) { "master".to_string() } else { branch.clone() };
+    let out = git_out(root, &["pull", "--rebase", "--autostash", remote, &remote_branch])?;
+    Ok(if out.is_empty() { "Already up to date.".into() } else { out.lines().last().unwrap_or("Pulled.").to_string() })
+}
+
+pub fn push(root: &Path, remote: &str) -> Result<String, String> {
+    let branch = git_out(root, &["rev-parse", "--abbrev-ref", "HEAD"]).unwrap_or_else(|_| "master".into());
+    // Overleaf's bridge only accepts its master branch.
+    let target = if remote_url(root, remote).map(|u| u.contains("overleaf.com")).unwrap_or(false) { format!("{}:master", branch) } else { branch.clone() };
+    let out = git_out(root, &["push", remote, &target])?;
+    Ok(out.lines().last().map(|l| l.to_string()).unwrap_or_else(|| format!("Pushed {}.", branch)))
+}

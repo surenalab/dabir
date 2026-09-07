@@ -18,9 +18,11 @@ interface Props {
   onOpen: () => void;
   onCompile: () => void;
   onCancelCompile: () => void;
+  onShare: () => void;
+  live: boolean;
 }
 
-export function Toolbar({ project, file, dirty, mode, navOpen, inspectorOpen, compiling, onMode, onToggleNav, onToggleInspector, onCompile, onCancelCompile }: Props) {
+export function Toolbar({ project, file, dirty, mode, navOpen, inspectorOpen, compiling, onMode, onToggleNav, onToggleInspector, onCompile, onCancelCompile, onShare, live }: Props) {
   const rel = file && project ? file.replace(project.root + "/", "") : null;
   const canCompile = !!project?.mainTex && !compiling;
   return (
@@ -53,7 +55,7 @@ export function Toolbar({ project, file, dirty, mode, navOpen, inspectorOpen, co
           <button className="tb-btn" onClick={onCompile} disabled={!canCompile} title={project?.mainTex ? "Compile (⌘B)" : "Compile needs a .tex file with \\documentclass"}><Play /> Compile</button>
         )}
         <span className="spacer" />
-        <button className="tb-btn icon" aria-label="Share" title="Share (coming in phase 3)" disabled>
+        <button className={`tb-btn icon ${live ? "live" : ""}`} aria-label="Share" title={live ? "Live session running. Share…" : "Share: live session or Overleaf"} onClick={onShare} disabled={!project} aria-pressed={live}>
           <Share2 />
         </button>
         <button className="tb-btn icon" onClick={onToggleInspector} aria-pressed={!inspectorOpen} aria-label={inspectorOpen ? "Hide Inspector" : "Show Inspector"} title={`${inspectorOpen ? "Hide" : "Show"} Inspector (⌥⌘I)`}>
