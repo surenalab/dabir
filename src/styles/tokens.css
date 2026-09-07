@@ -1,0 +1,135 @@
+/* Dabir design tokens.
+   Every colour, face and spacing value in the app comes from here.
+   Chrome uses the platform face (SF Pro on macOS). The document uses a
+   serif close to the compiled paper. One accent: proofreader's red. */
+
+:root {
+  color-scheme: light dark;
+
+  /* Surfaces: warm paper, cool graphite */
+  --paper: #fbfaf7;
+  --paper-2: #f3f1ec;
+  --chrome: rgba(243, 241, 236, 0.86);
+  --raised: #ffffff;
+  --line: #ddd9d0;
+  --line-strong: #c4c0b6;
+
+  --ink: #1d1f24;
+  --ink-2: #4b4e57;
+  --ink-3: #676a74;
+  --ink-4: #9a9ca4;
+
+  --accent: #a8322d;
+  --accent-hover: #8f2823;
+  --accent-ink: #ffffff;
+  --accent-wash: #f6e6e4;
+  --selection: rgba(168, 50, 45, 0.18);
+
+  --ok: #2f6b3a;
+  --ok-wash: #e3efe4;
+  --warn: #8a6414;
+  --warn-wash: #f5ecd6;
+  --diff-add: #2f6b3a;
+  --diff-add-wash: #e6f1e6;
+  --diff-del: #a8322d;
+  --diff-del-wash: #f6e6e4;
+
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  --font-doc: "STIX Two Text", "Latin Modern Roman", "Times New Roman", Georgia, serif;
+  --font-mono: "IBM Plex Mono", "SF Mono", Menlo, Consolas, monospace;
+
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 13px;
+  --text-lg: 15px;
+  --doc-size: 16.5px;
+  --doc-leading: 1.6;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  --shadow-raised: 0 1px 2px rgba(29, 31, 36, 0.06), 0 4px 14px rgba(29, 31, 36, 0.08);
+  --shadow-popover: 0 2px 6px rgba(29, 31, 36, 0.10), 0 12px 32px rgba(29, 31, 36, 0.14);
+
+  --titlebar-h: 52px;
+  --nav-w: 232px;
+  --inspector-w: 348px;
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-fast: 120ms;
+  --dur: 220ms;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #1a1b1e;
+    --paper-2: #202125;
+    --chrome: rgba(32, 33, 37, 0.86);
+    --raised: #26272c;
+    --line: #34363c;
+    --line-strong: #45474e;
+
+    --ink: #ebe9e2;
+    --ink-2: #b8b6ae;
+    --ink-3: #8f9199;
+    --ink-4: #6a6c74;
+
+    --accent: #e06a63;
+    --accent-hover: #ea7f78;
+    --accent-ink: #1a1b1e;
+    --accent-wash: #3a2624;
+    --selection: rgba(224, 106, 99, 0.24);
+
+    --ok: #7dc48a;
+    --ok-wash: #22301f;
+    --warn: #d9b35a;
+    --warn-wash: #332c18;
+    --diff-add: #7dc48a;
+    --diff-add-wash: #1f2e22;
+    --diff-del: #e06a63;
+    --diff-del-wash: #3a2624;
+
+    --shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 14px rgba(0, 0, 0, 0.35);
+    --shadow-popover: 0 2px 6px rgba(0, 0, 0, 0.5), 0 12px 32px rgba(0, 0, 0, 0.5);
+  }
+}
+
+:root[data-theme="dark"] {
+  --paper: #1a1b1e;
+  --paper-2: #202125;
+  --chrome: rgba(32, 33, 37, 0.86);
+  --raised: #26272c;
+  --line: #34363c;
+  --line-strong: #45474e;
+
+  --ink: #ebe9e2;
+  --ink-2: #b8b6ae;
+  --ink-3: #8f9199;
+  --ink-4: #6a6c74;
+
+  --accent: #e06a63;
+  --accent-hover: #ea7f78;
+  --accent-ink: #1a1b1e;
+  --accent-wash: #3a2624;
+  --selection: rgba(224, 106, 99, 0.24);
+
+  --ok: #7dc48a;
+  --ok-wash: #22301f;
+  --warn: #d9b35a;
+  --warn-wash: #332c18;
+  --diff-add: #7dc48a;
+  --diff-add-wash: #1f2e22;
+  --diff-del: #e06a63;
+  --diff-del-wash: #3a2624;
+
+  --shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 14px rgba(0, 0, 0, 0.35);
+  --shadow-popover: 0 2px 6px rgba(0, 0, 0, 0.5), 0 12px 32px rgba(0, 0, 0, 0.5);
+}
