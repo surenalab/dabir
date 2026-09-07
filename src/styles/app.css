@@ -88,7 +88,8 @@ button { background: none; border: 0; padding: 0; cursor: default; }
 .app.native .titlebar { background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; }
 .titlebar button, .titlebar .seg, .titlebar select { -webkit-app-region: no-drag; }
 
-.titlebar .leading { display: flex; align-items: center; gap: var(--space-1); padding-left: 84px; }
+.titlebar .leading { display: flex; align-items: center; gap: var(--space-1); padding-left: var(--space-3); }
+.app.mac .titlebar .leading { padding-left: 84px; }
 .titlebar .center { display: flex; align-items: center; justify-content: center; min-width: 0; }
 .titlebar .trailing { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); }
 .titlebar .spacer { width: 16px; }
@@ -558,3 +559,5 @@ button { background: none; border: 0; padding: 0; cursor: default; }
 .skill { font-size: var(--text-xs); padding: 2px 8px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--raised); color: var(--ink); }
 .skill:hover { border-color: var(--accent); color: var(--accent); }
 .runline { display: block; font-size: var(--text-xs); color: var(--ink-2); padding: 3px 0; border-bottom: 1px solid var(--line); line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.status .progress { font-family: var(--font-mono); max-width: 60ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: bottom; }

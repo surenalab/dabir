@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "npm run build && sh scripts/fetch-tectonic.sh",
     "frontendDist": "../dist"
   },
   "app": {
@@ -16,16 +16,12 @@
         "width": 1320,
         "height": 860,
         "minWidth": 1040,
-        "minHeight": 600,
-        "titleBarStyle": "Overlay",
-        "hiddenTitle": true,
-        "transparent": true
+        "minHeight": 600
       }
     ],
     "security": {
       "csp": null
-    },
-    "macOSPrivateApi": false
+    }
   },
   "bundle": {
     "active": true,
@@ -36,6 +32,34 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "externalBin": [
+      "binaries/tectonic"
+    ],
+    "createUpdaterArtifacts": true,
+    "macOS": {
+      "minimumSystemVersion": "12.0"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    },
+    "linux": {
+      "deb": {
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0"
+        ]
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDVBODJEOUQ5QzM4MzM4QkYKUldTL09JUEQyZG1DV28xTXJEc3JuUDIwMGY2amhQbUd2V3pRNmp5N21SNXJaRllJOFN2UnRTMVUK",
+      "endpoints": [
+        "https://github.com/sadeghsalehi/dabir/releases/latest/download/latest.json"
+      ]
+    }
   }
 }
