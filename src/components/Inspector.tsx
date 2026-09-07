@@ -1,47 +1,132 @@
-import { useEffect, useRef, useState } from "react";
-import { ArrowUp, Check, Loader2, Paperclip, X } from "lucide-react";
-import type { Project } from "../lib/backend";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ArrowUp, Check, Loader2, Paperclip, RefreshCw, Square, X } from "lucide-react";
+import {
+  agentAccept, agentCancel, agentDiff, agentProviders, agentPullRequest, agentReject, agentRun, memoryRead, memorySetup,
+  onAgentEvent, provenanceRerun, type Artefact, type Memory, type Project, type Provider, type WorktreeDiff,
+} from "../lib/backend";
 import { Segmented } from "./Segmented";
 
 type Tab = "agent" | "memory" | "people";
 
-const PROVIDERS = [
-  { id: "claude", label: "Claude Code", hint: "Claude Pro or Max" },
-  { id: "codex", label: "Codex", hint: "ChatGPT Plus or Pro" },
-  { id: "cursor", label: "Cursor", hint: "Cursor subscription" },
-  { id: "grok", label: "Grok Build", hint: "SuperGrok" },
-  { id: "opencode", label: "OpenCode", hint: "Any model, including local" },
-];
+interface Step { kind: "text" | "tool" | "log"; text: string; tool?: string | null; at: number }
+type Run =
+  | { phase: "idle" }
+  | { phase: "running"; runId: string; prompt: string; steps: Step[]; provider: string; started: number }
+  | { phase: "review"; runId: string; prompt: string; steps: Step[]; provider: string; ok: boolean; summary: string; diff: WorktreeDiff | null; error?: string }
+  | { phase: "done"; text: string };
 
-type StepState = "done" | "running" | "failed";
-interface Step { state: StepState; text: React.ReactNode; t?: string }
+function DiffView({ patch }: { patch: string }) {
+  const files: { name: string; lines: string[] }[] = [];
+  for (const l of patch.split("\n")) {
+    const m = /^diff --git a\/(.*?) b\//.exec(l);
+    if (m) { files.push({ name: m[1], lines: [] }); continue; }
+    if (!files.length || /^(index |--- |\+\+\+ |Binary|GIT binary|literal|delta)/.test(l)) continue;
+    files[files.length - 1].lines.push(l);
+  }
+  return (
+    <>
+      {files.map((f) => {
+        const add = f.lines.filter((l) => l.startsWith("+")).length, del = f.lines.filter((l) => l.startsWith("-")).length;
+        return (
+          <div className="diff" key={f.name}>
+            <header><span className="file">{f.name}</span><span className="stat"><span className="add">+{add}</span><span className="del">−{del}</span></span></header>
+            <pre>{f.lines.slice(0, 200).map((l, i) => <span key={i} className={`l ${l.startsWith("+") ? "add" : l.startsWith("-") ? "del" : l.startsWith("@@") ? "hunk" : "ctx"}`}>{l || " "}</span>)}
+              {f.lines.length > 200 && <span className="l ctx">… {f.lines.length - 200} more lines</span>}</pre>
+          </div>
+        );
+      })}
+    </>
+  );
+}
 
-// Sample run so the review surface can be seen before real agents land in phase 2.
-const SAMPLE_STEPS: Step[] = [
-  { state: "done", text: <>ran <code>python code/sweep.py --sigma 0.3</code></>, t: "41 s" },
-  { state: "done", text: <>wrote <code>figures/psnr-vs-noise.pdf</code></> },
-  { state: "done", text: <>wrote <code>tables/psnr-sweep.tex</code></> },
-  { state: "done", text: <>edited <code>main.tex</code></>, t: "+6 −4" },
-  { state: "done", text: <>compiled, 0 errors, 1 warning</>, t: "2.3 s" },
-];
+interface Props {
+  project: Project | null;
+  askFocus: number;
+  onChanged: () => void;         // git status or files changed
+  onOpenFile: (path: string) => void;
+  onNote: (text: string) => void;
+}
 
-export function Inspector({ project, askFocus }: { project: Project | null; askFocus: number }) {
+export function Inspector({ project, askFocus, onChanged, onOpenFile, onNote }: Props) {
   const [tab, setTab] = useState<Tab>("agent");
+  const [providers, setProviders] = useState<Provider[]>([]);
   const [provider, setProvider] = useState("claude");
   const [draft, setDraft] = useState("");
-  const [note, setNote] = useState<string | null>(null);
-  const [message, setMessage] = useState("Rerun noise sweep to σ = 0.3; update Figure 3 and Table 2");
-  const [decided, setDecided] = useState<"accepted" | "rejected" | null>(null);
+  const [run, setRun] = useState<Run>({ phase: "idle" });
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [memory, setMemory] = useState<Memory | null>(null);
+  const [rerunOut, setRerunOut] = useState<Record<string, string>>({});
   const textarea = useRef<HTMLTextAreaElement>(null);
-  const current = PROVIDERS.find((p) => p.id === provider)!;
-  const finished = SAMPLE_STEPS.every((s) => s.state !== "running");
+  const runRef = useRef(run); runRef.current = run;
 
+  useEffect(() => { agentProviders().then((ps) => { setProviders(ps); const first = ps.find((p) => p.installed); if (first && !ps.find((p) => p.id === provider)?.installed) setProvider(first.id); }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (askFocus) { setTab("agent"); textarea.current?.focus(); } }, [askFocus]);
 
-  const send = () => {
-    if (!draft.trim()) return;
-    setNote(`Kept for phase 2: “${draft.trim()}”. Agent runs are not wired yet, so nothing was sent to ${current.label}.`);
-    setDraft("");
+  const refreshMemory = useCallback(() => { if (project) memoryRead(project.root).then(setMemory).catch(() => setMemory(null)); else setMemory(null); }, [project]);
+  useEffect(() => { refreshMemory(); }, [refreshMemory]);
+
+  // Agent event stream
+  useEffect(() => onAgentEvent(async (e) => {
+    const r = runRef.current;
+    if (r.phase !== "running" || r.runId !== e.runId) return;
+    if (e.kind === "done") {
+      let diff: WorktreeDiff | null = null, error: string | undefined;
+      if (project) { try { diff = await agentDiff(project.root, r.runId); } catch (err) { error = String(err); } }
+      const summary = e.text || r.steps.filter((s) => s.kind === "text").map((s) => s.text).join("\n");
+      setRun({ phase: "review", runId: r.runId, prompt: r.prompt, steps: r.steps, provider: r.provider, ok: e.ok ?? true, summary, diff, error });
+      setMessage(r.prompt.length > 72 ? r.prompt.slice(0, 69) + "…" : r.prompt);
+    } else if (e.kind === "error") {
+      setRun({ phase: "review", runId: r.runId, prompt: r.prompt, steps: r.steps, provider: r.provider, ok: false, summary: e.text, diff: null });
+    } else {
+      setRun({ ...r, steps: [...r.steps, { kind: e.kind as Step["kind"], text: e.text, tool: e.tool, at: Date.now() }] });
+    }
+  }), [project]);
+
+  const current = providers.find((p) => p.id === provider);
+  const finishedRun = run.phase === "review";
+
+  const send = async () => {
+    const prompt = draft.trim();
+    if (!prompt || !project || run.phase === "running") return;
+    try {
+      const started = await agentRun(project.root, provider, prompt);
+      setRun({ phase: "running", runId: started.runId, prompt, steps: [], provider, started: Date.now() });
+      setDraft("");
+    } catch (e) { onNote(String(e)); }
+  };
+
+  const cancel = async () => { if (run.phase === "running") { await agentCancel(run.runId); } };
+
+  const accept = async () => {
+    if (run.phase !== "review" || !project) return;
+    setBusy(true);
+    try { const id = await agentAccept(project.root, run.runId, message.trim() || run.prompt); setRun({ phase: "done", text: `Committed ${id} to your checkout.` }); onChanged(); refreshMemory(); }
+    catch (e) { onNote(String(e)); } finally { setBusy(false); }
+  };
+  const reject = async () => {
+    if (run.phase !== "review" || !project) return;
+    setBusy(true);
+    try { await agentReject(project.root, run.runId); setRun({ phase: "done", text: "Run discarded. Your files were not touched." }); }
+    catch (e) { onNote(String(e)); } finally { setBusy(false); }
+  };
+  const pr = async () => {
+    if (run.phase !== "review" || !project) return;
+    setBusy(true);
+    try { const out = await agentPullRequest(project.root, run.runId, message.trim() || run.prompt); setRun({ phase: "done", text: out || "Pull request opened." }); }
+    catch (e) { onNote(String(e)); } finally { setBusy(false); }
+  };
+
+  const setup = async () => {
+    if (!project) return;
+    try { const files = await memorySetup(project.root, project.mainTex); onNote(`Wrote ${files.join(", ")}. Review them like any other change.`); refreshMemory(); onChanged(); }
+    catch (e) { onNote(String(e)); }
+  };
+  const rerun = async (a: Artefact) => {
+    if (!project) return;
+    setRerunOut((o) => ({ ...o, [a.artefact]: "running…" }));
+    try { const r = await provenanceRerun(project.root, a.artefact); setRerunOut((o) => ({ ...o, [a.artefact]: (r.ok ? "" : "Failed. ") + r.output.trim().split("\n").slice(-3).join("\n") })); refreshMemory(); onChanged(); }
+    catch (e) { setRerunOut((o) => ({ ...o, [a.artefact]: String(e) })); }
   };
 
   return (
@@ -55,124 +140,132 @@ export function Inspector({ project, askFocus }: { project: Project | null; askF
         <div className="inspector-body">
           <div className="provider">
             <label htmlFor="provider">Agent</label>
-            <select id="provider" value={provider} onChange={(e) => setProvider(e.target.value)} title={current.hint}>
-              {PROVIDERS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+            <select id="provider" value={provider} onChange={(e) => setProvider(e.target.value)} title={current?.hint}>
+              {providers.map((p) => <option key={p.id} value={p.id} disabled={!p.installed}>{p.label}{p.installed ? "" : " (not installed)"}</option>)}
             </select>
-            <span className="hint">{current.hint}</span>
+            <span className="hint">{current ? (current.installed ? current.hint : `Install the ${current.bin} CLI and sign in`) : ""}</span>
           </div>
 
           <div className="composer">
-            <textarea
-              ref={textarea}
-              placeholder={project ? `Ask ${current.label} to change the paper or rerun an experiment…` : "Open a paper first"}
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
+            <textarea ref={textarea}
+              placeholder={project ? (current?.installed ? `Ask ${current.label} to change the paper or rerun an experiment…` : "Choose an installed agent first") : "Open a paper first"}
+              value={draft} onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && e.metaKey) { e.preventDefault(); send(); } }}
-              disabled={!project}
-              aria-label="Message to the agent"
-            />
+              disabled={!project || !current?.installed || run.phase === "running"} aria-label="Message to the agent" />
             <div className="bar">
-              <span className="scope" title="The agent sees the whole repository and works on a Git worktree, so your checkout is untouched until you accept"><Paperclip aria-hidden /> whole repo · worktree · <kbd>⌘↩</kbd></span>
-              <button className="send" disabled={!draft.trim()} aria-label="Send to agent" onClick={send}><ArrowUp /></button>
+              <span className="scope" title="The agent sees the whole repository and works on a Git worktree on its own branch, with permission prompts bypassed inside that worktree. Your checkout is untouched until you accept."><Paperclip aria-hidden /> whole repo · worktree · <kbd>⌘↩</kbd></span>
+              <button className="send" disabled={!draft.trim() || run.phase === "running"} aria-label="Send to agent" onClick={send}><ArrowUp /></button>
             </div>
           </div>
-          {note && <p className="composer-note" role="status">{note}</p>}
 
-          {project && !decided && (
-            <div className="run" aria-label="Sample agent run">
-              <div className="prompt"><b>You asked<span className="sample-tag">sample</span></b>Rerun the noise sweep with σ up to 0.3 and update Figure 3 and Table 2.</div>
+          {(run.phase === "running" || run.phase === "review") && (
+            <div className="run">
+              <div className="prompt"><b>You asked {providers.find((p) => p.id === run.provider)?.label ?? run.provider}</b>{run.prompt}</div>
               <div className="steps" role="status" aria-live="polite">
-                {SAMPLE_STEPS.map((s, i) => (
-                  <div key={i} className={`step ${s.state}`}>
-                    {s.state === "done" ? <Check aria-label="Done" /> : s.state === "failed" ? <X aria-label="Failed" /> : <Loader2 aria-label="Running" />}
-                    <span>{s.text}</span><span className="t">{s.t ?? ""}</span>
+                {run.steps.filter((s) => s.kind !== "log").map((s, i) => (
+                  <div key={i} className={`step ${s.kind === "text" ? "text" : "done"}`}>
+                    {s.kind === "tool" ? <Check aria-label="Done" /> : <span />}
+                    <span>{s.kind === "tool" ? <>{(s.tool ?? "tool").toLowerCase()} <code>{s.text}</code></> : s.text}</span>
+                    <span className="t"></span>
                   </div>
                 ))}
+                {run.phase === "running" && <div className="step running"><Loader2 aria-label="Running" /><span>{run.steps.length ? "working" : `starting ${providers.find((p) => p.id === run.provider)?.label ?? ""}`}</span><span className="t"></span></div>}
+                {run.phase === "review" && !run.ok && <div className="step failed"><X aria-label="Failed" /><span>{run.summary || "The agent reported an error."}</span><span className="t"></span></div>}
               </div>
+              {run.phase === "running" && <div className="actions"><button className="btn" onClick={cancel}><Square /> Stop</button></div>}
+              {run.steps.some((s) => s.kind === "log") && (
+                <details className="log-details"><summary>{run.steps.filter((s) => s.kind === "log").length} log lines</summary>
+                  <pre>{run.steps.filter((s) => s.kind === "log").map((s) => s.text).join("\n")}</pre></details>
+              )}
 
-              <div className="evidence">
-                <div className="evidence-heading">What changed</div>
-                <div className="figure-card">
-                  <div className="thumb" aria-label="Regenerated figure preview">
-                    <svg viewBox="0 0 64 40" aria-hidden><polyline points="4,34 14,28 24,22 34,17 44,13 54,11 60,10" fill="none" stroke="var(--accent)" strokeWidth="1.5" /><polyline points="4,36 14,32 24,29 34,27 44,26 54,25 60,25" fill="none" stroke="var(--ink-3)" strokeWidth="1.2" /></svg>
+              {run.phase === "review" && (
+                <>
+                  {run.error && <p className="composer-note" role="alert">{run.error}</p>}
+                  {run.diff && run.diff.changes.length > 0 ? (
+                    <div className="evidence">
+                      <div className="evidence-heading">What changed</div>
+                      <div className="changes">
+                        {run.diff.changes.map((c) => (
+                          <div className="change" key={c.path}><span className="file">{c.path}</span>
+                            <span className="meta"><span>{c.binary ? "binary" : ""}</span><span className="stat">{c.binary ? <span className="add">binary</span> : <><span className="add">+{c.add}</span><span className="del">−{c.del}</span></>}</span></span></div>
+                        ))}
+                      </div>
+                      <DiffView patch={run.diff.patch} />
+                    </div>
+                  ) : (
+                    <p className="composer-note">The agent made no file changes.</p>
+                  )}
+                  <div className="commit">
+                    <input value={message} onChange={(e) => setMessage(e.target.value)} aria-label="Commit message" placeholder="Commit message" />
+                    <span className="target">Accept applies the changes to your checkout and commits. Nothing is pushed.</span>
+                    <div className="actions">
+                      <button className="btn primary" disabled={busy || !run.diff || run.diff.changes.length === 0 || !message.trim()} onClick={accept}>Accept and Commit</button>
+                      <button className="btn danger" disabled={busy} onClick={reject}>{run.diff && run.diff.changes.length ? "Reject" : "Dismiss"}</button>
+                      <button className="btn wide" disabled={busy || !run.diff || run.diff.changes.length === 0 || !message.trim()} onClick={pr} title="Commit on the run's branch, push it, and open a pull request with gh">Open Pull Request…</button>
+                    </div>
                   </div>
-                  <div className="about"><code>figures/psnr-vs-noise.pdf</code><br />7 noise levels, 5 seeds. Was 5 levels to σ = 0.2.</div>
-                </div>
-                <div className="diff">
-                  <header><span className="file">tables/psnr-sweep.tex</span><span className="stat"><span className="add">+2</span></span></header>
-                  <pre>
-                    <span className="l ctx">{"0.2 & 28.9 & 28.1 & 30.7 \\\\"}</span>
-                    <span className="l add">{"+0.25 & 27.0 & 26.2 & 28.9 \\\\"}</span>
-                    <span className="l add">{"+0.3 & 25.4 & 24.6 & 27.2 \\\\"}</span>
-                  </pre>
-                </div>
-                <div className="diff">
-                  <header><span className="file">main.tex</span><span className="stat"><span className="add">+6</span><span className="del">−4</span></span></header>
-                  <pre>
-                    <span className="l ctx">{" reports PSNR against noise level for three"}</span>
-                    <span className="l del">{"-baselines; the proposed method holds a 1.6 dB margin."}</span>
-                    <span className="l add">{"+baselines; the proposed method holds a 1.8 dB margin up to $\\sigma = 0.3$."}</span>
-                    <span className="l ctx">{" "}</span>
-                    <span className="l add">{"+\\input{tables/psnr-sweep}"}</span>
-                  </pre>
-                </div>
-              </div>
-
-              <div className="commit">
-                <input value={message} onChange={(e) => setMessage(e.target.value)} aria-label="Commit message" disabled={!finished} />
-                <span className="target">Commits to <code>main</code> in your checkout. Nothing is pushed.</span>
-                <div className="actions">
-                  <button className="btn primary" disabled={!finished || !message.trim()} onClick={() => setDecided("accepted")}>Accept and Commit</button>
-                  <button className="btn danger" disabled={!finished} onClick={() => setDecided("rejected")}>Reject</button>
-                  <button className="btn wide" disabled={!finished || !project.hasGit} title={project.hasGit ? "Push to a branch and open a pull request on GitHub" : "This folder is not a Git repository"}>Open Pull Request…</button>
-                </div>
-              </div>
+                </>
+              )}
             </div>
           )}
-          {decided && (
-            <p className="composer-note" role="status">
-              {decided === "accepted" ? "Sample run accepted. Real commits arrive with Git support in phase 2." : "Sample run rejected. The worktree would be discarded and your files left untouched."}
-              {" "}<button className="btn" style={{ height: 22, marginLeft: 6 }} onClick={() => setDecided(null)}>Show again</button>
-            </p>
+          {run.phase === "done" && (
+            <p className="composer-note" role="status">{run.text} <button className="btn" style={{ height: 22, marginLeft: 6 }} onClick={() => setRun({ phase: "idle" })}>OK</button></p>
+          )}
+          {run.phase === "idle" && project && !finishedRun && (
+            <p className="composer-note">Runs happen on a Git worktree on their own branch. You review the diff, then accept, reject, or open a pull request.{project.hasGit ? "" : " This folder needs a Git repository first."}</p>
           )}
         </div>
       )}
 
       {tab === "memory" && (
         <div className="inspector-body">
-          {project?.hasMemory ? (
+          {!project ? <p className="memory-note">Open a paper to see its memory.</p> : !memory?.brief ? (
+            <>
+              <p className="memory-note">This paper has no memory yet. Dabir can draft <code>.dabir/PROJECT.md</code> from the manuscript, add a provenance file, and write pointer files so Claude Code, Codex and Cursor all read the same brief.</p>
+              <div className="actions"><button className="btn primary" onClick={setup}>Set Up Memory</button></div>
+            </>
+          ) : (
             <>
               <div className="field">
                 <label>Project brief</label>
-                <dl className="kv">
-                  <dt>File</dt><dd>.dabir/PROJECT.md</dd>
-                  <dt>Venue</dt><dd>IEEE TCI, 12 pages</dd>
-                  <dt>Updated</dt><dd>2 days ago by Claude Code</dd>
-                </dl>
+                <button className="brief" onClick={() => onOpenFile(memory.briefPath)} title="Open .dabir/PROJECT.md">
+                  {memory.brief.split("\n").filter((l) => l.trim() && !l.startsWith("#")).slice(0, 3).join(" ").slice(0, 220)}…
+                </button>
+                <span className="target">Read by {memory.pointers.length ? memory.pointers.join(", ") : "no agent yet"}.</span>
               </div>
               <div className="field">
                 <label>Provenance</label>
-                <dl className="kv">
-                  <dt>Figure 3</dt><dd>code/sweep.py --sigma 0.3</dd>
-                  <dt>Table 2</dt><dd>code/sweep.py --sigma 0.3</dd>
-                  <dt>Data</dt><dd>fastmri-knee-val sha256:9f2c…</dd>
-                </dl>
+                {memory.provenance.length === 0 && <span className="target">No generated artefacts recorded. Add <code>[provenance]</code> entries to <code>dabir.toml</code>.</span>}
+                {memory.provenance.map((a) => (
+                  <div className="artefact" key={a.artefact}>
+                    <div className="row">
+                      <span className="file" title={a.artefact}>{a.artefact}</span>
+                      {a.missing ? <span className="badge missing">missing</span> : a.stale ? <span className="badge stale">stale</span> : <span className="badge fresh">fresh</span>}
+                      <button className="tb-btn icon" onClick={() => rerun(a)} title={`Rerun: ${a.command}`} aria-label="Rerun" disabled={!a.command}><RefreshCw /></button>
+                    </div>
+                    <code className="cmd">{a.command || "no command"}</code>
+                    {(a.producedAt || a.commit) && <span className="target">{a.producedAt ?? ""}{a.commit ? ` · ${a.commit}` : ""}</span>}
+                    {rerunOut[a.artefact] && <pre className="out">{rerunOut[a.artefact]}</pre>}
+                  </div>
+                ))}
               </div>
-              <p className="memory-note">Memory is plain Markdown and JSON in <code>.dabir/</code>, committed with the paper, so every coauthor's agent shares it whichever vendor they use.</p>
+              <div className="field">
+                <label>Facts</label>
+                {memory.facts.length === 0 && <span className="target">No facts yet. Agents add one file per durable decision under <code>.dabir/memory/</code>.</span>}
+                {memory.facts.map((f) => (
+                  <button className="fact" key={f.path} onClick={() => onOpenFile(f.path)} title={f.path}>
+                    <span className="name">{f.name}</span><span className="desc">{f.description || f.body.slice(0, 120)}</span>
+                  </button>
+                ))}
+              </div>
             </>
-          ) : (
-            <p className="memory-note">{project ? "This paper has no memory yet. The first agent run will draft .dabir/PROJECT.md for you to review." : "Open a paper to see its memory."}</p>
           )}
         </div>
       )}
 
       {tab === "people" && (
         <div className="inspector-body">
-          <div className="coauthors" aria-label="Sample coauthors">
-            <div className="coauthor"><span className="avatar" style={{ background: "var(--accent)" }}>SS</span><span className="name">Sadegh</span><span className="where">editing §2.2</span></div>
-            <div className="coauthor"><span className="avatar" style={{ background: "var(--ink-3)" }}>MR</span><span className="name">Marta</span><span className="where">via Overleaf, synced 4 min ago</span></div>
-          </div>
-          <p className="memory-note">Sample data. Live sessions and Overleaf sync arrive in phases 2 and 3. Until then, collaboration is through Git.</p>
+          <p className="memory-note">Collaboration is through Git for now: commit, push, and pull request. Live sessions with presence and comments, and Overleaf sync, arrive in phase 3.</p>
         </div>
       )}
     </aside>

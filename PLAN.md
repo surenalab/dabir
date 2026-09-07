@@ -11,8 +11,8 @@ The paper is a Git repo that also holds the experiment code. The agent is a coau
 | Phase | Goal | State |
 |---|---|---|
 | 0 | Foundation: Tauri shell, tokens, DESIGN.md, sample project, skills, first critique | Done |
-| 1 | An editor you would use: source editing, compile, PDF, outline, citations, Overleaf import | Mostly done, see below |
-| 2 | Git and agents: clone, commit, branch, PR; provider adapters; `.dabir` memory and provenance | Next |
+| 1 | An editor you would use: source editing, compile, PDF, outline, citations, Overleaf import | Done |
+| 2 | Git and agents: clone, commit, branch, PR; provider adapters; `.dabir` memory and provenance | Done, needs real-world testing |
 | 3 | Collaboration: Yjs live sessions, comments, self-hostable relay, track changes for non-Git coauthors | Later |
 | 4 | Ecosystem: Typst, Zotero, journal templates, plugin API, hosted relay as the optional paid service | Later |
 
@@ -24,20 +24,24 @@ The paper is a Git repo that also holds the experiment code. The agent is a coau
 
 **2026-09-07, phase 1.** Native menu bar owns every shortcut. CodeMirror 6 source editor with the LaTeX language, search and save. Tectonic compile from Rust with parsed diagnostics that jump to the line, a PDF view rendered with PDF.js, a log panel and an honest status bar. BibTeX-backed citation chips ("Ho et al. 2020"). Overleaf source-zip import from the File menu and the empty state. Sample sweep script really generates the figure and table. Rust unit tests for the log parser and the zip import.
 
-## Phase 1, still open
+**2026-09-07, phase 1 finished and phase 2 built.** Visual editing is a CodeMirror decoration layer over the same buffer (`src/lib/visual.ts`): markup hides, math and figures render as widgets from the real files, citations and refs become chips, and whatever sits under the cursor reveals its source. SyncTeX works both ways. Git runs through libgit2 with real status, commit, init, clone, and a worktree per agent run. Agent adapters launch the vendor CLIs as sidecars and stream one event protocol; the review shows the real diff with Accept and Commit, Reject, and Open Pull Request through gh. Memory setup drafts `.dabir/PROJECT.md` from the manuscript, provenance shows stale and missing artefacts with one-click rerun, and pointer files keep every vendor on the same brief. Six Rust tests cover the core.
 
-- **SyncTeX click-through.** Tectonic already writes `main.synctex.gz`. Parse it in Rust, map PDF clicks to source lines and source lines to PDF positions.
-- **Visual editing.** The visual view is read-only. Replace `src/lib/latex.ts` with a CodeMirror 6 decoration layer over the same document so visual and source are one buffer with two views. This is the biggest item left and the one that makes Overleaf users stay.
-- **Figures inline.** Render the actual figure PDF or image in the visual view instead of the placeholder.
-- **Compile on save** as an option, and incremental feedback while Tectonic runs.
+## How the pieces work
+
+- **Visual editing.** One CodeMirror buffer, two views. A state field rebuilds decorations on every document or selection change: line classes for headings, abstract and preamble; replace-decorations that hide `\section{`, `\emph{`, labels and scaffolding lines; KaTeX widgets for `$…$` and equation environments; figure widgets that render the first page of the figure PDF; chips for `\cite`, `\ref` and `\input`. Any construct that intersects the selection is left as source, so clicking a widget places the cursor inside and reveals it.
+- **SyncTeX.** Rust parses `main.synctex.gz` into (page, x, y, file, line) records. Clicking a PDF page finds the nearest record and jumps the editor. Show Line in PDF finds the record for the cursor line and draws a marker on the page.
+- **Agent runs.** `agent_run` creates `.dabir/worktrees/<id>` on branch `dabir/<id>`, prepends a pointer to the project brief, and spawns the vendor CLI there with permission prompts bypassed. stdout lines are parsed per vendor (Claude and Cursor stream-json, Codex exec json, a generic fallback for Grok and OpenCode) into text, tool, log and done events. On done the front end asks for the worktree diff. Accept applies the patch to the checkout with `git apply --3way --index`, commits, and removes the worktree. Reject removes it. Open Pull Request commits on the branch, pushes, and runs `gh pr create --web`.
+- **Memory.** `memory_setup` writes a deterministic brief (title, class, sections, figure files, provenance commands), an empty provenance file, `AGENTS.md`, `CLAUDE.md` and a Cursor rule, all pointing at the brief. `memory_read` merges provenance from `provenance.json` and `dabir.toml`, and marks an artefact stale when any input is newer than it. Rerun executes the recorded command and stamps the date and commit.
+
+## Still open
+
+- **Real-world agent testing.** The Claude Code CLI is not installed on the development machine, so the Claude adapter's parser was written from the documented stream-json shape and verified only by the sample flow. Cursor and Grok are installed; their flags are set but a real end-to-end run against a paper still needs doing.
+- **Per-hunk accept.** The review is whole-run today.
+- **Compile on save**, incremental compile feedback, and cancelling a running compile.
+- **Table environments** are shown as dimmed source in the visual view; a rendered table widget is the next visual-layer item.
+- **Local index** for retrieval over long papers is not built yet; agents currently rely on the brief plus their own file reading.
 - **Windows and Linux builds.** The shell is cross-platform, but only macOS has been run.
-
-## Phase 2 design notes
-
-- **Git** via `git2` in the Rust core. The navigator's Changes section becomes real status. Commit, branch, and a worktree per agent run. GitHub through the device OAuth flow.
-- **Agent adapters** over one internal event protocol: prompt in, tool calls and file edits out, diff at the end. Target the Agent Client Protocol first, then native adapters for Claude Code, Codex, Cursor, Grok Build and OpenCode. Always keep the API-key path first-class.
-- **Memory** lives in the repo: `.dabir/PROJECT.md`, `.dabir/memory/*.md`, `.dabir/provenance.json`, and a gitignored local index. Generated `AGENTS.md`, `CLAUDE.md` and `.cursor/rules` point into `PROJECT.md`. Memory updates ship in the same reviewed diff as the code change. The provenance graph is what lets agents mark results stale, refuse to hand-edit generated numbers, and rerun what feeds a figure.
-- **The review moment** already has its shape: evidence first, commit message, Accept and Commit, Reject, Open Pull Request. Phase 2 makes it real and adds per-hunk accept.
+- **Phase 3.** Yjs live sessions, comments anchored to text, self-hostable relay, Overleaf Git-bridge sync.
 
 ## Decisions
 

@@ -7,7 +7,7 @@ import { search, searchKeymap, openSearchPanel, highlightSelectionMatches } from
 import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
 import { tags } from "@lezer/highlight";
 import { latex } from "codemirror-lang-latex";
-import type { Diagnostic } from "../lib/backend";
+import { visualExtensions } from "../lib/visual";
 
 const highlight = HighlightStyle.define([
   { tag: [tags.keyword, tags.controlKeyword, tags.function(tags.variableName), tags.macroName], class: "tok-cmd" },
@@ -20,49 +20,57 @@ const highlight = HighlightStyle.define([
 
 interface Props {
   value: string;
+  visual: boolean;
   onChange: (text: string) => void;
   onSave: () => void;
+  onCursorLine: (line: number) => void;
   jumpLine: number | null;
+  jumpStamp: number;
   findRequest: number;
-  diagnostics: Diagnostic[];
 }
 
-const readOnly = new Compartment();
+const sourceOnly = () => [lineNumbers(), highlightActiveLineGutter(), highlightActiveLine(), syntaxHighlighting(highlight)];
 
-export function SourceEditor({ value, onChange, onSave, jumpLine, findRequest }: Props) {
+export function SourceEditor({ value, visual, onChange, onSave, onCursorLine, jumpLine, jumpStamp, findRequest }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
+  const modeComp = useRef(new Compartment());
   const onChangeRef = useRef(onChange); onChangeRef.current = onChange;
   const onSaveRef = useRef(onSave); onSaveRef.current = onSave;
+  const onCursorRef = useRef(onCursorLine); onCursorRef.current = onCursorLine;
 
   useEffect(() => {
     if (!host.current) return;
     const state = EditorState.create({
       doc: value,
       extensions: [
-        lineNumbers(), highlightActiveLineGutter(), highlightActiveLine(),
         history(), drawSelection(), dropCursor(), rectangularSelection(), crosshairCursor(),
         indentOnInput(), bracketMatching(), closeBrackets(), highlightSelectionMatches(),
         autocompletion(), search({ top: true }),
         latex(),
-        syntaxHighlighting(highlight),
         EditorView.lineWrapping,
-        readOnly.of(EditorState.readOnly.of(false)),
+        modeComp.current.of(visual ? visualExtensions() : sourceOnly()),
         keymap.of([
           { key: "Mod-s", run: () => { onSaveRef.current(); return true; } },
           ...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...historyKeymap, ...completionKeymap, indentWithTab,
         ]),
-        EditorView.updateListener.of((u) => { if (u.docChanged) onChangeRef.current(u.state.doc.toString()); }),
+        EditorView.updateListener.of((u) => {
+          if (u.docChanged) onChangeRef.current(u.state.doc.toString());
+          if (u.selectionSet || u.docChanged) onCursorRef.current(u.state.doc.lineAt(u.state.selection.main.head).number);
+        }),
       ],
     });
     const v = new EditorView({ state, parent: host.current });
     view.current = v;
     return () => { v.destroy(); view.current = null; };
-    // The editor owns the document after mount; external replacement happens through the value effect below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Replace the document only when a different file is loaded (the text diverges from the editor's own state).
+  useEffect(() => {
+    view.current?.dispatch({ effects: modeComp.current.reconfigure(visual ? visualExtensions() : sourceOnly()) });
+  }, [visual]);
+
+  // Replace the document only when a different file is loaded.
   useEffect(() => {
     const v = view.current;
     if (!v) return;
@@ -73,12 +81,12 @@ export function SourceEditor({ value, onChange, onSave, jumpLine, findRequest }:
   useEffect(() => {
     const v = view.current;
     if (!v || jumpLine == null) return;
-    const line = v.state.doc.line(Math.min(jumpLine, v.state.doc.lines));
-    v.dispatch({ selection: { anchor: line.from }, effects: EditorView.scrollIntoView(line.from, { y: "start", yMargin: 24 }) });
+    const line = v.state.doc.line(Math.max(1, Math.min(jumpLine, v.state.doc.lines)));
+    v.dispatch({ selection: { anchor: line.from }, effects: EditorView.scrollIntoView(line.from, { y: "start", yMargin: 48 }) });
     v.focus();
-  }, [jumpLine]);
+  }, [jumpLine, jumpStamp]);
 
   useEffect(() => { if (findRequest && view.current) openSearchPanel(view.current); }, [findRequest]);
 
-  return <div className="editor" ref={host} />;
+  return <div className={`editor ${visual ? "visual" : ""}`} ref={host} />;
 }
