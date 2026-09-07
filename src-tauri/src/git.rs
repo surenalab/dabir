@@ -213,9 +213,18 @@ pub fn worktree_diff(root: &Path, run_id: &str) -> Result<WorktreeDiff, String> 
 }
 
 /// Apply the worktree's changes to the user's checkout and commit them there.
-pub fn worktree_accept(root: &Path, run_id: &str, message: &str) -> Result<String, String> {
+/// With `paths`, only those files are applied and committed; the rest is discarded with the worktree.
+pub fn worktree_accept(root: &Path, run_id: &str, message: &str, paths: Option<Vec<String>>) -> Result<String, String> {
     let dir = worktree_dir(root, run_id);
-    let patch = Command::new("git").current_dir(&dir).args(["diff", "--cached", "--binary", "HEAD"]).output().map_err(|e| e.to_string())?;
+    let mut args: Vec<String> = ["diff", "--cached", "--binary", "HEAD"].iter().map(|s| s.to_string()).collect();
+    let selected: Vec<String> = match &paths {
+        Some(ps) if !ps.is_empty() => { args.push("--".into()); args.extend(ps.iter().cloned()); ps.clone() }
+        _ => {
+            let stat = Command::new("git").current_dir(&dir).args(["diff", "--cached", "--name-only", "HEAD"]).output().map_err(|e| e.to_string())?;
+            String::from_utf8_lossy(&stat.stdout).lines().map(|l| l.to_string()).filter(|l| !l.is_empty()).collect()
+        }
+    };
+    let patch = Command::new("git").current_dir(&dir).args(&args).output().map_err(|e| e.to_string())?;
     if !patch.stdout.is_empty() {
         let mut child = Command::new("git").current_dir(root).args(["apply", "--3way", "--index", "-"]).stdin(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn().map_err(|e| e.to_string())?;
         use std::io::Write;
@@ -223,7 +232,7 @@ pub fn worktree_accept(root: &Path, run_id: &str, message: &str) -> Result<Strin
         let out = child.wait_with_output().map_err(|e| e.to_string())?;
         if !out.status.success() { return Err(format!("Could not apply the agent's changes: {}", String::from_utf8_lossy(&out.stderr))); }
     }
-    let id = commit(root, message, None)?;
+    let id = commit(root, message, if selected.is_empty() { None } else { Some(selected) })?;
     worktree_remove(root, run_id)?;
     Ok(id)
 }

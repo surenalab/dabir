@@ -69,6 +69,50 @@ class TextWidget extends WidgetType {
   ignoreEvent() { return false; }
 }
 
+class TableWidget extends WidgetType {
+  constructor(readonly inner: string, readonly number: number, readonly from: number) { super(); }
+  eq(o: TableWidget) { return o.inner === this.inner && o.number === this.number; }
+  toDOM() {
+    const el = document.createElement("figure");
+    el.className = "vz-figure vz-tablefig";
+    el.dataset.from = String(this.from);
+    const caption = /\\caption\{((?:[^{}]|\{[^{}]*\})*)\}/.exec(this.inner)?.[1] ?? "";
+    const tab = /\\begin\{tabular\*?\}(?:\{[^}]*\})?\{([^}]*)\}([\s\S]*?)\\end\{tabular\*?\}/.exec(this.inner);
+    const table = document.createElement("table");
+    table.className = "vz-tab";
+    if (tab) {
+      const body = tab[2].replace(/%[^\n]*/g, "");
+      const rows = body.split(/\\\\/).map((r) => r.trim()).filter((r) => r && !/^\\(toprule|midrule|bottomrule|hline)\s*$/.test(r));
+      let sawMid = false;
+      rows.forEach((r) => {
+        const rule = /\\(midrule|hline|toprule|bottomrule)/.test(r);
+        const cleaned = r.replace(/\\(toprule|midrule|bottomrule|hline)/g, "").trim();
+        if (!cleaned) { sawMid = sawMid || rule; return; }
+        const tr = document.createElement("tr");
+        if (rule && !sawMid) { sawMid = true; }
+        cleaned.split("&").forEach((c) => {
+          const cell = document.createElement(sawMid || table.rows.length > 0 ? "td" : "th");
+          cell.innerHTML = inlineHtml(c.trim());
+          tr.appendChild(cell);
+        });
+        table.appendChild(tr);
+      });
+      const first = table.querySelector("tr");
+      if (first && first.querySelector("td") && !table.querySelector("th")) {
+        first.querySelectorAll("td").forEach((td) => { const th = document.createElement("th"); th.innerHTML = td.innerHTML; td.replaceWith(th); });
+      }
+      el.appendChild(table);
+    } else {
+      const pre = document.createElement("pre"); pre.className = "vz-rawtable"; pre.textContent = this.inner.trim(); el.appendChild(pre);
+    }
+    const cap = document.createElement("figcaption");
+    cap.innerHTML = `<b>Table ${this.number}.</b> ${inlineHtml(caption)}`;
+    el.appendChild(cap);
+    return el;
+  }
+  ignoreEvent() { return false; }
+}
+
 const imageCache = new Map<string, Promise<string | null>>();
 
 class FigureWidget extends WidgetType {
@@ -129,8 +173,12 @@ const line = (cls: string) => Decoration.line({ class: cls });
 
 const ENV_BLOCK = /\\begin\{(equation\*?|align\*?|gather\*?|multline\*?|figure\*?|table\*?)\}/g;
 
+/** True when the selection lies strictly inside the range, or a non-empty selection overlaps it. */
 function selectionTouches(state: EditorState, from: number, to: number): boolean {
-  for (const r of state.selection.ranges) if (r.from <= to && r.to >= from) return true;
+  for (const r of state.selection.ranges) {
+    if (r.empty) { if (r.from > from && r.from < to) return true; }
+    else if (r.from < to && r.to > from) return true;
+  }
   return false;
 }
 function cursorOnLine(state: EditorState, from: number, to: number): boolean {
@@ -157,7 +205,7 @@ export function buildDecorations(state: EditorState): DecorationSet {
 
   // Block environments: equations, figures, tables. Whole-doc scan.
   const blocked: [number, number][] = [];
-  let eqCount = 0, figCount = 0;
+  let eqCount = 0, figCount = 0, tabCount = 0;
   ENV_BLOCK.lastIndex = 0;
   let m: RegExpExecArray | null;
   while ((m = ENV_BLOCK.exec(text))) {
@@ -169,8 +217,10 @@ export function buildDecorations(state: EditorState): DecorationSet {
     const inner = text.slice(m.index + m[0].length, end);
     const isMath = /^(equation|align|gather|multline)/.test(env);
     const isFig = env.startsWith("figure");
+    const isTab = env.startsWith("table");
     if (isMath && !env.endsWith("*")) eqCount++;
     if (isFig) figCount++;
+    if (isTab) tabCount++;
     blocked.push([from, to]);
     if (selectionTouches(state, from, to)) {
       // Revealed: dim the env tags, keep source editable.
@@ -186,11 +236,8 @@ export function buildDecorations(state: EditorState): DecorationSet {
       const file = /\\includegraphics(?:\[[^\]]*\])?\{([^}]*)\}/.exec(inner)?.[1] ?? null;
       const caption = /\\caption\{((?:[^{}]|\{[^{}]*\})*)\}/.exec(inner)?.[1] ?? "";
       push(from, to, Decoration.replace({ widget: new FigureWidget(file, caption, figCount, from), block: true }));
-    } else {
-      push(from, from + m[0].length, mark("vz-envtag"));
-      push(end, to, mark("vz-envtag"));
-      let l = doc.lineAt(from);
-      while (l.from <= to) { push(l.from, l.from, line("vz-table")); if (l.to >= doc.length) break; l = doc.lineAt(l.to + 1); }
+    } else if (isTab) {
+      push(from, to, Decoration.replace({ widget: new TableWidget(inner, tabCount, from), block: true }));
     }
   }
   const inBlocked = (pos: number) => blocked.some(([a, b]) => pos >= a && pos < b);

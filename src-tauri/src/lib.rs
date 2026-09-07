@@ -377,7 +377,7 @@ fn agent_cancel(run_id: String) -> bool { agents::cancel(&run_id) }
 fn agent_diff(root: String, run_id: String) -> Result<git::WorktreeDiff, String> { git::worktree_diff(Path::new(&root), &run_id) }
 
 #[tauri::command]
-fn agent_accept(root: String, run_id: String, message: String) -> Result<String, String> { git::worktree_accept(Path::new(&root), &run_id, &message) }
+fn agent_accept(root: String, run_id: String, message: String, paths: Option<Vec<String>>) -> Result<String, String> { git::worktree_accept(Path::new(&root), &run_id, &message, paths) }
 
 #[tauri::command]
 fn agent_reject(root: String, run_id: String) -> Result<(), String> { git::worktree_remove(Path::new(&root), &run_id) }
@@ -558,7 +558,7 @@ mod tests {
         let d = git::worktree_diff(&dir, "t1").unwrap();
         assert_eq!(d.changes.len(), 1);
         assert!(d.patch.contains("+changed"));
-        let id = git::worktree_accept(&dir, "t1", "agent change").unwrap();
+        let id = git::worktree_accept(&dir, "t1", "agent change", None).unwrap();
         assert_eq!(id.len(), 7);
         assert_eq!(fs::read_to_string(dir.join("main.tex")).unwrap(), "changed\n");
         assert!(!wt.exists());
@@ -612,7 +612,7 @@ mod tests {
         eprintln!("changed: {:?}", d.changes.iter().map(|c| &c.path).collect::<Vec<_>>());
         assert!(d.changes.iter().any(|c| c.path == "main.tex"), "main.tex should have changed");
         assert!(d.patch.contains("PSNR margin"));
-        let id = git::worktree_accept(&dir, &run_id, "live agent change").unwrap();
+        let id = git::worktree_accept(&dir, &run_id, "live agent change", Some(vec!["main.tex".into()])).unwrap();
         assert_eq!(id.len(), 7);
         assert!(fs::read_to_string(dir.join("main.tex")).unwrap().contains("1.8 dB PSNR margin"));
         assert!(!wt.exists());
