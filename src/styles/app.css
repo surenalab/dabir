@@ -445,3 +445,83 @@ button { background: none; border: 0; padding: 0; cursor: default; }
 .sheet dt { color: var(--ink-2); } .sheet dd { margin: 0; font-family: var(--font-ui); color: var(--ink); text-align: right; }
 .sheet dd kbd { display: inline-block; min-width: 18px; padding: 0 5px; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--paper-2); font: 500 var(--text-xs)/18px var(--font-ui); margin-left: 2px; }
 .sheet footer { margin-top: var(--space-4); display: flex; justify-content: flex-end; }
+
+/* ---------- Visual editing layer ---------- */
+
+.editor.visual .cm-editor { background: var(--paper); }
+.editor.visual .cm-content { color: var(--ink); }
+.vz-preamble { font-family: var(--font-mono); font-size: 12px; line-height: 1.55; color: var(--ink-3); }
+.vz-scaffold { font-family: var(--font-mono); font-size: 12px; color: var(--ink-4); }
+.vz-hidden { font-size: 4px; line-height: 6px; }
+.vz-title { font-size: 1.75em; font-weight: 600; line-height: 1.2; margin-top: .2em; margin-bottom: .4em; }
+.vz-author { font-style: italic; color: var(--ink-2); margin-bottom: 1.6em; }
+.vz-section { font-size: 1.28em; font-weight: 600; line-height: 1.25; margin-top: 1.4em; margin-bottom: .4em; }
+.vz-subsection { font-size: 1.06em; font-weight: 600; margin-top: 1.1em; margin-bottom: .3em; }
+.vz-subsubsection, .vz-paragraph { font-weight: 600; margin-top: .8em; }
+.vz-abstract { font-size: .93em; padding-left: 1.5em !important; padding-right: 1.5em !important; color: var(--ink-2); }
+.vz-abstract-first::before { content: "Abstract. "; font-weight: 600; color: var(--ink); }
+.vz-item { padding-left: 1.4em; }
+.vz-table { font-family: var(--font-mono); font-size: 12px; color: var(--ink-2); }
+.vz-envtag { color: var(--ink-4); font-family: var(--font-mono); font-size: .8em; }
+.vz-comment { color: var(--ink-4); font-family: var(--font-mono); font-size: .82em; font-style: italic; }
+.vz-em { font-style: italic; }
+.vz-bold { font-weight: 600; }
+.vz-mono { font-family: var(--font-mono); font-size: .86em; }
+.vz-math { cursor: text; }
+.vz-math:hover, .vz-chip:hover { background: var(--accent-wash); border-radius: 3px; }
+.vz-eq { position: relative; padding: .5em 3em .5em 1.5em; margin: .2em 0; cursor: text; }
+.vz-eq .katex-display { margin: 0; text-align: left; }
+.vz-eq:hover { background: var(--paper-2); border-radius: var(--radius-sm); }
+.vz-eq-tag { position: absolute; right: .5em; top: 50%; transform: translateY(-50%); color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.vz-chip { display: inline-block; padding: 0 .35em; margin: 0 .05em; border-radius: 3px; font-family: var(--font-ui); font-size: .78em; line-height: 1.5; background: var(--accent-wash); color: var(--accent); vertical-align: .08em; cursor: default; }
+.vz-chip.vz-ref { background: var(--paper-2); color: var(--ink-2); }
+.vz-chip.vz-input { background: var(--paper-2); color: var(--ink); border: 1px dashed var(--line-strong); cursor: pointer; }
+.vz-references { font-family: var(--font-ui); font-size: .9em; color: var(--ink-2); margin-top: 2em; padding-top: 1em; border-top: 1px solid var(--line); }
+.vz-figure { margin: 1em 0; padding: 1em; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--paper-2); cursor: text; }
+.vz-figure:hover { border-color: var(--line-strong); }
+.vz-figure-box { min-height: 80px; display: grid; place-items: center; color: var(--ink-3); font-family: var(--font-ui); font-size: var(--text-sm); }
+.vz-figure-box img { max-width: 100%; max-height: 420px; display: block; }
+.vz-figure figcaption { font-size: .88em; margin-top: .7em; color: var(--ink-2); }
+.vz-figure figcaption b { color: var(--ink); font-weight: 600; }
+
+/* PDF pages and SyncTeX marker */
+.pdf-page { position: relative; box-shadow: var(--shadow-raised); background: #fff; cursor: crosshair; }
+.pdf-page canvas { display: block; }
+.pdf-marker { position: absolute; left: 0; right: 0; height: 20px; background: var(--accent); opacity: .22; pointer-events: none; }
+
+/* Navigator commits */
+.commit-box { display: flex; gap: 6px; padding: 6px var(--space-2) 2px; }
+.commit-box input { flex: 1; min-width: 0; height: 26px; padding: 0 var(--space-2); border: 1px solid var(--line-strong); border-radius: var(--radius-md); background: var(--raised); color: var(--ink); font-size: var(--text-sm); user-select: text; cursor: text; }
+.commit-box input:focus { outline: 0; border-color: var(--accent); box-shadow: 0 0 0 3px var(--focus); }
+.commit-box .btn { height: 26px; padding: 0 8px; }
+.recent { margin-top: var(--space-2); display: flex; flex-direction: column; gap: 2px; }
+.commit-row { display: grid; grid-template-columns: auto 1fr auto; gap: 6px; padding: 3px var(--space-2); font-size: var(--text-xs); color: var(--ink-2); align-items: baseline; }
+.commit-row .id { font-family: var(--font-mono); color: var(--ink-4); }
+.commit-row .summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.commit-row .when { color: var(--ink-4); white-space: nowrap; }
+
+/* Inspector: run log, memory */
+.step.text { display: block; color: var(--ink); line-height: 1.45; padding: 2px 0 4px; user-select: text; }
+.step.text > span:first-child, .step.text > .t { display: none; }
+.log-details { font-size: var(--text-xs); color: var(--ink-3); }
+.log-details summary { cursor: default; }
+.log-details pre { margin: 4px 0 0; padding: var(--space-2); background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius-sm); font-family: var(--font-mono); white-space: pre-wrap; max-height: 160px; overflow: auto; user-select: text; }
+.diff .l.hunk { color: var(--ink-4); background: var(--paper-2); }
+.brief { text-align: left; font-size: var(--text-sm); color: var(--ink-2); line-height: 1.5; padding: var(--space-2); border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--raised); }
+.brief:hover { border-color: var(--accent); }
+.artefact { display: flex; flex-direction: column; gap: 2px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.artefact .row { display: flex; align-items: center; gap: 6px; }
+.artefact .file { flex: 1; min-width: 0; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.artefact .cmd { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.artefact .out { margin: 4px 0 0; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-2); white-space: pre-wrap; user-select: text; }
+.badge { font-size: 10px; font-weight: 700; padding: 0 5px; border-radius: 3px; border: 1px solid; }
+.badge.fresh { color: var(--ok); border-color: var(--ok); }
+.badge.stale { color: var(--warn); border-color: var(--warn); }
+.badge.missing { color: var(--diff-del); border-color: var(--diff-del); }
+.fact { text-align: left; display: flex; flex-direction: column; gap: 1px; padding: 6px var(--space-2); border-radius: var(--radius-md); }
+.fact:hover { background: var(--wash-hover); }
+.fact .name { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink); }
+.fact .desc { font-size: var(--text-xs); color: var(--ink-3); line-height: 1.4; }
+.sheet-input { width: 100%; height: 30px; padding: 0 var(--space-2); border: 1px solid var(--line-strong); border-radius: var(--radius-md); background: var(--paper); color: var(--ink); font-size: var(--text-md); user-select: text; cursor: text; margin: var(--space-2) 0; }
+.sheet-input:focus { outline: 0; border-color: var(--accent); box-shadow: 0 0 0 3px var(--focus); }
+.sheet footer { gap: var(--space-2); }

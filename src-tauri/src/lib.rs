@@ -4,6 +4,11 @@
 //! A Dabir project is just a folder; nothing here writes anything the user did
 //! not ask for, except the build directory under `.dabir/build`.
 
+mod agents;
+mod git;
+mod memory;
+mod synctex;
+
 use serde::Serialize;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -311,6 +316,88 @@ fn compile(main_tex: String) -> Result<CompileResult, String> {
     })
 }
 
+// ---------------------------------------------------------------- synctex
+
+#[tauri::command]
+fn synctex_forward(main_tex: String, file: String, line: u32) -> Result<Option<synctex::PdfPos>, String> {
+    let st = synctex::load(&synctex::synctex_path(Path::new(&main_tex)))?;
+    Ok(st.forward(Path::new(&file), line))
+}
+
+#[tauri::command]
+fn synctex_inverse(main_tex: String, page: u32, x: f64, y: f64) -> Result<Option<synctex::SrcPos>, String> {
+    let st = synctex::load(&synctex::synctex_path(Path::new(&main_tex)))?;
+    Ok(st.inverse(page, x, y))
+}
+
+// ---------------------------------------------------------------- git
+
+#[tauri::command]
+fn git_status(root: String) -> Result<git::GitStatus, String> { git::status(Path::new(&root)) }
+
+#[tauri::command]
+fn git_init(root: String) -> Result<(), String> { git::init(Path::new(&root)) }
+
+#[tauri::command]
+fn git_commit(root: String, message: String, paths: Option<Vec<String>>) -> Result<String, String> { git::commit(Path::new(&root), &message, paths) }
+
+#[tauri::command]
+fn git_clone(url: String, dest: String) -> Result<String, String> { git::clone(&url, Path::new(&dest)) }
+
+// ---------------------------------------------------------------- agents
+
+#[tauri::command]
+fn agent_providers() -> Vec<agents::Provider> { agents::detect() }
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RunStarted { run_id: String, worktree: String }
+
+/// Start an agent run on a fresh worktree. Events stream on the `agent-event` channel.
+#[tauri::command]
+fn agent_run(app: AppHandle, root: String, provider: String, prompt: String) -> Result<RunStarted, String> {
+    let run_id = uuid::Uuid::new_v4().to_string()[..8].to_string();
+    let root_p = PathBuf::from(&root);
+    let wt = git::worktree_add(&root_p, &run_id)?;
+    let brief = if root_p.join(".dabir").join("PROJECT.md").exists() {
+        "Read .dabir/PROJECT.md first; it holds the project brief, notation and the commands that regenerate figures and tables. Never hand-edit generated artefacts; rerun their command. If you learn something durable, add a one-fact Markdown file under .dabir/memory/ with name and description frontmatter.\n\n"
+    } else { "" };
+    let full = format!("{}{}", brief, prompt);
+    if let Err(e) = agents::run(app, provider, full, wt.clone(), run_id.clone()) {
+        let _ = git::worktree_remove(&root_p, &run_id);
+        return Err(e);
+    }
+    Ok(RunStarted { run_id, worktree: wt.to_string_lossy().to_string() })
+}
+
+#[tauri::command]
+fn agent_cancel(run_id: String) -> bool { agents::cancel(&run_id) }
+
+#[tauri::command]
+fn agent_diff(root: String, run_id: String) -> Result<git::WorktreeDiff, String> { git::worktree_diff(Path::new(&root), &run_id) }
+
+#[tauri::command]
+fn agent_accept(root: String, run_id: String, message: String) -> Result<String, String> { git::worktree_accept(Path::new(&root), &run_id, &message) }
+
+#[tauri::command]
+fn agent_reject(root: String, run_id: String) -> Result<(), String> { git::worktree_remove(Path::new(&root), &run_id) }
+
+#[tauri::command]
+fn agent_pull_request(root: String, run_id: String, message: String) -> Result<String, String> { git::worktree_pull_request(Path::new(&root), &run_id, &message) }
+
+// ---------------------------------------------------------------- memory
+
+#[tauri::command]
+fn memory_read(root: String) -> Result<memory::Memory, String> { memory::read(Path::new(&root)) }
+
+#[tauri::command]
+fn memory_setup(root: String, main_tex: Option<String>) -> Result<Vec<String>, String> {
+    memory::setup(Path::new(&root), main_tex.as_deref().map(Path::new))
+}
+
+#[tauri::command]
+fn provenance_rerun(root: String, artefact: String) -> Result<memory::RunOutput, String> { memory::rerun(Path::new(&root), &artefact) }
+
 // ---------------------------------------------------------------- menu
 
 fn build_menu(app: &AppHandle) -> tauri::Result<()> {
@@ -336,7 +423,7 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
     let file = SubmenuBuilder::new(app, "File")
         .item(&MenuItemBuilder::with_id("open", "Open Paper…").accelerator("Cmd+O").build(app)?)
         .item(&MenuItemBuilder::with_id("import-overleaf", "Import from Overleaf…").build(app)?)
-        .item(&MenuItemBuilder::with_id("clone", "Clone from GitHub…").accelerator("Cmd+Shift+O").enabled(false).build(app)?)
+        .item(&MenuItemBuilder::with_id("clone", "Clone from GitHub…").accelerator("Cmd+Shift+O").build(app)?)
         .separator()
         .item(&MenuItemBuilder::with_id("save", "Save").accelerator("Cmd+S").build(app)?)
         .separator()
@@ -369,6 +456,9 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
     let paper = SubmenuBuilder::new(app, "Paper")
         .item(&MenuItemBuilder::with_id("compile", "Compile").accelerator("Cmd+B").build(app)?)
         .item(&MenuItemBuilder::with_id("show-log", "Show Compile Log").accelerator("Cmd+Shift+L").build(app)?)
+        .item(&MenuItemBuilder::with_id("sync-pdf", "Show Line in PDF").accelerator("Cmd+Shift+J").build(app)?)
+        .separator()
+        .item(&MenuItemBuilder::with_id("commit", "Commit…").accelerator("Cmd+Shift+C").build(app)?)
         .separator()
         .item(&MenuItemBuilder::with_id("ask-agent", "Ask the Agent…").accelerator("Cmd+K").build(app)?)
         .build()?;
@@ -407,7 +497,13 @@ pub fn run() {
         .on_menu_event(|app, event| {
             let _ = app.emit("menu", event.id().0.clone());
         })
-        .invoke_handler(tauri::generate_handler![open_project, read_text, write_text, read_binary, compile, import_overleaf_zip])
+        .invoke_handler(tauri::generate_handler![
+            open_project, read_text, write_text, read_binary, compile, import_overleaf_zip,
+            synctex_forward, synctex_inverse,
+            git_status, git_init, git_commit, git_clone,
+            agent_providers, agent_run, agent_cancel, agent_diff, agent_accept, agent_reject, agent_pull_request,
+            memory_read, memory_setup, provenance_rerun
+        ])
         .run(tauri::generate_context!())
         .expect("error while running Dabir");
 }
@@ -427,6 +523,60 @@ mod tests {
         assert_eq!(d[1].severity, "warning");
         assert_eq!(d[1].line, Some(40));
         assert_eq!(d[2].line, None);
+    }
+
+    #[test]
+    fn git_status_commit_and_memory_setup() {
+        let dir = std::env::temp_dir().join(format!("dabir-git-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("main.tex"), "\\documentclass{article}\n\\title{Test Paper}\n\\begin{document}\n\\section{Intro}\nHi\n\\end{document}\n").unwrap();
+        fs::write(dir.join("dabir.toml"), "[provenance]\n\"figures/a.pdf\" = \"true\"\n").unwrap();
+        let st = git::status(&dir).unwrap();
+        assert!(!st.is_repo);
+        git::init(&dir).unwrap();
+        let st = git::status(&dir).unwrap();
+        assert!(st.is_repo);
+        assert!(st.changes.iter().any(|c| c.path == "main.tex" && c.status == "untracked"));
+        let id = git::commit(&dir, "first", None).unwrap();
+        assert_eq!(id.len(), 7);
+        let st = git::status(&dir).unwrap();
+        assert!(st.changes.is_empty());
+        assert_eq!(st.recent[0].summary, "first");
+        // memory
+        let written = memory::setup(&dir, Some(&dir.join("main.tex"))).unwrap();
+        assert!(written.contains(&".dabir/PROJECT.md".to_string()));
+        let m = memory::read(&dir).unwrap();
+        assert!(m.brief.unwrap().contains("Test Paper"));
+        assert_eq!(m.provenance.len(), 1);
+        assert!(m.provenance[0].missing);
+        assert!(m.pointers.contains(&"AGENTS.md".to_string()));
+        // worktree round trip
+        git::commit(&dir, "memory", None).unwrap();
+        let wt = git::worktree_add(&dir, "t1").unwrap();
+        fs::write(wt.join("main.tex"), "changed\n").unwrap();
+        let d = git::worktree_diff(&dir, "t1").unwrap();
+        assert_eq!(d.changes.len(), 1);
+        assert!(d.patch.contains("+changed"));
+        let id = git::worktree_accept(&dir, "t1", "agent change").unwrap();
+        assert_eq!(id.len(), 7);
+        assert_eq!(fs::read_to_string(dir.join("main.tex")).unwrap(), "changed\n");
+        assert!(!wt.exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn synctex_parses_records() {
+        let text = "SyncTeX Version:1\nInput:1:/tmp/x/main.tex\nOutput:pdf\nMagnification:1000\nUnit:1\nX Offset:0\nY Offset:0\nContent:\n{1\n[1,1:4736286,4736286:0,0,0\nh1,12:4736286,9000000:100,10,2\nx1,13:4800000,9500000\n]\n}1\n";
+        let tmp = std::env::temp_dir().join(format!("dabir-synctex-{}.synctex", std::process::id()));
+        fs::write(&tmp, text).unwrap();
+        let st = synctex::load(&tmp).unwrap();
+        let f = st.forward(Path::new("main.tex"), 12).unwrap();
+        assert_eq!(f.page, 1);
+        assert!((f.y - 9000000.0 / 65536.0).abs() < 0.01);
+        let inv = st.inverse(1, 73.0, 145.0).unwrap();
+        assert_eq!(inv.line, 13);
+        let _ = fs::remove_file(&tmp);
     }
 
     #[test]

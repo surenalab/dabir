@@ -44,3 +44,9 @@ Side-tab borders, gradients, glass as decoration, emoji icons, section-number ey
 
 ## Keyboard
 Owned by the native menu bar; the browser preview mirrors it. ⌘O open, ⌘S save, ⌘B compile, ⇧⌘L log, ⌘1/2/3 views, ⌃⌘S sidebar, ⌥⌘I inspector, ⌘K ask the agent, ⌘↩ send, ⌘F find, ⌘/ shortcut sheet. Trees take ↑↓ and ←→; segmented controls take ←→.
+
+## Visual editing layer
+Classes prefixed `vz-` in `app.css` style the decoration layer: `vz-title`, `vz-section`, `vz-abstract`, `vz-preamble`, `vz-eq`, `vz-math`, `vz-chip` (cite in accent wash, ref in paper-2, input dashed), `vz-figure`. Hover on a widget shows a wash; click reveals its source. Preamble and tables stay in mono at 12 px so the reader always knows what is source.
+
+## Review and memory
+Provenance badges: fresh in ok green, stale in warn amber, missing in deletion red. Sample data carries the amber `sample` tag. Agent log lines fold into a details element; tool steps use a check, failures an X, running a spinner with a text fallback under reduced motion.

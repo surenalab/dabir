@@ -4,9 +4,11 @@ import { Navigator } from "./components/Navigator";
 import { Document } from "./components/Document";
 import { Inspector } from "./components/Inspector";
 import { ShortcutSheet } from "./components/ShortcutSheet";
+import { CloneSheet } from "./components/CloneSheet";
 import {
-  compile as runCompile, importOverleaf, native, onMenu, onWindowFocus, openProject, pickFolder, readText,
-  setWindowTitle, writeText, type CompileResult, type Project,
+  compile as runCompile, gitClone, gitCommit, gitInit, gitStatus, importOverleaf, native, onMenu, onWindowFocus,
+  openProject, pickFolder, readText, setWindowTitle, synctexForward, synctexInverse, writeText,
+  type CompileResult, type GitStatus, type PdfPos, type Project,
 } from "./lib/backend";
 import { parseBib, type BibEntry, type OutlineItem } from "./lib/latex";
 
@@ -32,17 +34,29 @@ export default function App() {
   const [animating, setAnimating] = useState(false);
   const [outline, setOutline] = useState<OutlineItem[]>([]);
   const [jumpLine, setJumpLine] = useState<number | null>(null);
+  const [jumpStamp, setJumpStamp] = useState(0);
+  const [cursorLine, setCursorLine] = useState(1);
   const [compileState, setCompileState] = useState<CompileState>({ status: "idle" });
+  const [pdfTarget, setPdfTarget] = useState<(PdfPos & { stamp: number }) | null>(null);
   const [showLog, setShowLog] = useState(false);
   const [focused, setFocused] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [sheet, setSheet] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const [sheet, setSheet] = useState<"shortcuts" | "clone" | null>(null);
   const [askFocus, setAskFocus] = useState(0);
+  const [commitFocus, setCommitFocus] = useState(0);
   const [findRequest, setFindRequest] = useState(0);
   const [bib, setBib] = useState<Record<string, BibEntry>>({});
+  const [git, setGit] = useState<GitStatus | null>(null);
+  const [gitBusy, setGitBusy] = useState(false);
   const autoCollapsed = useRef(false);
   const sourceRef = useRef<string | null>(null);
   sourceRef.current = source;
+
+  const refreshGit = useCallback(async (p: Project | null = project) => {
+    if (!p) { setGit(null); return; }
+    try { setGit(await gitStatus(p.root)); } catch { setGit(null); }
+  }, [project]);
 
   const selectFile = useCallback(async (path: string) => {
     try {
@@ -63,31 +77,39 @@ export default function App() {
 
   const openFolder = useCallback(async (folder: string) => {
     const p = await openProject(folder);
-    setProject(p); setCompileState({ status: "idle" }); setError(null);
+    setProject(p); setCompileState({ status: "idle" }); setError(null); setPdfTarget(null);
     setWindowTitle(p.name);
     loadBib(p);
+    refreshGit(p);
     if (p.mainTex) await selectFile(p.mainTex); else { setFile(null); setSource(null); }
-  }, [selectFile, loadBib]);
+  }, [selectFile, loadBib, refreshGit]);
 
-  const importFromOverleaf = useCallback(async () => {
-    try { const folder = await importOverleaf(); if (folder) await openFolder(folder); }
-    catch (e) { setError(String(e)); }
-  }, [openFolder]);
+  const reloadProject = useCallback(async () => {
+    if (!project) return;
+    try { const p = await openProject(project.root); setProject(p); loadBib(p); refreshGit(p); } catch (e) { setError(String(e)); }
+  }, [project, loadBib, refreshGit]);
 
   const open = useCallback(async () => {
-    try {
-      const folder = await pickFolder();
-      if (!folder) return;
-      await openFolder(folder);
-    } catch (e) { setError(String(e)); }
+    try { const folder = await pickFolder(); if (folder) await openFolder(folder); } catch (e) { setError(String(e)); }
   }, [openFolder]);
 
+  const importFromOverleaf = useCallback(async () => {
+    try { const folder = await importOverleaf(); if (folder) await openFolder(folder); } catch (e) { setError(String(e)); }
+  }, [openFolder]);
+
+  const cloneRepo = useCallback(async (url: string) => {
+    const parent = await pickFolder("Choose where to clone");
+    if (!parent) return;
+    const name = url.replace(/\/+$/, "").replace(/\.git$/, "").split(/[/:]/).pop() || "paper";
+    const dest = await gitClone(url, `${parent}/${name}`);
+    await openFolder(dest);
+  }, [openFolder]);
 
   const save = useCallback(async () => {
     if (!file || sourceRef.current == null) return;
-    try { await writeText(file, sourceRef.current); setDirty(false); }
+    try { await writeText(file, sourceRef.current); setDirty(false); refreshGit(); }
     catch (e) { setError(String(e)); }
-  }, [file]);
+  }, [file, refreshGit]);
 
   const compile = useCallback(async () => {
     if (!project?.mainTex || compileState.status === "running") return;
@@ -102,6 +124,40 @@ export default function App() {
     }
   }, [project, dirty, save, compileState.status]);
 
+  const showInPdf = useCallback(async () => {
+    if (!project?.mainTex || !file) return;
+    if (compileState.status !== "done" || !compileState.result.pdf) { setNote("Compile first (⌘B), then Show Line in PDF."); return; }
+    try {
+      const pos = await synctexForward(project.mainTex, file, cursorLine);
+      if (!pos) { setNote(`No PDF position recorded for line ${cursorLine}.`); return; }
+      setMode("pdf"); setPdfTarget({ ...pos, stamp: Date.now() });
+    } catch (e) { setNote(String(e)); }
+  }, [project, file, cursorLine, compileState]);
+
+  const onPdfClick = useCallback(async (page: number, x: number, y: number) => {
+    if (!project?.mainTex) return;
+    try {
+      const pos = await synctexInverse(project.mainTex, page, x, y);
+      if (!pos) return;
+      const target = pos.file.startsWith("/") ? pos.file : `${project.root}/${pos.file.replace(/^\.\//, "")}`;
+      if (target !== file) await selectFile(target);
+      setMode("source"); setJumpLine(pos.line); setJumpStamp(Date.now());
+    } catch (e) { setNote(String(e)); }
+  }, [project, file, selectFile]);
+
+  const initGit = useCallback(async () => {
+    if (!project) return;
+    try { await gitInit(project.root); await reloadProject(); setNote("Initialised an empty Git repository. Make a first commit so agents can branch from it."); }
+    catch (e) { setError(String(e)); }
+  }, [project, reloadProject]);
+
+  const commitAll = useCallback(async (message: string) => {
+    if (!project) return;
+    setGitBusy(true);
+    try { if (dirty) await save(); const id = await gitCommit(project.root, message); setNote(`Committed ${id}.`); await refreshGit(); }
+    catch (e) { setError(String(e)); } finally { setGitBusy(false); }
+  }, [project, dirty, save, refreshGit]);
+
   const toggleNav = useCallback(() => { setAnimating(true); setNavOpen((v) => !v); }, []);
   const toggleInspector = useCallback(() => { setAnimating(true); autoCollapsed.current = false; setInspectorOpen((v) => !v); }, []);
 
@@ -110,9 +166,12 @@ export default function App() {
     switch (id) {
       case "open": open(); break;
       case "import-overleaf": importFromOverleaf(); break;
+      case "clone": setSheet("clone"); break;
       case "save": save(); break;
       case "compile": compile(); break;
       case "show-log": setShowLog((v) => !v); break;
+      case "sync-pdf": showInPdf(); break;
+      case "commit": if (!navOpen) toggleNav(); setCommitFocus((n) => n + 1); break;
       case "view-visual": setMode("visual"); break;
       case "view-source": setMode("source"); break;
       case "view-pdf": setMode("pdf"); break;
@@ -120,12 +179,13 @@ export default function App() {
       case "toggle-inspector": toggleInspector(); break;
       case "ask-agent": if (!inspectorOpen) toggleInspector(); setAskFocus((n) => n + 1); break;
       case "find": setMode("source"); setFindRequest((n) => n + 1); break;
-      case "shortcuts": setSheet((v) => !v); break;
+      case "shortcuts": setSheet((v) => (v === "shortcuts" ? null : "shortcuts")); break;
     }
-  }, [open, importFromOverleaf, save, compile, toggleNav, toggleInspector, inspectorOpen]);
+  }, [open, importFromOverleaf, save, compile, showInPdf, toggleNav, toggleInspector, inspectorOpen, navOpen]);
 
   useEffect(() => onMenu(command), [command]);
-  useEffect(() => onWindowFocus(setFocused), []);
+  useEffect(() => onWindowFocus((f) => { setFocused(f); if (f) refreshGit(); }), [refreshGit]);
+  useEffect(() => { if (!note) return; const t = setTimeout(() => setNote(null), 6000); return () => clearTimeout(t); }, [note]);
 
   // Keyboard fallback for the browser preview only; the native app owns accelerators through its menu.
   useEffect(() => {
@@ -133,20 +193,19 @@ export default function App() {
     const onKey = (e: KeyboardEvent) => {
       if (!e.metaKey) return;
       const k = e.key.toLowerCase();
-      const map: Record<string, string> = {
-        o: "open", s: "save", b: "compile", "1": "view-visual", "2": "view-source", "3": "view-pdf",
-        k: "ask-agent", f: "find", "/": "shortcuts",
-      };
+      const map: Record<string, string> = { o: "open", s: "save", b: "compile", "1": "view-visual", "2": "view-source", "3": "view-pdf", k: "ask-agent", f: "find", "/": "shortcuts" };
       if (e.ctrlKey && k === "s") { e.preventDefault(); command("toggle-sidebar"); return; }
       if (e.altKey && (k === "i" || e.code === "KeyI")) { e.preventDefault(); command("toggle-inspector"); return; }
       if (e.shiftKey && k === "l") { e.preventDefault(); command("show-log"); return; }
+      if (e.shiftKey && k === "j") { e.preventDefault(); command("sync-pdf"); return; }
+      if (e.shiftKey && k === "c") { e.preventDefault(); command("commit"); return; }
+      if (e.shiftKey && k === "o") { e.preventDefault(); command("clone"); return; }
       if (!e.altKey && !e.ctrlKey && !e.shiftKey && map[k]) { e.preventDefault(); command(map[k]); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [command]);
 
-  // Auto-hide the inspector in narrow windows, and bring it back when there is room.
   useEffect(() => {
     const onResize = () => {
       const w = window.innerWidth;
@@ -158,53 +217,38 @@ export default function App() {
     return () => window.removeEventListener("resize", onResize);
   }, [inspectorOpen]);
 
-  useEffect(() => {
-    if (!animating) return;
-    const t = setTimeout(() => setAnimating(false), 260);
-    return () => clearTimeout(t);
-  }, [animating]);
+  useEffect(() => { if (!animating) return; const t = setTimeout(() => setAnimating(false), 260); return () => clearTimeout(t); }, [animating]);
 
-  // Divider dragging
   useEffect(() => {
     if (!dragging) return;
-    const move = (e: PointerEvent) => {
-      if (dragging === "nav") setNavW(clamp(e.clientX, 180, 340));
-      else setInspW(clamp(window.innerWidth - e.clientX, 280, 480));
-    };
+    const move = (e: PointerEvent) => { if (dragging === "nav") setNavW(clamp(e.clientX, 180, 340)); else setInspW(clamp(window.innerWidth - e.clientX, 280, 480)); };
     const up = () => setDragging(null);
     window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
     return () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
   }, [dragging]);
 
   const onSourceChange = useCallback((text: string) => { setSource(text); setDirty(true); }, []);
-  const jumpTo = useCallback((line: number, inSource?: boolean) => { if (inSource) setMode("source"); setJumpLine(line); }, []);
+  const jumpTo = useCallback((line: number, inSource?: boolean) => { if (inSource) setMode("source"); setJumpLine(line); setJumpStamp(Date.now()); }, []);
+  const onChanged = useCallback(() => { refreshGit(); reloadProject(); if (file) readText(file).then((t) => { if (!dirty) setSource(t); }).catch(() => {}); }, [refreshGit, reloadProject, file, dirty]);
 
-  const cls = [
-    "app", native ? "native" : "", navOpen ? "" : "nav-hidden", inspectorOpen ? "" : "inspector-hidden",
-    animating ? "animating" : "", focused ? "" : "inactive",
-  ].join(" ").trim();
+  const cls = ["app", native ? "native" : "", navOpen ? "" : "nav-hidden", inspectorOpen ? "" : "inspector-hidden", animating ? "animating" : "", focused ? "" : "inactive"].join(" ").trim();
 
   return (
     <div className={cls} style={{ "--nav-w": `${navW}px`, "--inspector-w": `${inspW}px` } as React.CSSProperties}>
-      <Toolbar
-        project={project} file={file} dirty={dirty} mode={mode}
-        navOpen={navOpen} inspectorOpen={inspectorOpen}
-        compiling={compileState.status === "running"}
-        onMode={setMode} onToggleNav={toggleNav} onToggleInspector={toggleInspector}
-        onOpen={open} onCompile={compile}
-      />
-      <Navigator project={project} current={file} outline={outline} onSelect={selectFile} onJump={(l) => jumpTo(l)} />
-      <Document
-        project={project} file={file} source={source} bib={bib} mode={mode} jumpLine={jumpLine}
-        compileState={compileState} showLog={showLog} onToggleLog={() => setShowLog((v) => !v)}
-        findRequest={findRequest} error={error} onDismissError={() => setError(null)}
-        onOpen={open} onImport={importFromOverleaf} onOutline={setOutline} onSourceChange={onSourceChange} onSave={save}
-        onSelectFile={selectFile} onJump={jumpTo} onCompile={compile}
-      />
-      <Inspector project={project} askFocus={askFocus} />
+      <Toolbar project={project} file={file} dirty={dirty} mode={mode} navOpen={navOpen} inspectorOpen={inspectorOpen}
+        compiling={compileState.status === "running"} onMode={setMode} onToggleNav={toggleNav} onToggleInspector={toggleInspector} onOpen={open} onCompile={compile} />
+      <Navigator project={project} current={file} outline={outline} git={git} commitFocus={commitFocus} busy={gitBusy}
+        onSelect={selectFile} onJump={(l) => jumpTo(l)} onInitGit={initGit} onCommit={commitAll} />
+      <Document project={project} file={file} source={source} bib={bib} mode={mode} jumpLine={jumpLine} jumpStamp={jumpStamp}
+        compileState={compileState} showLog={showLog} onToggleLog={() => setShowLog((v) => !v)} findRequest={findRequest}
+        error={error ?? note} onDismissError={() => { setError(null); setNote(null); }} pdfTarget={pdfTarget}
+        onOpen={open} onImport={importFromOverleaf} onClone={() => setSheet("clone")} onOutline={setOutline}
+        onSourceChange={onSourceChange} onSave={save} onCursorLine={setCursorLine} onSelectFile={selectFile} onJump={jumpTo} onPdfClick={onPdfClick} />
+      <Inspector project={project} askFocus={askFocus} onChanged={onChanged} onOpenFile={selectFile} onNote={setNote} />
       <div className={`divider nav ${dragging === "nav" ? "dragging" : ""}`} onPointerDown={() => setDragging("nav")} role="separator" aria-orientation="vertical" aria-label="Resize sidebar" />
       <div className={`divider inspector ${dragging === "inspector" ? "dragging" : ""}`} onPointerDown={() => setDragging("inspector")} role="separator" aria-orientation="vertical" aria-label="Resize inspector" />
-      {sheet && <ShortcutSheet onClose={() => setSheet(false)} />}
+      {sheet === "shortcuts" && <ShortcutSheet onClose={() => setSheet(null)} />}
+      {sheet === "clone" && <CloneSheet onClose={() => setSheet(null)} onClone={cloneRepo} />}
     </div>
   );
 }
