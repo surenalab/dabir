@@ -52,7 +52,23 @@ fn candidates() -> Vec<PathBuf> {
 }
 
 fn find_bin(bin: &str) -> Option<PathBuf> {
-    candidates().into_iter().map(|d| d.join(bin)).find(|p| p.is_file())
+    if let Some(p) = candidates().into_iter().map(|d| d.join(bin)).find(|p| p.is_file()) { return Some(p); }
+    let home = std::env::var("HOME").unwrap_or_default();
+    match bin {
+        // Claude Code ships inside the VS Code / desktop agent host when the standalone CLI is not installed.
+        "claude" => {
+            let base = PathBuf::from(format!("{}/Library/Application Support/Code/agent-host/sdk-cache/claude", home));
+            let mut versions: Vec<PathBuf> = std::fs::read_dir(&base).ok()?.flatten().map(|e| e.path()).collect();
+            versions.sort();
+            versions.into_iter().rev().map(|v| v.join("darwin-arm64/node_modules/@anthropic-ai/claude-agent-sdk-darwin-arm64/claude")).find(|p| p.is_file())
+        }
+        // The ChatGPT desktop app bundles the Codex CLI.
+        "codex" => {
+            let p = PathBuf::from("/Applications/ChatGPT.app/Contents/Resources/codex");
+            if p.is_file() { Some(p) } else { None }
+        }
+        _ => None,
+    }
 }
 
 fn defs() -> Vec<(&'static str, &'static str, &'static str, &'static str)> {
@@ -76,7 +92,7 @@ fn args_for(id: &str, prompt: &str, cwd: &Path) -> Vec<String> {
     let cwd_s = cwd.to_string_lossy().to_string();
     match id {
         "claude" => vec!["-p".into(), prompt.into(), "--output-format".into(), "stream-json".into(), "--verbose".into(), "--permission-mode".into(), "bypassPermissions".into()],
-        "codex" => vec!["exec".into(), "--json".into(), "--full-auto".into(), "-C".into(), cwd_s, prompt.into()],
+        "codex" => vec!["exec".into(), "--json".into(), "--skip-git-repo-check".into(), "--dangerously-bypass-approvals-and-sandbox".into(), "-C".into(), cwd_s, prompt.into()],
         "cursor" => vec!["-p".into(), "--output-format".into(), "stream-json".into(), "--force".into(), "--trust".into(), "--workspace".into(), cwd_s, prompt.into()],
         "grok" => vec!["-p".into(), prompt.into(), "--output-format".into(), "streaming-messages-json".into(), "--permission-mode".into(), "bypassPermissions".into(), "--cwd".into(), cwd_s],
         _ => vec!["run".into(), "--format".into(), "json".into(), prompt.into()],
@@ -98,7 +114,7 @@ fn parse_line(id: &str, line: &str) -> Vec<(String, String, Option<String>, Opti
     };
     let mut out = vec![];
     match id {
-        "claude" | "cursor" => {
+        "claude" | "cursor" | "grok" => {
             match v["type"].as_str() {
                 Some("assistant") => {
                     if let Some(items) = v["message"]["content"].as_array() {
@@ -118,9 +134,22 @@ fn parse_line(id: &str, line: &str) -> Vec<(String, String, Option<String>, Opti
                 }
                 Some("result") => {
                     let err = v["is_error"].as_bool().unwrap_or(false);
-                    out.push(("done".into(), v["result"].as_str().unwrap_or("").into(), None, Some(!err)));
+                    let mut text = v["result"].as_str().unwrap_or("").to_string();
+                    if err && text.is_empty() {
+                        text = match v["subtype"].as_str() {
+                            Some(s) if s.contains("auth") => "Authentication failed. Sign in to the CLI (for Claude Code run `claude` once and log in), then try again.".into(),
+                            Some(s) => format!("The agent stopped: {}", s.replace('_', " ")),
+                            None => "The agent stopped with an error.".into(),
+                        };
+                    }
+                    out.push(("done".into(), text, None, Some(!err)));
                 }
-                Some("system") => {}
+                Some("system") => {
+                    if v["subtype"] == "api_retry" {
+                        let e = v["error"].as_str().unwrap_or("");
+                        if e == "authentication_failed" { out.push(("log".into(), "authentication failed (401). Sign in to the CLI and try again.".into(), None, None)); }
+                    }
+                }
                 _ => {}
             }
         }
@@ -166,15 +195,26 @@ fn parse_line(id: &str, line: &str) -> Vec<(String, String, Option<String>, Opti
 }
 
 pub fn run(app: AppHandle, provider: String, prompt: String, cwd: PathBuf, run_id: String) -> Result<(), String> {
+    let rid = run_id.clone();
+    run_with(provider, prompt, cwd, run_id, move |ev| { let _ = app.emit("agent-event", AgentEvent { run_id: rid.clone(), ..ev }); })
+}
+
+/// Environment variables that would point a child CLI at this process's own session
+/// (for example when Dabir is launched from inside another agent's terminal).
+const SCRUB_ENV: &[&str] = &["ANTHROPIC_BASE_URL", "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_CODE_MESSAGING_SOCKET", "CLAUDE_CODE_MESSAGING_TOKEN", "CLAUDE_CODE_EXECPATH", "CLAUDE_CODE_HOST_SESSION_ID", "CLAUDE_AGENT_SDK_VERSION", "CLAUDE_CODE_OAUTH_SCOPES", "CLAUDE_PID", "CODEX_SANDBOX", "CODEX_THREAD_ID"];
+
+pub fn run_with<F>(provider: String, prompt: String, cwd: PathBuf, run_id: String, emit_raw: F) -> Result<(), String>
+where F: Fn(AgentEvent) + Send + Clone + 'static {
     let p = detect().into_iter().find(|p| p.id == provider).ok_or("Unknown provider")?;
     let Some(bin) = p.path.clone() else {
         return Err(format!("{} is not installed. Install the {} CLI and sign in, then try again.", p.label, p.bin));
     };
     let args = args_for(&provider, &prompt, &cwd);
-    let mut child: Child = Command::new(&bin)
-        .args(&args)
-        .current_dir(&cwd)
-        .env("DABIR", "1")
+    let mut cmd = Command::new(&bin);
+    cmd.args(&args).current_dir(&cwd).env("DABIR", "1");
+    for k in SCRUB_ENV { cmd.env_remove(k); }
+    for (k, _) in std::env::vars() { if k.starts_with("CLAUDE_CODE_") { cmd.env_remove(&k); } }
+    let mut child: Child = cmd
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -187,16 +227,15 @@ pub fn run(app: AppHandle, provider: String, prompt: String, cwd: PathBuf, run_i
     let stdout = child.stdout.take().unwrap();
     let stderr = child.stderr.take().unwrap();
     let emit = {
-        let app = app.clone();
         let run_id = run_id.clone();
         move |kind: &str, text: String, tool: Option<String>, ok: Option<bool>| {
-            let _ = app.emit("agent-event", AgentEvent { run_id: run_id.clone(), kind: kind.into(), text, tool, ok });
+            emit_raw(AgentEvent { run_id: run_id.clone(), kind: kind.into(), text, tool, ok });
         }
     };
     let emit_err = emit.clone();
     std::thread::spawn(move || {
         for line in BufReader::new(stderr).lines().flatten() {
-            if !line.trim().is_empty() { emit_err("log", line, None, None); }
+            if !line.trim().is_empty() && !line.starts_with("Reading additional input from stdin") { emit_err("log", line, None, None); }
         }
     });
     let pid_id = run_id.clone();

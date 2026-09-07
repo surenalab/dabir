@@ -579,6 +579,46 @@ mod tests {
         let _ = fs::remove_file(&tmp);
     }
 
+    /// Full pipeline against a real agent CLI. Run with:
+    ///   DABIR_LIVE_PROVIDER=grok cargo test live_agent -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn live_agent_run() {
+        let provider = std::env::var("DABIR_LIVE_PROVIDER").unwrap_or_else(|_| "grok".into());
+        let src = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples/isgd-tci");
+        let dir = std::env::temp_dir().join(format!("dabir-live-{}-{}", provider, std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        for f in ["main.tex", "refs.bib", "dabir.toml", "AGENTS.md", "CLAUDE.md", ".gitignore"] { let _ = fs::copy(src.join(f), dir.join(f)); }
+        for d in ["code", "tables", "figures", ".dabir", ".dabir/memory"] { fs::create_dir_all(dir.join(d)).unwrap(); }
+        for f in ["code/sweep.py", "tables/psnr-sweep.tex", "figures/psnr-vs-noise.pdf", ".dabir/PROJECT.md", ".dabir/provenance.json", ".dabir/memory/reviewer-2-injectivity-proof.md"] { let _ = fs::copy(src.join(f), dir.join(f)); }
+        git::init(&dir).unwrap();
+        git::commit(&dir, "seed", None).unwrap();
+        let run_id = "live1".to_string();
+        let wt = git::worktree_add(&dir, &run_id).unwrap();
+        let (tx, rx) = std::sync::mpsc::channel::<agents::AgentEvent>();
+        let started = std::time::Instant::now();
+        agents::run_with(provider.clone(), "Open main.tex and change the abstract's phrase '1.8 dB margin' to '1.8 dB PSNR margin'. Do not touch anything else. Reply DONE when finished.".into(), wt.clone(), run_id.clone(), move |e| { let _ = tx.send(e); }).unwrap();
+        let mut ok = None;
+        let mut tools = 0;
+        while let Ok(e) = rx.recv_timeout(std::time::Duration::from_secs(240)) {
+            eprintln!("[{}] {} {:?} {}", e.kind, e.run_id, e.tool, e.text.chars().take(120).collect::<String>());
+            if e.kind == "tool" { tools += 1; }
+            if e.kind == "done" { ok = e.ok; break; }
+        }
+        eprintln!("finished in {:?}, tools={}", started.elapsed(), tools);
+        assert_eq!(ok, Some(true), "agent did not finish successfully");
+        let d = git::worktree_diff(&dir, &run_id).unwrap();
+        eprintln!("changed: {:?}", d.changes.iter().map(|c| &c.path).collect::<Vec<_>>());
+        assert!(d.changes.iter().any(|c| c.path == "main.tex"), "main.tex should have changed");
+        assert!(d.patch.contains("PSNR margin"));
+        let id = git::worktree_accept(&dir, &run_id, "live agent change").unwrap();
+        assert_eq!(id.len(), 7);
+        assert!(fs::read_to_string(dir.join("main.tex")).unwrap().contains("1.8 dB PSNR margin"));
+        assert!(!wt.exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn imports_overleaf_zip() {
         let zip = std::env::var("DABIR_TEST_ZIP").unwrap_or_default();
