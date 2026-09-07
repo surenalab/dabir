@@ -191,3 +191,29 @@ export function highlightLine(line: string): { cls: "cmd" | "cmt" | "math" | "tx
   if (last < line.length) out.push({ cls: "txt", text: line.slice(last) });
   return out;
 }
+
+/** Minimal BibTeX reader: key → { author surname(s), year }. Enough for "Candès et al. 2006" chips. */
+export interface BibEntry { key: string; label: string; title?: string }
+export function parseBib(src: string): Record<string, BibEntry> {
+  const out: Record<string, BibEntry> = {};
+  const re = /@(\w+)\s*\{\s*([^,\s]+)\s*,([\s\S]*?)\n\}/g;
+  let m: RegExpExecArray | null;
+  const field = (body: string, name: string) => {
+    const f = new RegExp(name + "\\s*=\\s*(\\{((?:[^{}]|\\{[^{}]*\\})*)\\}|\"([^\"]*)\"|(\\d+))", "i").exec(body);
+    return f ? (f[2] ?? f[3] ?? f[4] ?? "").replace(/[{}]/g, "").replace(/\s+/g, " ").trim() : undefined;
+  };
+  while ((m = re.exec(src))) {
+    const key = m[2], body = m[3];
+    const author = field(body, "author") ?? "";
+    const year = field(body, "year") ?? "";
+    const names = author.split(/\s+and\s+/).map((n) => {
+      const cleaned = n.replace(/\\['`^"~=.]/g, "").replace(/\\[a-z]+/g, "");
+      return cleaned.includes(",") ? cleaned.split(",")[0].trim() : cleaned.trim().split(/\s+/).pop() ?? "";
+    }).filter(Boolean);
+    const etAl = names.length > 2 || names.some((n) => n.toLowerCase() === "others");
+    const real = names.filter((n) => n.toLowerCase() !== "others");
+    const who = real.length === 0 ? key : etAl ? `${real[0]} et al.` : real.length === 1 ? real[0] : `${real[0]} and ${real[1]}`;
+    out[key] = { key, label: year ? `${who} ${year}` : who, title: field(body, "title") };
+  }
+  return out;
+}
