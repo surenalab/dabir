@@ -12,6 +12,8 @@ jobs:
         with: { node-version: 22, cache: npm }
       - uses: dtolnay/rust-toolchain@stable
       - run: npm ci
+      - name: Tectonic sidecar (the Rust build checks it exists)
+        run: node scripts/fetch-tectonic.mjs
       - run: npx tsc --noEmit -p tsconfig.json
       - run: npx vite build
       - run: cargo test --manifest-path src-tauri/Cargo.toml
