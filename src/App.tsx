@@ -7,7 +7,12 @@ import { ShortcutSheet } from "./components/ShortcutSheet";
 import { CloneSheet } from "./components/CloneSheet";
 import { ShareSheet, type LiveState } from "./components/ShareSheet";
 import { NewPaperSheet } from "./components/NewPaperSheet";
-import { addComment as yAddComment, connect as yConnect, decodeRange, disconnect as yDisconnect, encodeRange, peers as yPeers, randomRoom, removeComment as yRemoveComment, resolveComment as yResolveComment, setCurrentFile, textFor, type Comment, type Peer, type Session } from "./lib/collab";
+import { SettingsSheet } from "./components/SettingsSheet";
+import { useSettings, updateSettings } from "./lib/settings";
+import { checkGrammar, type GrammarMatch } from "./lib/grammar";
+import { collectLabels } from "./lib/completions";
+import type { PdfPin } from "./components/PdfView";
+import { addComment as yAddComment, connect as yConnect, decodeRange, disconnect as yDisconnect, encodeRange, peers as yPeers, randomRoom, removeComment as yRemoveComment, resolveComment as yResolveComment, setCurrentFile, textFor, whenSynced, type Comment, type Peer, type Session, type Transport } from "./lib/collab";
 import type { CommentRange } from "./components/SourceEditor";
 import {
   bibImportFile, checkForUpdates, newPaper, zoteroImport, compile as runCompile, compileCancel, gitClone, gitPull, gitPush, gitRemoteAdd, gitRemoteUrl, isMac, onCompileProgress, relayStart, relayStop, gitCommit, gitInit, gitStatus, importOverleaf, native, onMenu, onWindowFocus,
@@ -47,7 +52,12 @@ export default function App() {
   const [focused, setFocused] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  const [sheet, setSheet] = useState<"shortcuts" | "clone" | "share" | "new" | null>(null);
+  const [sheet, setSheet] = useState<"shortcuts" | "clone" | "share" | "new" | "settings" | null>(null);
+  const settings = useSettings();
+  const [grammar, setGrammar] = useState<GrammarMatch[]>([]);
+  const [localComments, setLocalComments] = useState<Comment[]>([]);
+  const [pins, setPins] = useState<PdfPin[]>([]);
+  const addCommentRef = useRef<(text: string, at?: { from: number; to: number }) => void>(() => {});
   const [session, setSession] = useState<Session | null>(null);
   const [live, setLive] = useState<LiveState>(null);
   const [liveBusy, setLiveBusy] = useState<string | null>(null);
@@ -64,7 +74,7 @@ export default function App() {
   const [bib, setBib] = useState<Record<string, BibEntry>>({});
   const [git, setGit] = useState<GitStatus | null>(null);
   const [gitBusy, setGitBusy] = useState(false);
-  const [compileOnSave, setCompileOnSave] = useState<boolean>(() => { try { return localStorage.getItem("dabir.compileOnSave") === "1"; } catch { return false; } });
+  const compileOnSave = settings.compileOnSave;
   const compileRef = useRef<() => void>(() => {});
   const autoCollapsed = useRef(false);
   const sourceRef = useRef<string | null>(null);
@@ -99,6 +109,7 @@ export default function App() {
     loadBib(p);
     refreshGit(p);
     gitRemoteUrl(p.root, "overleaf").then(setOverleafUrl).catch(() => setOverleafUrl(null));
+    readText(`${p.root}/.dabir/comments.json`).then((t) => setLocalComments(t ? JSON.parse(t) : [])).catch(() => setLocalComments([]));
     if (p.mainTex) await selectFile(p.mainTex); else { setFile(null); setSource(null); }
   }, [selectFile, loadBib, refreshGit]);
 
@@ -152,7 +163,7 @@ export default function App() {
     }
   }, [project, dirty, file, compileState.status]);
   compileRef.current = compile;
-  const toggleCompileOnSave = useCallback(() => { setCompileOnSave((v) => { try { localStorage.setItem("dabir.compileOnSave", v ? "0" : "1"); } catch { /* private mode */ } return !v; }); }, []);
+  const toggleCompileOnSave = useCallback(() => updateSettings({ compileOnSave: !settings.compileOnSave }), [settings.compileOnSave]);
 
   const showInPdf = useCallback(async () => {
     if (!project?.mainTex || !file) return;
@@ -164,16 +175,27 @@ export default function App() {
     } catch (e) { setNote(String(e)); }
   }, [project, file, cursorLine, compileState]);
 
-  const onPdfClick = useCallback(async (page: number, x: number, y: number) => {
+  const onPdfClick = useCallback(async (page: number, x: number, y: number, alt: boolean) => {
     if (!project?.mainTex) return;
     try {
       const pos = await synctexInverse(project.mainTex, page, x, y);
       if (!pos) return;
       const target = pos.file.startsWith("/") ? pos.file : `${project.root}/${pos.file.replace(/^\.\//, "")}`;
       if (target !== file) await selectFile(target);
+      if (alt) {
+        // Option-click: comment on that line without leaving the PDF.
+        const text = window.prompt(`Comment on line ${pos.line}:`);
+        const src = target === file ? source : await readText(target);
+        if (text && src != null) {
+          const lines = src.split("\n"); const from = lines.slice(0, pos.line - 1).join("\n").length + (pos.line > 1 ? 1 : 0);
+          const to = from + (lines[pos.line - 1]?.length ?? 1);
+          addCommentRef.current(text.trim(), { from, to });
+        }
+        return;
+      }
       setMode("source"); setJumpLine(pos.line); setJumpStamp(Date.now());
     } catch (e) { setNote(String(e)); }
-  }, [project, file, selectFile]);
+  }, [project, file, source, selectFile]);
 
   const initGit = useCallback(async () => {
     if (!project) return;
@@ -198,40 +220,38 @@ export default function App() {
     const onComments = () => setComments(sess.comments.toArray());
     sess.comments.observe(onComments);
     refresh(); onComments();
-    sess.provider.on("status", (e: { status: string }) => { if (e.status === "disconnected") setNote("Live session: connection lost, retrying…"); });
+    (sess.provider as unknown as { on: (e: string, f: (x: { status?: string; connected?: boolean }) => void) => void }).on("status", (e) => { if (e.status === "disconnected" || e.connected === false) setNote("Live session: connection lost, retrying…"); });
   }, []);
 
-  const startSession = useCallback(async (name: string) => {
+  const startSession = useCallback(async (name: string, transport: Transport) => {
     if (!project) return;
     setLiveBusy("start");
     try {
-      const info = await relayStart(1234);
       const room = randomRoom(project.name);
-      const sess = yConnect(info.url, room, name, true);
+      const password = transport === "p2p" ? Math.random().toString(36).slice(2, 12) : undefined;
+      const info = transport === "relay" ? await relayStart(1234) : { url: "", lanUrl: "" };
+      const sess = yConnect(info.url, room, name, true, transport, password);
       // The host seeds the shared text with the open file once the relay confirms an empty doc.
       const seed = () => {
         if (file && source != null) { const t = textFor(sess, rel(file)!); if (t.length === 0 && source.length > 0) t.insert(0, source); }
         setCurrentFile(sess, rel(file));
       };
-      sess.provider.once("sync", seed);
+      if (transport === "relay") (sess.provider as { once: (e: string, f: () => void) => void }).once("sync", seed); else seed();
       attachSession(sess);
-      setLive({ url: info.url, lanUrl: info.lanUrl, room, host: true });
+      setLive({ url: info.url, lanUrl: info.lanUrl, room, host: true, transport, password });
       setNote("Live session started. Share the link from the Share sheet.");
     } finally { setLiveBusy(null); }
   }, [project, file, source, rel, attachSession]);
 
-  const joinSession = useCallback(async (name: string, url: string, room: string) => {
+  const joinSession = useCallback(async (name: string, url: string, room: string, transport: Transport, password?: string) => {
     if (!project) return;
     setLiveBusy("join");
     try {
-      const sess = yConnect(url, room, name, false);
-      await new Promise<void>((resolve, reject) => {
-        const t = setTimeout(() => reject(new Error("Could not reach the relay. Check the link and that the host's session is running.")), 8000);
-        sess.provider.once("sync", () => { clearTimeout(t); resolve(); });
-      });
+      const sess = yConnect(url, room, name, false, transport, password);
+      try { await whenSynced(sess, transport === "p2p" ? 20000 : 8000); } catch (e) { yDisconnect(sess); throw e; }
       setCurrentFile(sess, rel(file));
       attachSession(sess);
-      setLive({ url, lanUrl: url, room, host: false });
+      setLive({ url, lanUrl: url, room, host: false, transport, password });
       setNote("Joined the live session.");
     } finally { setLiveBusy(null); }
   }, [project, file, rel, attachSession]);
@@ -239,7 +259,7 @@ export default function App() {
   const stopSession = useCallback(async () => {
     if (session) yDisconnect(session);
     setSession(null); setPeers([]); setComments([]); setLive(null);
-    if (live?.host) await relayStop();
+    if (live?.host && live.transport === "relay") await relayStop();
   }, [session, live]);
 
   useEffect(() => { if (session) setCurrentFile(session, rel(file)); }, [session, file, rel]);
@@ -252,26 +272,93 @@ export default function App() {
     if (t.length === 0 && source.length > 0 && live?.host) t.insert(0, source);
   }, [session, file, source, rel, live]);
 
-  const commentRanges: CommentRange[] = (session && file ? comments.filter((c) => c.file === rel(file)) : []).map((c) => {
-    const r = decodeRange(session!.doc, c);
+  // Comments live in the shared doc during a session, otherwise in .dabir/comments.json next to the paper.
+  // Local anchors are plain offsets plus the quoted text, re-found by search when the offset drifts.
+  const allComments: Comment[] = session ? comments : localComments;
+  const persistLocal = useCallback((next: Comment[]) => {
+    setLocalComments(next);
+    if (project) writeText(`${project.root}/.dabir/comments.json`, JSON.stringify(next, null, 2)).catch((e) => setError(String(e)));
+  }, [project]);
+  const localRange = useCallback((c: Comment): { from: number; to: number } | null => {
+    if (source == null) return null;
+    try {
+      const { from, quote } = JSON.parse(c.anchor) as { from: number; quote: string };
+      const len = Number(c.head) || quote.length;
+      if (quote && source.slice(from, from + quote.length) === quote) return { from, to: from + quote.length };
+      const near = quote ? source.indexOf(quote, Math.max(0, from - 2000)) : -1;
+      if (near >= 0) return { from: near, to: near + quote.length };
+      const any = quote ? source.indexOf(quote) : -1;
+      if (any >= 0) return { from: any, to: any + quote.length };
+      return from <= source.length ? { from, to: Math.min(source.length, from + len) } : null;
+    } catch { return null; }
+  }, [source]);
+  const rangeOf = useCallback((c: Comment) => (session ? decodeRange(session.doc, c) : localRange(c)), [session, localRange]);
+
+  const commentRanges: CommentRange[] = (file ? allComments.filter((c) => c.file === rel(file)) : []).map((c) => {
+    const r = rangeOf(c);
     return r ? { id: c.id, from: r.from, to: r.to, resolved: c.resolved, color: c.color } : null;
   }).filter((x): x is CommentRange => !!x);
 
-  const addCommentAtSelection = useCallback((text: string) => {
-    if (!session || !file) return;
-    const me = yPeers(session).find((p) => p.me);
-    const t = textFor(session, rel(file)!);
-    const { from, to } = selection;
-    const range = encodeRange(t, from, to === from ? Math.min(t.length, from + 1) : to);
-    yAddComment(session, { author: me?.name ?? "me", color: me?.color ?? "#8a6414", text, file: rel(file)!, ...range });
-  }, [session, file, rel, selection]);
+  const addCommentAtSelection = useCallback((text: string, at?: { from: number; to: number }) => {
+    if (!file || source == null) return;
+    const { from, to } = at ?? selection;
+    const end = to === from ? Math.min(source.length, from + 1) : to;
+    if (session) {
+      const me = yPeers(session).find((p) => p.me);
+      const t = textFor(session, rel(file)!);
+      yAddComment(session, { author: me?.name ?? "me", color: me?.color ?? "#8a6414", text, file: rel(file)!, ...encodeRange(t, from, end) });
+    } else {
+      const name = (() => { try { return localStorage.getItem("dabir.name") || "me"; } catch { return "me"; } })();
+      const quote = source.slice(from, end);
+      persistLocal([...localComments, { id: Math.random().toString(36).slice(2, 10), author: name, color: "#8a6414", text, file: rel(file)!, anchor: JSON.stringify({ from, quote }), head: String(end - from), at: Date.now(), resolved: false }]);
+    }
+  }, [session, file, source, rel, selection, localComments, persistLocal]);
+  addCommentRef.current = addCommentAtSelection;
+  const resolveAnyComment = useCallback((id: string, resolved: boolean) => { if (session) yResolveComment(session, id, resolved); else persistLocal(localComments.map((c) => (c.id === id ? { ...c, resolved } : c))); }, [session, localComments, persistLocal]);
+  const removeAnyComment = useCallback((id: string) => { if (session) yRemoveComment(session, id); else persistLocal(localComments.filter((c) => c.id !== id)); }, [session, localComments, persistLocal]);
 
   const jumpToComment = useCallback(async (c: Comment) => {
-    if (!session || !project) return;
+    if (!project) return;
     if (rel(file) !== c.file) await selectFile(`${project.root}/${c.file}`);
-    const r = decodeRange(session.doc, c);
+    const r = rangeOf(c);
     if (r) { setMode("source"); setJumpOffset({ pos: r.from, stamp: Date.now() }); }
-  }, [session, project, file, rel, selectFile]);
+  }, [project, file, rel, selectFile, rangeOf]);
+
+  // PDF pins: map each comment's line to a page position through SyncTeX.
+  useEffect(() => {
+    if (mode !== "pdf" || !project?.mainTex || !file || source == null || compileState.status !== "done" || !compileState.result.pdf) { setPins([]); return; }
+    let cancelled = false;
+    (async () => {
+      const out: PdfPin[] = [];
+      const mine = allComments.filter((c) => c.file === rel(file));
+      for (let i = 0; i < mine.length; i++) {
+        const r = rangeOf(mine[i]);
+        if (!r) continue;
+        const line = source.slice(0, r.from).split("\n").length;
+        try { const pos = await synctexForward(project.mainTex!, file!, line); if (pos) out.push({ id: mine[i].id, page: pos.page, y: pos.y, color: mine[i].color, n: i + 1, resolved: mine[i].resolved, title: `${mine[i].author}: ${mine[i].text}` }); } catch { /* no synctex yet */ }
+      }
+      if (!cancelled) setPins(out);
+    })();
+    return () => { cancelled = true; };
+  }, [mode, project, file, source, compileState, allComments, rel, rangeOf]);
+
+  // Grammar: check the selection, or the paragraph around the cursor, through LanguageTool.
+  const runGrammar = useCallback(async () => {
+    if (source == null) return;
+    if (settings.grammar === "off") { setNote("Grammar checking is off. Turn it on in Settings (⌘,) and choose a LanguageTool server."); return; }
+    let { from, to } = selection;
+    if (to === from) {
+      const before = source.lastIndexOf("\n\n", from); const after = source.indexOf("\n\n", from);
+      from = before < 0 ? 0 : before + 2; to = after < 0 ? source.length : after;
+    }
+    try {
+      const matches = await checkGrammar(settings.languageToolUrl, settings.grammarLanguage, source.slice(from, to), from);
+      setGrammar(matches);
+      setNote(matches.length ? `${matches.length} grammar suggestion${matches.length > 1 ? "s" : ""}. Hover an underline to see it.` : "No grammar issues found in that passage.");
+      if (mode !== "source" && matches.length) setMode("source");
+    } catch (e) { setNote(String(e)); }
+  }, [source, selection, settings, mode]);
+  useEffect(() => { setGrammar([]); }, [file]);
 
   const setOverleaf = useCallback(async (url: string) => {
     if (!project) return;
@@ -304,11 +391,13 @@ export default function App() {
       case "ask-agent": if (!inspectorOpen) toggleInspector(); setAskFocus((n) => n + 1); break;
       case "find": setMode("source"); setFindRequest((n) => n + 1); break;
       case "shortcuts": setSheet((v) => (v === "shortcuts" ? null : "shortcuts")); break;
+      case "settings": setSheet("settings"); break;
+      case "check-grammar": runGrammar(); break;
       case "check-updates":
         checkForUpdates(async (v, notes) => window.confirm(`Dabir ${v} is available.\n\n${notes}\n\nDownload and restart now?`)).then(setNote).catch((e) => setNote(String(e)));
         break;
     }
-  }, [open, importFromOverleaf, save, compile, showInPdf, toggleNav, toggleInspector, inspectorOpen, navOpen]);
+  }, [open, importFromOverleaf, save, compile, showInPdf, toggleNav, toggleInspector, inspectorOpen, navOpen, runGrammar]);
 
   useEffect(() => onMenu(command), [command]);
   useEffect(() => onCompileProgress((line) => setProgress(line.length > 90 ? line.slice(0, 87) + "…" : line)), []);
@@ -322,7 +411,8 @@ export default function App() {
     const onKey = (e: KeyboardEvent) => {
       if (!e.metaKey) return;
       const k = e.key.toLowerCase();
-      const map: Record<string, string> = { o: "open", s: "save", b: "compile", "1": "view-visual", "2": "view-source", "3": "view-pdf", k: "ask-agent", f: "find", "/": "shortcuts" };
+      const map: Record<string, string> = { o: "open", n: "new", s: "save", b: "compile", "1": "view-visual", "2": "view-source", "3": "view-pdf", k: "ask-agent", f: "find", "/": "shortcuts", ",": "settings" };
+      if (e.shiftKey && k === "g") { e.preventDefault(); command("check-grammar"); return; }
       if (e.ctrlKey && k === "s") { e.preventDefault(); command("toggle-sidebar"); return; }
       if (e.altKey && (k === "i" || e.code === "KeyI")) { e.preventDefault(); command("toggle-inspector"); return; }
       if (e.shiftKey && k === "l") { e.preventDefault(); command("show-log"); return; }
@@ -381,10 +471,12 @@ export default function App() {
         onSourceChange={onSourceChange} onSave={save} onCursorLine={setCursorLine} onSelectFile={selectFile} onJump={jumpTo} onPdfClick={onPdfClick}
         compileOnSave={compileOnSave} onToggleCompileOnSave={toggleCompileOnSave}
         agentReady={agentReady} onJumpFile={jumpToFile} onFix={fixWithAgent}
-        collab={collab} comments={commentRanges} onSelection={(from, to) => setSelection({ from, to })} jumpOffset={jumpOffset} />
+        collab={collab} comments={commentRanges} onSelection={(from, to) => setSelection({ from, to })} jumpOffset={jumpOffset}
+        settings={settings} grammar={grammar} pins={pins} onPin={(id) => { const c = allComments.find((x) => x.id === id); if (c) jumpToComment(c); }}
+        completions={{ bib: () => bib, labels: () => (source ? collectLabels(source) : []), files: () => project?.tree ?? [] }} />
       <Inspector project={project} gitRepo={!!git?.isRepo} askFocus={askFocus} prefill={prefill} onProviderReady={setAgentReady} onChanged={onChanged} onOpenFile={selectFile} onNote={setNote}
-        live={!!live} peers={peers} comments={comments} currentFile={rel(file)} hasSelection={selection.to > selection.from}
-        onAddComment={addCommentAtSelection} onResolveComment={(id, r) => session && yResolveComment(session, id, r)} onRemoveComment={(id) => session && yRemoveComment(session, id)} onJumpComment={jumpToComment} onShare={() => setSheet("share")} />
+        live={!!live} peers={peers} comments={allComments} currentFile={rel(file)} hasSelection={selection.to > selection.from}
+        onAddComment={(t) => addCommentAtSelection(t)} onResolveComment={resolveAnyComment} onRemoveComment={removeAnyComment} onJumpComment={jumpToComment} onShare={() => setSheet("share")} />
       <div className={`divider nav ${dragging === "nav" ? "dragging" : ""}`} onPointerDown={() => setDragging("nav")} role="separator" aria-orientation="vertical" aria-label="Resize sidebar" />
       <div className={`divider inspector ${dragging === "inspector" ? "dragging" : ""}`} onPointerDown={() => setDragging("inspector")} role="separator" aria-orientation="vertical" aria-label="Resize inspector" />
       {sheet === "shortcuts" && <ShortcutSheet onClose={() => setSheet(null)} />}
@@ -395,6 +487,7 @@ export default function App() {
           onZotero={importZotero} onBibFile={importBib} />
       )}
       {sheet === "new" && <NewPaperSheet onClose={() => setSheet(null)} onCreate={createPaper} />}
+      {sheet === "settings" && <SettingsSheet onClose={() => setSheet(null)} />}
     </div>
   );
 }

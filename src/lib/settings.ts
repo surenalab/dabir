@@ -1,0 +1,64 @@
+// Editor settings, persisted per machine. Everything here has an off switch.
+
+export interface Settings {
+  spellcheck: boolean;          // native OS spell checking in the editor
+  grammar: "off" | "languagetool";
+  languageToolUrl: string;      // a server you trust; the public one has limits and sees your text
+  grammarLanguage: string;      // e.g. en-GB, en-US, auto
+  autocomplete: boolean;        // LaTeX commands, environments, snippets
+  citeComplete: boolean;        // \cite and \ref keys, \input paths
+  fontSize: number;             // document view, px
+  monoSize: number;             // source view, px
+  lineWrap: boolean;
+  revealOnClick: boolean;       // visual view: click a widget to reveal its source
+  compileOnSave: boolean;
+}
+
+export const DEFAULTS: Settings = {
+  spellcheck: true,
+  grammar: "off",
+  languageToolUrl: "https://api.languagetool.org",
+  grammarLanguage: "en-GB",
+  autocomplete: true,
+  citeComplete: true,
+  fontSize: 16.5,
+  monoSize: 13,
+  lineWrap: true,
+  revealOnClick: true,
+  compileOnSave: false,
+};
+
+const KEY = "dabir.settings";
+const listeners = new Set<(s: Settings) => void>();
+let current: Settings = load();
+
+function load(): Settings {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (raw) return { ...DEFAULTS, ...JSON.parse(raw) };
+    const legacy = localStorage.getItem("dabir.compileOnSave");
+    return { ...DEFAULTS, compileOnSave: legacy === "1" };
+  } catch { return { ...DEFAULTS }; }
+}
+
+export function getSettings(): Settings { return current; }
+
+export function updateSettings(patch: Partial<Settings>) {
+  current = { ...current, ...patch };
+  try { localStorage.setItem(KEY, JSON.stringify(current)); } catch { /* private mode */ }
+  listeners.forEach((l) => l(current));
+}
+
+export function resetSettings() { updateSettings({ ...DEFAULTS }); }
+
+export function onSettings(l: (s: Settings) => void): () => void {
+  listeners.add(l);
+  return () => { listeners.delete(l); };
+}
+
+import { useEffect, useState } from "react";
+export function useSettings(): Settings {
+  const [s, setS] = useState(current);
+  useEffect(() => onSettings(setS), []);
+  return s;
+}

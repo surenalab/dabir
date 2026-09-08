@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Dabir mark: the proofreader's caret. A line of manuscript in ink; beneath it, the madder
+       caret that says "insert here", the oldest editing mark there is. Two colours, two shapes,
+       built on a 24-unit grid (unit = 32 px). Concept from a Grok draft, drawn to the grid here. -->
+  <rect width="1024" height="1024" rx="228" fill="#FBFAF7"/>
+  <!-- the line of text: rounded, spans 16 units, sits 2 units above centre -->
+  <rect x="160" y="352" width="704" height="112" rx="56" fill="#1D1F24"/>
+  <!-- the caret: apex touches the line's underside at centre; legs 2.5 units thick with mitred feet -->
+  <path d="M512 464 L800 800 H656 L512 632 L368 800 H224 Z" fill="#A8322D"/>
+</svg>

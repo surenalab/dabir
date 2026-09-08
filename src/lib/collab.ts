@@ -3,17 +3,24 @@
 
 import * as Y from "yjs";
 import { WebsocketProvider } from "y-websocket";
+import { WebrtcProvider } from "y-webrtc";
 import type { Awareness } from "y-protocols/awareness";
 
 export interface Peer { clientId: number; name: string; color: string; file?: string; me: boolean }
 export interface Comment { id: string; author: string; color: string; text: string; file: string; anchor: string; head: string; at: number; resolved: boolean }
 
+export type Transport = "relay" | "p2p";
+
+/** Free public signalling servers used only to find peers; the document travels peer to peer over WebRTC. */
+export const PUBLIC_SIGNALING = ["wss://signaling.yjs.dev", "wss://y-webrtc-signaling-eu.herokuapp.com", "wss://y-webrtc-signaling-us.herokuapp.com"];
+
 export interface Session {
   url: string;
   room: string;
   host: boolean;
+  transport: Transport;
   doc: Y.Doc;
-  provider: WebsocketProvider;
+  provider: WebsocketProvider | WebrtcProvider;
   awareness: Awareness;
   texts: Map<string, Y.Text>;
   comments: Y.Array<Comment>;
@@ -37,12 +44,24 @@ export function randomRoom(prefix: string): string {
   return `${prefix.replace(/[^a-z0-9-]/gi, "-").toLowerCase()}-${s}`;
 }
 
-export function connect(url: string, room: string, name: string, host: boolean): Session {
+export function connect(url: string, room: string, name: string, host: boolean, transport: Transport = "relay", password?: string): Session {
   const doc = new Y.Doc();
-  const provider = new WebsocketProvider(url, room, doc, { connect: true });
+  const provider = transport === "p2p"
+    ? new WebrtcProvider(room, doc, { signaling: url ? [url] : PUBLIC_SIGNALING, password: password || undefined, maxConns: 12 })
+    : new WebsocketProvider(url, room, doc, { connect: true });
   const awareness = provider.awareness;
   awareness.setLocalStateField("user", { name, color: colorFor(name) });
-  return { url, room, host, doc, provider, awareness, texts: new Map(), comments: doc.getArray<Comment>("comments") };
+  return { url, room, host, transport, doc, provider, awareness, texts: new Map(), comments: doc.getArray<Comment>("comments") };
+}
+
+/** Resolves when the provider has exchanged state with someone (or, for a host, right away). */
+export function whenSynced(s: Session, timeoutMs: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (s.host) { resolve(); return; }
+    const t = setTimeout(() => reject(new Error("Nobody answered. Check the link, and that the host still has the session open.")), timeoutMs);
+    if (s.transport === "relay") (s.provider as WebsocketProvider).once("sync", () => { clearTimeout(t); resolve(); });
+    else (s.provider as WebrtcProvider).once("synced", () => { clearTimeout(t); resolve(); });
+  });
 }
 
 export function disconnect(s: Session) {
@@ -103,19 +122,23 @@ export function decodeRange(doc: Y.Doc, c: Comment): { from: number; to: number 
 }
 
 /** A share link that Dabir understands and that also reads fine in a chat message. */
-export function shareLink(url: string, room: string): string {
-  return `dabir://join?relay=${encodeURIComponent(url)}&room=${encodeURIComponent(room)}`;
+export function shareLink(url: string, room: string, transport: Transport = "relay", password?: string): string {
+  const q = transport === "p2p" ? `p2p=1&room=${encodeURIComponent(room)}${password ? `&key=${encodeURIComponent(password)}` : ""}${url ? `&signal=${encodeURIComponent(url)}` : ""}` : `relay=${encodeURIComponent(url)}&room=${encodeURIComponent(room)}`;
+  return `dabir://join?${q}`;
 }
-export function parseShareLink(s: string): { url: string; room: string } | null {
+export function parseShareLink(s: string): { url: string; room: string; transport: Transport; password?: string } | null {
   try {
     const u = new URL(s.trim());
     if (u.protocol === "dabir:") {
-      const relay = u.searchParams.get("relay"), room = u.searchParams.get("room");
-      return relay && room ? { url: relay, room } : null;
+      const room = u.searchParams.get("room");
+      if (!room) return null;
+      if (u.searchParams.get("p2p")) return { url: u.searchParams.get("signal") ?? "", room, transport: "p2p", password: u.searchParams.get("key") ?? undefined };
+      const relay = u.searchParams.get("relay");
+      return relay ? { url: relay, room, transport: "relay" } : null;
     }
     if (u.protocol === "ws:" || u.protocol === "wss:") {
       const room = u.pathname.replace(/^\//, "");
-      return room ? { url: `${u.protocol}//${u.host}`, room } : null;
+      return room ? { url: `${u.protocol}//${u.host}`, room, transport: "relay" } : null;
     }
   } catch { /* not a URL */ }
   return null;

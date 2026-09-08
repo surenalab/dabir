@@ -1,0 +1,14 @@
+# Dabir project file. Optional: Dabir works on any folder with a .tex in it.
+[paper]
+main = "main.tex"
+engine = "tectonic"
+venue = "IEEE Transactions on Computational Imaging"
+
+[provenance]
+# Commands that regenerate generated artefacts. Agents refuse to hand-edit these.
+"figures/psnr-vs-noise.pdf" = "python3 code/sweep.py --sigma 0.3"
+"tables/psnr-sweep.tex"     = "python3 code/sweep.py --sigma 0.3"
+
+[env]
+# Prepended to every provenance command and suggested to agents. Examples: "conda run -n myenv", "uv run".
+prefix = ""

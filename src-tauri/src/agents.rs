@@ -73,11 +73,11 @@ fn find_bin(bin: &str) -> Option<PathBuf> {
 
 fn defs() -> Vec<(&'static str, &'static str, &'static str, &'static str)> {
     vec![
-        ("claude", "Claude Code", "Claude Pro or Max, or an API key", "claude"),
-        ("codex", "Codex", "ChatGPT Plus or Pro, or an API key", "codex"),
-        ("cursor", "Cursor", "Cursor subscription", "cursor-agent"),
-        ("grok", "Grok", "SuperGrok or an xAI key", "grok"),
-        ("opencode", "OpenCode", "Any model, including local", "opencode"),
+        ("claude", "Claude Code", "", "claude"),
+        ("codex", "Codex", "", "codex"),
+        ("cursor", "Cursor", "", "cursor-agent"),
+        ("grok", "Grok", "", "grok"),
+        ("opencode", "OpenCode", "", "opencode"),
     ]
 }
 

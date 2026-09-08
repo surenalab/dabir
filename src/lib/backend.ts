@@ -142,14 +142,14 @@ export async function synctexInverse(mainTex: string, page: number, x: number, y
 // ---------------------------------------------------------------- git
 
 const SAMPLE_GIT: GitStatus = {
-  isRepo: true, branch: "main", remote: "git@github.com:sadegh/isgd-tci.git",
+  isRepo: true, branch: "main", remote: "git@github.com:khorasani/score-anchor.git",
   changes: [
     { path: "figures/psnr-vs-noise.pdf", status: "modified", add: 0, del: 0, binary: true },
     { path: "main.tex", status: "modified", add: 6, del: 4, binary: false },
   ],
   recent: [
-    { id: "a41b9c2", summary: "Add injectivity proof to Appendix A", author: "Sadegh", when: Date.now() / 1000 - 86400 * 2 },
-    { id: "0f3e1d7", summary: "Address reviewer 2 on the density condition", author: "Marta", when: Date.now() / 1000 - 86400 * 5 },
+    { id: "a41b9c2", summary: "Add anchor-ratio sweep to Appendix A", author: "Nasrin", when: Date.now() / 1000 - 86400 * 2 },
+    { id: "0f3e1d7", summary: "Address reviewer 2 on the anchor ratio", author: "Emil", when: Date.now() / 1000 - 86400 * 5 },
   ],
 };
 
@@ -171,11 +171,11 @@ export async function gitClone(url: string, dest: string): Promise<string> {
 
 export async function agentProviders(): Promise<Provider[]> {
   if (!native) return [
-    { id: "claude", label: "Claude Code", hint: "Claude Pro or Max, or an API key", bin: "claude", installed: true, path: "/usr/local/bin/claude" },
-    { id: "codex", label: "Codex", hint: "ChatGPT Plus or Pro, or an API key", bin: "codex", installed: false, path: null },
-    { id: "cursor", label: "Cursor", hint: "Cursor subscription", bin: "cursor-agent", installed: true, path: "~/.local/bin/cursor-agent" },
-    { id: "grok", label: "Grok", hint: "SuperGrok or an xAI key", bin: "grok", installed: false, path: null },
-    { id: "opencode", label: "OpenCode", hint: "Any model, including local", bin: "opencode", installed: false, path: null },
+    { id: "claude", label: "Claude Code", hint: "", bin: "claude", installed: true, path: "/usr/local/bin/claude" },
+    { id: "codex", label: "Codex", hint: "", bin: "codex", installed: false, path: null },
+    { id: "cursor", label: "Cursor", hint: "", bin: "cursor-agent", installed: true, path: "~/.local/bin/cursor-agent" },
+    { id: "grok", label: "Grok", hint: "", bin: "grok", installed: false, path: null },
+    { id: "opencode", label: "OpenCode", hint: "", bin: "opencode", installed: false, path: null },
   ];
   return invoke<Provider[]>("agent_providers");
 }
@@ -230,7 +230,7 @@ export async function contextPack(root: string, query: string): Promise<string> 
 export async function compileCancel(): Promise<boolean> { return native ? invoke<boolean>("compile_cancel") : true; }
 export async function agentReject(root: string, runId: string): Promise<void> { if (native) await invoke("agent_reject", { root, runId }); }
 export async function agentPullRequest(root: string, runId: string, message: string): Promise<string> {
-  if (!native) { await wait(400); return "https://github.com/sadegh/isgd-tci/pull/12"; }
+  if (!native) { await wait(400); return "https://github.com/khorasani/score-anchor/pull/12"; }
   return invoke<string>("agent_pull_request", { root, runId, message });
 }
 
@@ -238,14 +238,14 @@ export async function agentPullRequest(root: string, runId: string, message: str
 
 export async function memoryRead(root: string): Promise<Memory> {
   if (!native) return {
-    brief: "# Injective Sampling…\n\n## Identity\nWe study when a masked measurement operator admits a unique reconstruction under a diffusion prior…", briefPath: `${root}/.dabir/PROJECT.md`,
-    identity: "We study when a masked measurement operator admits a unique reconstruction under a diffusion prior.", envPrefix: "",
+    brief: "# Score Anchoring…\n\n## Identity\nDiffusion posterior sampling drifts when the guidance gradient and the learned score disagree…", briefPath: `${root}/.dabir/PROJECT.md`,
+    identity: "Diffusion posterior sampling drifts when the guidance gradient and the learned score disagree at low noise levels.", envPrefix: "",
     skills: ["rerun-experiment", "update-figure-and-text", "address-reviewer", "tighten-prose", "check-references", "compile-and-fix"].map((n) => ({ name: `dabir-${n}`, description: "", path: `${root}/.dabir/skills/${n}/SKILL.md` })),
-    runs: ["2026-09-07 · grok · Rerun the noise sweep to σ = 0.3 · figures/psnr-vs-noise.pdf, tables/psnr-sweep.tex, main.tex"],
-    facts: [{ name: "reviewer-2-injectivity-proof", description: "Reviewer 2 asked for the injectivity constant to be made explicit; addressed in Appendix A", body: "", path: `${root}/.dabir/memory/reviewer-2-injectivity-proof.md` }],
+    runs: ["2026-09-08 · grok · Rerun the noise sweep to σ = 0.3 · figures/psnr-vs-noise.pdf, tables/psnr-sweep.tex, main.tex"],
+    facts: [{ name: "reviewer-2-anchor-ratio", description: "Reviewer 2 asked how sensitive results are to the anchor ratio; addressed with a sweep in Appendix A", body: "", path: `${root}/.dabir/memory/reviewer-2-anchor-ratio.md` }],
     provenance: [
-      { artefact: "figures/psnr-vs-noise.pdf", command: "python code/sweep.py --sigma 0.3", inputs: ["code/sweep.py"], producedAt: "2026-09-05", commit: "a41b9c2", dataHash: null, stale: false, missing: false },
-      { artefact: "tables/psnr-sweep.tex", command: "python code/sweep.py --sigma 0.3", inputs: ["code/sweep.py"], producedAt: "2026-09-05", commit: "a41b9c2", dataHash: null, stale: true, missing: false },
+      { artefact: "figures/psnr-vs-noise.pdf", command: "python3 code/sweep.py --sigma 0.3", inputs: ["code/sweep.py"], producedAt: "2026-09-05", commit: "a41b9c2", dataHash: null, stale: false, missing: false },
+      { artefact: "tables/psnr-sweep.tex", command: "python3 code/sweep.py --sigma 0.3", inputs: ["code/sweep.py"], producedAt: "2026-09-05", commit: "a41b9c2", dataHash: null, stale: true, missing: false },
     ],
     pointers: ["AGENTS.md", "CLAUDE.md"],
   };

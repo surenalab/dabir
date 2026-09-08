@@ -1,0 +1,52 @@
+\documentclass[journal]{IEEEtran}
+\usepackage{amsmath,amssymb,graphicx,booktabs}
+\newcommand{\norm}[1]{\left\lVert #1 \right\rVert}
+\newcommand{\score}{s_\theta}
+
+\title{Score Anchoring: Consistent Guidance for Diffusion Posterior Sampling}
+\author{Nasrin Khorasani \and Emil Vandermeer \and Priya Raghunathan}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Diffusion posterior sampling drifts when the guidance gradient and the learned score disagree at low noise levels. We introduce score anchoring, a single scalar correction that keeps the guided trajectory within a trust region of the prior score. On sparse-view CT and accelerated MRI it holds a 1.8 dB PSNR margin over three baselines across noise levels up to $\sigma = 0.3$, with no extra network evaluations.
+\end{abstract}
+
+\section{Introduction}
+Reconstructing an image from incomplete measurements is ill-posed unless the prior closes the gap left by the forward operator~\cite{okonkwo2021,lindqvist2022}. Diffusion models are now the prior of choice, but guided sampling can wander far from the data manifold when the likelihood term dominates~\cite{morales2023}. We ask a narrow question: how far may the guidance move a sample before the score stops being trustworthy?
+
+\section{Method}
+\subsection{Forward model and prior}
+Let $x \in \mathbb{R}^n$ be the unknown image and $y = A x + \eta$ the measurement with $\eta \sim \mathcal{N}(0, \sigma^2 I)$. A pretrained score network $\score(x_t, t)$ approximates $\nabla \log p_t(x_t)$ along the noising process.
+
+\subsection{Score anchoring}
+At each reverse step we compare the guidance gradient $g_t = \nabla_{x_t} \norm{y - A \hat{x}_0(x_t)}_2^2$ with the prior score and clip its contribution to a trust region:
+\begin{equation}
+  \tilde{g}_t = g_t \cdot \min\!\left(1, \frac{\kappa \norm{\score(x_t, t)}_2}{\norm{g_t}_2}\right)
+  \label{eq:anchor}
+\end{equation}
+The anchor ratio $\kappa$ is the only new hyperparameter. Equation~\eqref{eq:anchor} costs one norm per step and no extra evaluations of $\score$; see Section~\ref{sec:results} for its effect.
+
+\subsection{Sampler}
+\label{sec:sampler}
+We plug $\tilde{g}_t$ into a standard predictor--corrector sampler. Figure~\ref{fig:psnr} reports PSNR against noise level for three baselines; anchoring holds a 1.8 dB margin up to $\sigma = 0.3$.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figures/psnr-vs-noise.pdf}
+  \caption{PSNR against noise level $\sigma$ on the sparse-view CT validation set. Shaded bands are one standard deviation over five seeds.}
+  \label{fig:psnr}
+\end{figure}
+
+\section{Results}
+\label{sec:results}
+\input{tables/psnr-sweep}
+Across all noise levels the anchored sampler is the only method whose reconstructions remain sharp at $\sigma = 0.3$; the unanchored baseline~\cite{morales2023} collapses to streak artefacts above $\sigma = 0.2$.
+
+\section{Conclusion}
+A trust region on the guidance term is enough to keep diffusion posterior sampling well behaved at high noise. The code and the sweep that produced every figure are in the repository.
+
+\bibliographystyle{IEEEtran}
+\bibliography{refs}
+\end{document}
