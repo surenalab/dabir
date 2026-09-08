@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "artefacts": {
+    "figures/psnr-vs-noise.pdf": { "command": "python3 code/sweep.py --sigma 0.3", "inputs": ["code/sweep.py"], "producedAt": "2026-09-08" },
+    "tables/psnr-sweep.tex": { "command": "python3 code/sweep.py --sigma 0.3", "inputs": ["code/sweep.py"], "producedAt": "2026-09-08" }
+  }
+}

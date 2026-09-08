@@ -6,4 +6,4 @@ Read PRODUCT.md and DESIGN.md before touching UI. Tokens live in src/styles/toke
 - Run: `npm run tauri dev`. Browser-only preview: `npm run dev` (uses src/lib/sample.ts).
 - Check before commit: `npx tsc --noEmit && npx vite build && (cd src-tauri && cargo check)`.
 - UI changes: run `/impeccable critique` on the screen and consult .agents/skills/apple-design-skill for the matching HIG article.
-- A paper project's own memory format is documented in examples/isgd-tci/.dabir/.
+- A paper project's own memory format is documented in examples/score-anchor/.dabir/.

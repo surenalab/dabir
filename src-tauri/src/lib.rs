@@ -707,6 +707,8 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
         .select_all()
         .separator()
         .item(&MenuItemBuilder::with_id("find", "Find…").accelerator("CmdOrCtrl+F").build(app)?)
+        .separator()
+        .item(&MenuItemBuilder::with_id("check-grammar", "Check Grammar").accelerator("CmdOrCtrl+Shift+G").build(app)?)
         .build()?;
 
     let view = SubmenuBuilder::new(app, "View")
@@ -914,13 +916,13 @@ mod tests {
     #[ignore]
     fn live_agent_run() {
         let provider = std::env::var("DABIR_LIVE_PROVIDER").unwrap_or_else(|_| "grok".into());
-        let src = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples/isgd-tci");
+        let src = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples/score-anchor");
         let dir = std::env::temp_dir().join(format!("dabir-live-{}-{}", provider, std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         for f in ["main.tex", "refs.bib", "dabir.toml", "AGENTS.md", "CLAUDE.md", ".gitignore"] { let _ = fs::copy(src.join(f), dir.join(f)); }
         for d in ["code", "tables", "figures", ".dabir", ".dabir/memory"] { fs::create_dir_all(dir.join(d)).unwrap(); }
-        for f in ["code/sweep.py", "tables/psnr-sweep.tex", "figures/psnr-vs-noise.pdf", ".dabir/PROJECT.md", ".dabir/provenance.json", ".dabir/memory/reviewer-2-injectivity-proof.md"] { let _ = fs::copy(src.join(f), dir.join(f)); }
+        for f in ["code/sweep.py", "tables/psnr-sweep.tex", "figures/psnr-vs-noise.pdf", ".dabir/PROJECT.md", ".dabir/provenance.json", ".dabir/memory/reviewer-2-anchor-ratio.md"] { let _ = fs::copy(src.join(f), dir.join(f)); }
         git::init(&dir).unwrap();
         git::commit(&dir, "seed", None).unwrap();
         let run_id = "live1".to_string();

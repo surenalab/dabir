@@ -199,7 +199,7 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
             <select id="provider" value={provider} onChange={(e) => setProvider(e.target.value)} title={current?.hint}>
               {providers.map((p) => <option key={p.id} value={p.id} disabled={!p.installed}>{p.label}{p.installed ? "" : " (not installed)"}</option>)}
             </select>
-            <span className="hint">{current ? (current.installed ? current.hint : `Install the ${current.bin} CLI and sign in`) : ""}</span>
+            {current && !current.installed && <span className="hint">Install the {current.bin} CLI and sign in</span>}
           </div>
 
           <div className="composer">
@@ -329,14 +329,15 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
 
       {tab === "people" && (
         <div className="inspector-body">
-          {!live ? (
+          {!live && (
             <>
-              <p className="memory-note">Nobody else is here. Start a live session to edit together with presence and comments, or add an Overleaf remote to pull and push.</p>
+              <p className="memory-note">Nobody else is here yet. Comments below are saved with the paper in <code>.dabir/comments.json</code>; start a live session to edit together with presence.</p>
               <div className="actions"><button className="btn primary" onClick={onShare} disabled={!project}>Share…</button></div>
             </>
-          ) : (
+          )}
+          {project && (
             <>
-              <div className="field">
+              {live && <div className="field">
                 <label>In this session</label>
                 <div className="peers">
                   {peers.map((pr) => (
@@ -347,7 +348,7 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
                     </div>
                   ))}
                 </div>
-              </div>
+              </div>}
               <div className="field">
                 <label>Comments{currentFile ? <> on <code>{currentFile}</code></> : ""}</label>
                 <div className="comment-box">

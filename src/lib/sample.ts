@@ -3,73 +3,75 @@
 
 import type { Project } from "./backend";
 
-const root = "/examples/isgd-tci";
+const root = "/examples/score-anchor";
 
 export const SAMPLE_FILES: Record<string, string> = {
   [`${root}/main.tex`]: `\\documentclass[journal]{IEEEtran}
 \\usepackage{amsmath,amssymb,graphicx,booktabs}
 \\newcommand{\\norm}[1]{\\left\\lVert #1 \\right\\rVert}
+\\newcommand{\\score}{s_\\theta}
 
-\\title{Injective Sampling for Generative Diffusion Priors in Computational Imaging}
-\\author{Sadegh Salehi \\and Marta Ruiz}
+\\title{Score Anchoring: Consistent Guidance for Diffusion Posterior Sampling}
+\\author{Nasrin Khorasani \\and Emil Vandermeer \\and Priya Raghunathan}
 
 \\begin{document}
 \\maketitle
 
 \\begin{abstract}
-We study when a masked measurement operator admits a unique reconstruction under a diffusion prior. We give a density condition on the mask that guarantees injectivity on band-limited signals, and show that a lightweight guidance term recovers a 1.8 dB margin over three baselines across noise levels up to $\\sigma = 0.3$.
+Diffusion posterior sampling drifts when the guidance gradient and the learned score disagree at low noise levels. We introduce score anchoring, a single scalar correction that keeps the guided trajectory within a trust region of the prior score. On sparse-view CT and accelerated MRI it holds a 1.8 dB PSNR margin over three baselines across noise levels up to $\\sigma = 0.3$, with no extra network evaluations.
 \\end{abstract}
 
 \\section{Introduction}
-Reconstructing an image from incomplete measurements is ill-posed unless the prior is strong enough to close the gap left by the sampling operator~\\cite{candes2006,ho2020ddpm}. Recent work uses diffusion models as that prior, but says little about \\emph{when} the forward map itself leaves enough information to recover a unique signal.
+Reconstructing an image from incomplete measurements is ill-posed unless the prior closes the gap left by the forward operator~\\cite{okonkwo2021,lindqvist2022}. Diffusion models are now the prior of choice, but guided sampling can wander far from the data manifold when the likelihood term dominates~\\cite{morales2023}. We ask a narrow question: how far may the guidance move a sample before the score stops being trustworthy?
 
 \\section{Method}
-\\subsection{Forward model}
-Let $x \\in \\mathbb{R}^n$ be the unknown image and $A = M F$ the operator formed by a Fourier transform $F$ followed by a binary mask $M$. We observe $y = A x + \\eta$ with $\\eta \\sim \\mathcal{N}(0, \\sigma^2 I)$.
+\\subsection{Forward model and prior}
+Let $x \\in \\mathbb{R}^n$ be the unknown image and $y = A x + \\eta$ the measurement with $\\eta \\sim \\mathcal{N}(0, \\sigma^2 I)$. A pretrained score network $\\score(x_t, t)$ approximates $\\nabla \\log p_t(x_t)$ along the noising process.
 
-\\subsection{Injectivity of the forward map}
-We show that the sampling operator is injective on the class of band-limited signals when the mask satisfies the density condition below.
+\\subsection{Score anchoring}
+At each reverse step we compare the guidance gradient $g_t = \\nabla_{x_t} \\norm{y - A \\hat{x}_0(x_t)}_2^2$ with the prior score and clip its contribution to a trust region:
 \\begin{equation}
-  \\norm{A x}_2 \\ge c \\, \\norm{x}_2 \\quad \\text{for all } x \\in B_\\Omega
-  \\label{eq:injective}
+  \\tilde{g}_t = g_t \\cdot \\min\\!\\left(1, \\frac{\\kappa \\norm{\\score(x_t, t)}_2}{\\norm{g_t}_2}\\right)
+  \\label{eq:anchor}
 \\end{equation}
-The constant $c$ depends only on the mask density and the bandwidth $\\Omega$; see Appendix~A for the proof. Equation~\\eqref{eq:injective} is what lets the guidance term in Section~\\ref{sec:guidance} stay well-conditioned.
+The anchor ratio $\\kappa$ is the only new hyperparameter. Equation~\\eqref{eq:anchor} costs one norm per step and no extra evaluations of $\\score$; see Section~\\ref{sec:results} for its effect.
 
-\\subsection{Guided sampling}
-\\label{sec:guidance}
-At each reverse step we add a data-consistency gradient scaled by the injectivity constant. Figure~\\ref{fig:psnr} reports PSNR against noise level for three baselines; the proposed method holds a 1.8 dB margin up to $\\sigma = 0.3$.
+\\subsection{Sampler}
+\\label{sec:sampler}
+We plug $\\tilde{g}_t$ into a standard predictor--corrector sampler. Figure~\\ref{fig:psnr} reports PSNR against noise level for three baselines; anchoring holds a 1.8 dB margin up to $\\sigma = 0.3$.
 
 \\begin{figure}[t]
   \\centering
   \\includegraphics[width=\\linewidth]{figures/psnr-vs-noise.pdf}
-  \\caption{PSNR against noise level $\\sigma$ on the fastMRI knee subset. Shaded bands are one standard deviation over five seeds.}
+  \\caption{PSNR against noise level $\\sigma$ on the sparse-view CT validation set. Shaded bands are one standard deviation over five seeds.}
   \\label{fig:psnr}
 \\end{figure}
 
 \\section{Results}
+\\label{sec:results}
 \\input{tables/psnr-sweep}
-Across all noise levels the proposed sampler is the only method whose reconstructions remain sharp at $\\sigma = 0.3$~\\cite{chung2023dps}.
+Across all noise levels the anchored sampler is the only method whose reconstructions remain sharp at $\\sigma = 0.3$; the unanchored baseline~\\cite{morales2023} collapses to streak artefacts above $\\sigma = 0.2$.
 
 \\section{Conclusion}
-A density condition on the mask is enough to make diffusion-guided reconstruction well-posed; the code and the sweep that produced every figure are in the repository.
+A trust region on the guidance term is enough to keep diffusion posterior sampling well behaved at high noise. The code and the sweep that produced every figure are in the repository.
 
 \\bibliographystyle{IEEEtran}
 \\bibliography{refs}
 \\end{document}
 `,
-  [`${root}/refs.bib`]: `@article{candes2006,
-  title={Robust uncertainty principles},
-  author={Cand\\\`es, Emmanuel and Romberg, Justin and Tao, Terence},
-  journal={IEEE Trans. Inf. Theory}, year={2006}
+  [`${root}/refs.bib`]: `@article{okonkwo2021,
+  title={Generative priors for ill-posed inverse problems},
+  author={Okonkwo, Adaeze and Bergstr{\\"o}m, Lina},
+  journal={IEEE Trans. Comput. Imaging}, year={2021}
 }
-@inproceedings{ho2020ddpm,
-  title={Denoising diffusion probabilistic models},
-  author={Ho, Jonathan and Jain, Ajay and Abbeel, Pieter},
-  booktitle={NeurIPS}, year={2020}
+@inproceedings{lindqvist2022,
+  title={Denoising diffusion models as image priors},
+  author={Lindqvist, Sofia and Adebayo, Tunde and Marchetti, Giulia},
+  booktitle={NeurIPS}, year={2022}
 }
-@inproceedings{chung2023dps,
-  title={Diffusion posterior sampling for general noisy inverse problems},
-  author={Chung, Hyungjin and others},
+@inproceedings{morales2023,
+  title={Posterior sampling with diffusion guidance for noisy inverse problems},
+  author={Morales, Xiomara and Petrov, Ilya and others},
   booktitle={ICLR}, year={2023}
 }
 `,
@@ -85,7 +87,7 @@ import zlib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-METHODS = {"DPS": (33.5, 27.0), "Baseline B": (33.1, 28.5), "Ours": (35.2, 26.5)}
+METHODS = {"DPS": (33.5, 27.0), "Unanchored": (33.1, 28.5), "Anchored": (35.2, 26.5)}
 
 
 def psnr(method: str, sigma: float, rng: random.Random) -> float:
@@ -113,7 +115,7 @@ def write_table(sigmas, rows):
         "\\\\centering",
         "\\\\begin{tabular}{lccc}",
         "\\\\toprule",
-        "$\\\\sigma$ & DPS & Baseline B & Ours \\\\\\\\",
+        "$\\\\sigma$ & DPS & Unanchored & Anchored \\\\\\\\",
         "\\\\midrule",
     ]
     for i, s in enumerate(sigmas):
@@ -140,7 +142,7 @@ def write_pdf(sigmas, rows):
         ops.append(f"1 0 0 1 {L-22} {Y(v)-3:.1f} Tm ({v}) Tj")
     ops.append(f"1 0 0 1 {W/2-18:.1f} {B-24} Tm (noise \\\\(sigma\\\\)) Tj")
     ops.append(f"1 0 0 1 {L+4} {H-T-10} Tm (PSNR, dB) Tj ET")
-    styles = {"DPS": "0.45 0.45 0.5 RG 1 w", "Baseline B": "0.65 0.65 0.7 RG 1 w [3 2] 0 d", "Ours": "0.66 0.2 0.18 RG 1.6 w"}
+    styles = {"DPS": "0.45 0.45 0.5 RG 1 w", "Unanchored": "0.65 0.65 0.7 RG 1 w [3 2] 0 d", "Anchored": "0.66 0.2 0.18 RG 1.6 w"}
     for m, style in styles.items():
         pts = " ".join(f"{X(s):.1f} {Y(v):.1f} {'m' if i == 0 else 'l'}" for i, (s, v) in enumerate(zip(sigmas, rows[m])))
         ops.append(f"q {style} {pts} S Q")
@@ -193,11 +195,11 @@ if __name__ == "__main__":
 \\centering
 \\begin{tabular}{lccc}
 \\toprule
-$\\sigma$ & DPS & Baseline B & Ours \\\\
+$\\sigma$ & DPS & Unanchored & Anchored \\\\
 \\midrule
-0.05 & 32.1 & 31.7 & 34.0 \\\\
-0.15 & 29.4 & 28.8 & 31.3 \\\\
-0.25 & 26.8 & 25.9 & 28.6 \\\\
+0.05 & 32.3 & 31.6 & 33.9 \\\\
+0.15 & 29.6 & 28.8 & 31.2 \\\\
+0.25 & 26.9 & 25.9 & 28.6 \\\\
 \\bottomrule
 \\end{tabular}
 \\end{table}
@@ -206,7 +208,7 @@ $\\sigma$ & DPS & Baseline B & Ours \\\\
 
 export const SAMPLE_PROJECT: Project = {
   root,
-  name: "isgd-tci",
+  name: "score-anchor",
   mainTex: `${root}/main.tex`,
   hasGit: true,
   hasMemory: true,

@@ -10,7 +10,10 @@ import { SourceEditor, type CommentRange } from "./SourceEditor";
 import { Problems, groupProblems } from "./Problems";
 import type * as Y from "yjs";
 import type { Awareness } from "y-protocols/awareness";
-import { PdfView } from "./PdfView";
+import { PdfView, type PdfPin } from "./PdfView";
+import type { Settings } from "../lib/settings";
+import type { GrammarMatch } from "../lib/grammar";
+import type { CompletionSources } from "../lib/completions";
 
 /** Pull \newcommand definitions from the preamble so KaTeX can expand them. */
 function collectMacros(src: string): Record<string, string> {
@@ -75,7 +78,7 @@ interface Props {
   onCursorLine: (line: number) => void;
   onSelectFile: (path: string) => void;
   onJump: (line: number, inSource?: boolean) => void;
-  onPdfClick: (page: number, x: number, y: number) => void;
+  onPdfClick: (page: number, x: number, y: number, alt: boolean) => void;
   compileOnSave: boolean;
   onToggleCompileOnSave: () => void;
   agentReady: boolean;
@@ -85,6 +88,11 @@ interface Props {
   comments: CommentRange[];
   onSelection: (from: number, to: number) => void;
   jumpOffset: { pos: number; stamp: number } | null;
+  settings: Settings;
+  grammar: GrammarMatch[];
+  completions: CompletionSources;
+  pins: PdfPin[];
+  onPin: (id: string) => void;
 }
 
 export function Document(p: Props) {
@@ -93,13 +101,14 @@ export function Document(p: Props) {
 
   useEffect(() => {
     setVisualContext({
+      revealOnClick: p.settings.revealOnClick,
       root: project?.root ?? "",
       bib: p.bib,
       macros,
       loadImage: (rel) => (project ? loadFigure(project.root, rel) : Promise.resolve(null)),
       openFile: (rel) => project && p.onSelectFile(`${project.root}/${rel}`),
     });
-  }, [project, p.bib, macros, p.onSelectFile]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [project, p.bib, macros, p.onSelectFile, p.settings.revealOnClick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { p.onOutline(source ? parseDocument(source).outline : []); }, [source]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -126,7 +135,7 @@ export function Document(p: Props) {
               <button className="btn" onClick={p.onImport} title="Unpack an Overleaf source zip into a folder"><Upload /> Import from Overleaf…</button>
               <button className="btn" onClick={p.onClone}><GitBranch /> Clone from GitHub…</button>
             </div>
-            <div className="hint">Try the bundled sample at <code>examples/isgd-tci</code>. Press <kbd>⌘/</kbd> for shortcuts.</div>
+            <div className="hint">Try the bundled sample at <code>examples/score-anchor</code>. Press <kbd>⌘/</kbd> for shortcuts.</div>
           </div>
         </div>
       </main>
@@ -145,13 +154,14 @@ export function Document(p: Props) {
         {source != null && isTex && (
           <SourceEditor value={source} visual={mode === "visual" && /\.tex$/i.test(p.file ?? "")} onChange={p.onSourceChange} onSave={p.onSave}
             onCursorLine={p.onCursorLine} jumpLine={p.jumpLine} jumpStamp={p.jumpStamp} findRequest={p.findRequest}
-            collab={p.collab} comments={p.comments} onSelection={p.onSelection} jumpOffset={p.jumpOffset} marks={editorMarks} />
+            collab={p.collab} comments={p.comments} onSelection={p.onSelection} jumpOffset={p.jumpOffset} marks={editorMarks}
+            settings={p.settings} grammar={p.grammar} completions={p.completions} />
         )}
         {source != null && !isTex && <div className="doc-empty"><div className="card"><p>This file type is not editable in Dabir yet.</p></div></div>}
       </div>
       {mode === "pdf" && (
         <div className="scroll">
-          <PdfView path={result?.pdf ?? null} stamp={compileState.status === "done" ? compileState.at : 0} target={p.pdfTarget} onClickAt={p.onPdfClick} />
+          <PdfView path={result?.pdf ?? null} stamp={compileState.status === "done" ? compileState.at : 0} target={p.pdfTarget} onClickAt={p.onPdfClick} pins={p.pins} onPin={p.onPin} />
         </div>
       )}
 
