@@ -38,11 +38,11 @@
     <rect x="100" y="100" width="824" height="824" fill="url(#rim)"/>
   </g>
   <!-- the stroke -->
-  <g filter="url(#shadow)" transform="translate(512 512) scale(1.22) translate(-586 -470)">
+  <g filter="url(#shadow)" transform="translate(1024 0) scale(-1 1) translate(512 512) scale(1.22) translate(-586 -470)">
     <path fill="url(#paper)" d="M688 236 C728 232 768 262 760 302 C752 336 722 360 696 388 C654 434 616 486 588 540 C568 580 574 616 618 634 C672 656 742 640 806 604 C766 662 684 700 598 686 C512 672 464 606 484 530 C512 428 590 328 668 250 C674 244 680 238 688 236 Z"/>
   </g>
   <!-- the nuqta -->
   <g filter="url(#shadow)">
-    <path fill="url(#madder)" d="M346 676 L408 730 L346 784 L284 730 Z"/>
+    <path fill="url(#madder)" d="M672 676 L734 730 L672 784 L610 730 Z"/>
   </g>
 </svg>
