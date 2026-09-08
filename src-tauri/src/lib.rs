@@ -972,6 +972,30 @@ mod tests {
     }
 
     #[test]
+    fn nested_paper_worktree_round_trip() {
+        // A paper inside a larger repository: the agent works in the paper's folder of the worktree,
+        // paths are reported relative to the paper, and accept lands in the paper's folder.
+        let repo = std::env::temp_dir().join(format!("dabir-nested-{}", uuid::Uuid::new_v4()));
+        let paper = repo.join("papers").join("one");
+        fs::create_dir_all(&paper).unwrap();
+        fs::write(paper.join("main.tex"), "\\documentclass{article}\n").unwrap();
+        fs::write(repo.join("README.md"), "top\n").unwrap();
+        git::init(&repo).unwrap();
+        git::commit(&repo, "init", None).unwrap();
+        let wt = git::worktree_add(&paper, "n1").unwrap();
+        assert!(wt.ends_with("papers/one"), "agent cwd is the paper inside the worktree: {:?}", wt);
+        fs::write(wt.join("main.tex"), "changed\n").unwrap();
+        let d = git::worktree_diff(&paper, "n1").unwrap();
+        assert_eq!(d.changes.len(), 1);
+        assert_eq!(d.changes[0].path, "main.tex");
+        let id = git::worktree_accept(&paper, "n1", "agent change", Some(vec![git::Pick { path: "main.tex".into(), hunks: None }])).unwrap();
+        assert_eq!(id.len(), 7);
+        assert_eq!(fs::read_to_string(paper.join("main.tex")).unwrap(), "changed\n");
+        assert!(!git::worktree_dir(&paper, "n1").exists());
+        let _ = fs::remove_dir_all(&repo);
+    }
+
+    #[test]
     fn merges_bib_without_duplicates() {
         let dir = std::env::temp_dir().join(format!("dabir-bib-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir); fs::create_dir_all(&dir).unwrap();
