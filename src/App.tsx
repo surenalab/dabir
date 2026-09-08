@@ -8,6 +8,7 @@ import { CloneSheet } from "./components/CloneSheet";
 import { ShareSheet, type LiveState } from "./components/ShareSheet";
 import { NewPaperSheet } from "./components/NewPaperSheet";
 import { SettingsSheet } from "./components/SettingsSheet";
+import type { EditorApi } from "./components/SourceEditor";
 import { useSettings, updateSettings } from "./lib/settings";
 import { checkGrammar, type GrammarMatch } from "./lib/grammar";
 import { collectLabels } from "./lib/completions";
@@ -59,6 +60,9 @@ export default function App() {
   const [localComments, setLocalComments] = useState<Comment[]>([]);
   const [pins, setPins] = useState<PdfPin[]>([]);
   const [pdfZoom, setPdfZoom] = useState<PdfZoom>("fit");
+  const [pdfFindRequest, setPdfFindRequest] = useState(0);
+  const [splitRatio, setSplitRatio] = useState(0.55);
+  const editorRef = useRef<EditorApi | null>(null);
   const addCommentRef = useRef<(text: string, at?: { from: number; to: number }) => void>(() => {});
   const [directPeers, setDirectPeers] = useState(0);
   const [session, setSession] = useState<Session | null>(null);
@@ -178,7 +182,7 @@ export default function App() {
     } catch (e) { setNote(String(e)); }
   }, [project, file, cursorLine, compileState]);
 
-  const onPdfClick = useCallback(async (page: number, x: number, y: number, alt: boolean) => {
+  const onPdfClick = useCallback(async (page: number, x: number, y: number, alt = false) => {
     if (!project?.mainTex) return;
     try {
       const pos = await synctexInverse(project.mainTex, page, x, y);
@@ -196,9 +200,20 @@ export default function App() {
         }
         return;
       }
-      setMode("source"); setJumpLine(pos.line); setJumpStamp(Date.now());
+      if (mode !== "split") setMode("source");
+      setJumpLine(pos.line); setJumpStamp(Date.now());
     } catch (e) { setNote(String(e)); }
-  }, [project, file, source, selectFile]);
+  }, [project, file, source, selectFile, mode]);
+  const onPdfComment = useCallback((page: number, x: number, y: number) => onPdfClick(page, x, y, true), [onPdfClick]);
+
+  // Split view: the PDF follows the cursor line (debounced), without stealing focus.
+  useEffect(() => {
+    if (mode !== "split" || !project?.mainTex || !file || compileState.status !== "done" || !compileState.result.pdf) return;
+    const t = setTimeout(async () => {
+      try { const pos = await synctexForward(project.mainTex!, file, cursorLine); if (pos) setPdfTarget({ ...pos, stamp: Date.now() }); } catch { /* no synctex yet */ }
+    }, 350);
+    return () => clearTimeout(t);
+  }, [mode, project, file, cursorLine, compileState]);
 
   const initGit = useCallback(async () => {
     if (!project) return;
@@ -413,14 +428,30 @@ export default function App() {
       case "view-visual": setMode("visual"); break;
       case "view-source": setMode("source"); break;
       case "view-pdf": setMode("pdf"); break;
+      case "view-split": setMode("split"); break;
+      case "fmt-bold": editorRef.current?.wrap("\\textbf{", "}"); break;
+      case "fmt-italic": editorRef.current?.wrap("\\textit{", "}"); break;
+      case "fmt-emph": editorRef.current?.wrap("\\emph{", "}"); break;
+      case "fmt-code": editorRef.current?.wrap("\\texttt{", "}"); break;
+      case "fmt-section": case "fmt-subsection": case "fmt-subsubsection": editorRef.current?.heading(id.slice(4)); break;
+      case "fmt-itemize": editorRef.current?.list("itemize"); break;
+      case "fmt-enumerate": editorRef.current?.list("enumerate"); break;
+      case "fmt-math": editorRef.current?.wrap("$", "$"); break;
+      case "fmt-equation": editorRef.current?.block("\\begin{equation}\n  ", "\n  \\label{eq:}\n\\end{equation}"); break;
+      case "fmt-figure": editorRef.current?.block("\\begin{figure}[t]\n  \\centering\n  \\includegraphics[width=\\linewidth]{", "}\n  \\caption{}\n  \\label{fig:}\n\\end{figure}"); break;
+      case "fmt-table": editorRef.current?.block("\\begin{table}[t]\n  \\caption{}\n  \\label{tab:}\n  \\centering\n  \\begin{tabular}{lcc}\n    \\toprule\n    ", " & & \\\\\n    \\midrule\n     & & \\\\\n    \\bottomrule\n  \\end{tabular}\n\\end{table}"); break;
+      case "fmt-cite": editorRef.current?.complete("\\cite{", "}"); break;
+      case "fmt-ref": editorRef.current?.complete("\\ref{", "}"); break;
+      case "fmt-link": editorRef.current?.wrap("\\href{https://}{", "}"); break;
+      case "fmt-footnote": editorRef.current?.wrap("\\footnote{", "}"); break;
       case "toggle-sidebar": toggleNav(); break;
       case "toggle-inspector": toggleInspector(); break;
       case "ask-agent": if (!inspectorOpen) toggleInspector(); setAskFocus((n) => n + 1); break;
-      case "find": setMode("source"); setFindRequest((n) => n + 1); break;
+      case "find": if (mode === "pdf") setPdfFindRequest((n) => n + 1); else { if (mode === "visual") setMode("source"); setFindRequest((n) => n + 1); } break;
       case "shortcuts": setSheet((v) => (v === "shortcuts" ? null : "shortcuts")); break;
       case "settings": setSheet("settings"); break;
-      case "zoom-in": setPdfZoom((z) => Math.min(4, (z === "fit" ? 1 : z) * 1.18)); if (mode !== "pdf") setMode("pdf"); break;
-      case "zoom-out": setPdfZoom((z) => Math.max(0.3, (z === "fit" ? 1 : z) * 0.85)); break;
+      case "zoom-in": setPdfZoom((z) => Math.min(4, (typeof z === "number" ? z : 1) * 1.18)); if (mode !== "pdf" && mode !== "split") setMode("pdf"); break;
+      case "zoom-out": setPdfZoom((z) => Math.max(0.3, (typeof z === "number" ? z : 1) * 0.85)); break;
       case "zoom-fit": setPdfZoom("fit"); break;
       case "check-grammar": runGrammar(); break;
       case "check-updates":
@@ -441,17 +472,15 @@ export default function App() {
     const onKey = (e: KeyboardEvent) => {
       if (!e.metaKey) return;
       const k = e.key.toLowerCase();
-      const map: Record<string, string> = { o: "open", n: "new", s: "save", b: "compile", "1": "view-visual", "2": "view-source", "3": "view-pdf", k: "ask-agent", f: "find", "/": "shortcuts", ",": "settings" };
-      if (e.shiftKey && k === "g") { e.preventDefault(); command("check-grammar"); return; }
+      const map: Record<string, string> = { o: "open", n: "new", s: "save", b: "compile", "1": "view-visual", "2": "view-source", "3": "view-pdf", "4": "view-split", j: "ask-agent", f: "find", "/": "shortcuts", ",": "settings", k: "fmt-link" };
+      const shifted: Record<string, string> = { g: "check-grammar", b: "fmt-bold", i: "fmt-italic", e: "fmt-emph", m: "fmt-math", c: "fmt-cite", r: "fmt-ref", l: "show-log", j: "sync-pdf", s: "share", o: "clone" };
+      if (e.shiftKey && !e.altKey && shifted[k]) { e.preventDefault(); command(shifted[k]); return; }
+      if (e.altKey && k === "c") { e.preventDefault(); command("commit"); return; }
       if (k === "=" || k === "+") { e.preventDefault(); command("zoom-in"); return; }
       if (k === "-") { e.preventDefault(); command("zoom-out"); return; }
       if (k === "0") { e.preventDefault(); command("zoom-fit"); return; }
       if (e.ctrlKey && k === "s") { e.preventDefault(); command("toggle-sidebar"); return; }
       if (e.altKey && (k === "i" || e.code === "KeyI")) { e.preventDefault(); command("toggle-inspector"); return; }
-      if (e.shiftKey && k === "l") { e.preventDefault(); command("show-log"); return; }
-      if (e.shiftKey && k === "j") { e.preventDefault(); command("sync-pdf"); return; }
-      if (e.shiftKey && k === "c") { e.preventDefault(); command("commit"); return; }
-      if (e.shiftKey && k === "o") { e.preventDefault(); command("clone"); return; }
       if (!e.altKey && !e.ctrlKey && !e.shiftKey && map[k]) { e.preventDefault(); command(map[k]); }
     };
     window.addEventListener("keydown", onKey);
@@ -505,7 +534,9 @@ export default function App() {
         compileOnSave={compileOnSave} onToggleCompileOnSave={toggleCompileOnSave}
         agentReady={agentReady} onJumpFile={jumpToFile} onFix={fixWithAgent}
         collab={collab} comments={commentRanges} onSelection={(from, to) => setSelection({ from, to })} jumpOffset={jumpOffset}
-        settings={settings} grammar={grammar} pins={pins} pdfZoom={pdfZoom} onPdfZoom={setPdfZoom} onOpenSettings={() => setSheet("settings")} onPin={(id) => { const c = allComments.find((x) => x.id === id); if (c) jumpToComment(c); }}
+        settings={settings} grammar={grammar} pins={pins} pdfZoom={pdfZoom} onPdfZoom={setPdfZoom} onOpenSettings={() => setSheet("settings")}
+        onPdfComment={onPdfComment} pdfFindRequest={pdfFindRequest} editorRef={editorRef} onFind={() => command("find")} onCommentSelection={() => { if (!inspectorOpen) toggleInspector(); setAskFocus(0); setNote("Type the comment in the People tab; it attaches to your selection."); }} hasSelection={selection.to > selection.from}
+        splitRatio={splitRatio} onSplitRatio={setSplitRatio} onPin={(id) => { const c = allComments.find((x) => x.id === id); if (c) jumpToComment(c); }}
         completions={{ bib: () => bib, labels: () => (source ? collectLabels(source) : []), files: () => project?.tree ?? [] }} />
       <Inspector project={project} gitRepo={!!git?.isRepo} askFocus={askFocus} prefill={prefill} onProviderReady={setAgentReady} onChanged={onChanged} onOpenFile={selectFile} onNote={setNote}
         live={!!live} peers={peers} comments={allComments} currentFile={rel(file)} hasSelection={selection.to > selection.from}

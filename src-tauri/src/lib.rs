@@ -715,6 +715,7 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
         .item(&MenuItemBuilder::with_id("view-visual", "Visual").accelerator("CmdOrCtrl+1").build(app)?)
         .item(&MenuItemBuilder::with_id("view-source", "Source").accelerator("CmdOrCtrl+2").build(app)?)
         .item(&MenuItemBuilder::with_id("view-pdf", "PDF").accelerator("CmdOrCtrl+3").build(app)?)
+        .item(&MenuItemBuilder::with_id("view-split", "Editor and PDF").accelerator("CmdOrCtrl+4").build(app)?)
         .separator()
         .item(&MenuItemBuilder::with_id("zoom-in", "Zoom In").accelerator("CmdOrCtrl+=").build(app)?)
         .item(&MenuItemBuilder::with_id("zoom-out", "Zoom Out").accelerator("CmdOrCtrl+-").build(app)?)
@@ -726,14 +727,38 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
         .fullscreen()
         .build()?;
 
+    let format = SubmenuBuilder::new(app, "Format")
+        .item(&MenuItemBuilder::with_id("fmt-bold", "Bold").accelerator("CmdOrCtrl+Shift+B").build(app)?)
+        .item(&MenuItemBuilder::with_id("fmt-italic", "Italic").accelerator("CmdOrCtrl+Shift+I").build(app)?)
+        .item(&MenuItemBuilder::with_id("fmt-emph", "Emphasis").accelerator("CmdOrCtrl+Shift+E").build(app)?)
+        .item(&MenuItemBuilder::with_id("fmt-code", "Code").build(app)?)
+        .separator()
+        .item(&MenuItemBuilder::with_id("fmt-section", "Section").build(app)?)
+        .item(&MenuItemBuilder::with_id("fmt-subsection", "Subsection").build(app)?)
+        .item(&MenuItemBuilder::with_id("fmt-subsubsection", "Subsubsection").build(app)?)
+        .separator()
+        .item(&MenuItemBuilder::with_id("fmt-itemize", "Bulleted List").build(app)?)
+        .item(&MenuItemBuilder::with_id("fmt-enumerate", "Numbered List").build(app)?)
+        .separator()
+        .item(&MenuItemBuilder::with_id("fmt-math", "Inline Math").accelerator("CmdOrCtrl+Shift+M").build(app)?)
+        .item(&MenuItemBuilder::with_id("fmt-equation", "Equation").build(app)?)
+        .item(&MenuItemBuilder::with_id("fmt-figure", "Figure").build(app)?)
+        .item(&MenuItemBuilder::with_id("fmt-table", "Table").build(app)?)
+        .separator()
+        .item(&MenuItemBuilder::with_id("fmt-cite", "Citation…").accelerator("CmdOrCtrl+Shift+C").build(app)?)
+        .item(&MenuItemBuilder::with_id("fmt-ref", "Cross-reference…").accelerator("CmdOrCtrl+Shift+R").build(app)?)
+        .item(&MenuItemBuilder::with_id("fmt-link", "Link").accelerator("CmdOrCtrl+K").build(app)?)
+        .item(&MenuItemBuilder::with_id("fmt-footnote", "Footnote").build(app)?)
+        .build()?;
+
     let paper = SubmenuBuilder::new(app, "Paper")
         .item(&MenuItemBuilder::with_id("compile", "Compile").accelerator("CmdOrCtrl+B").build(app)?)
         .item(&MenuItemBuilder::with_id("show-log", "Show Compile Log").accelerator("CmdOrCtrl+Shift+L").build(app)?)
         .item(&MenuItemBuilder::with_id("sync-pdf", "Show Line in PDF").accelerator("CmdOrCtrl+Shift+J").build(app)?)
         .separator()
-        .item(&MenuItemBuilder::with_id("commit", "Commit…").accelerator("CmdOrCtrl+Shift+C").build(app)?)
+        .item(&MenuItemBuilder::with_id("commit", "Commit…").accelerator("CmdOrCtrl+Alt+C").build(app)?)
         .separator()
-        .item(&MenuItemBuilder::with_id("ask-agent", "Ask the Agent…").accelerator("CmdOrCtrl+K").build(app)?)
+        .item(&MenuItemBuilder::with_id("ask-agent", "Ask the Agent…").accelerator("CmdOrCtrl+J").build(app)?)
         .build()?;
 
     let window = SubmenuBuilder::new(app, "Window")
@@ -744,7 +769,7 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
         .build()?;
 
     let menu = MenuBuilder::new(app)
-        .items(&[&app_menu, &file, &edit, &view, &paper, &window])
+        .items(&[&app_menu, &file, &edit, &format, &view, &paper, &window])
         .build()?;
     app.set_menu(menu)?;
     Ok(())
