@@ -80,6 +80,12 @@ At run time Dabir prepends a preamble of about ten lines: the identity sentence,
 
 Three free options in the Share sheet. Direct: the host makes an invite code, the guest answers with a code, and WebRTC connects the two machines with only public STUN for address discovery; nothing is hosted. Same network: the built-in Rust relay on the host's machine, which Tailscale stretches across the internet with no port forwarding. Signalling server: a one-file Cloudflare Worker (`relay/signaling-worker.js`) on the free tier introduces peers and never sees the text; its URL goes in Settings. A hosted relay remains the optional paid service for teams who want a fixed address with no setup. Networks that block all peer traffic (some university firewalls) need the relay or Tailscale.
 
+**2026-09-08, PDF and names.** PDF view gains zoom (toolbar, ⌘= ⌘− ⌘0, ⌘-wheel and pinch) and a real text layer, so text can be selected and copied; clicks on selected text no longer jump. Sample authors and references renamed to unmistakably invented names. A writing-aids pill in the status bar shows which of spelling, grammar and completion are on and opens Settings.
+
+## Parked until the Linux and Windows builds run
+
+Live co-working, second pass. Best practices to adopt then: (1) every joiner gets the host's full working tree, not just the open file, by syncing a throwaway Git bundle or a `git fetch` from the host's relay at join time, so figures, tables and `.bib` files match; (2) the host's checkout stays the single source of truth and the session is a branch of it, with a commit at session end; (3) awareness carries the file each person has open and their cursor, and comments travel with the shared doc; (4) reconnect and resume without losing edits (Yjs handles this; persist the shared state to IndexedDB on each side); (5) a presence banner when the host leaves. The direct mode needs the two-machine test first.
+
 ## Still open
 
 - **Direct sessions need a real-world run.** The invite and answer exchange works end to end (660-character codes, deflate-compressed SDP), but the preview browser used for automated tests blocks local WebRTC candidates, so the final data-channel connection could only be exercised as far as ICE checking. Test between two machines in the app; if it fails behind a strict NAT, the relay with Tailscale is the fallback.

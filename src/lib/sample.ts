@@ -1,5 +1,5 @@
 // Bundled sample so the shell renders in a plain browser (no Tauri).
-// Mirrors examples/isgd-tci in the repo.
+// Mirrors examples/score-anchor in the repo.
 
 import type { Project } from "./backend";
 
@@ -12,7 +12,7 @@ export const SAMPLE_FILES: Record<string, string> = {
 \\newcommand{\\score}{s_\\theta}
 
 \\title{Score Anchoring: Consistent Guidance for Diffusion Posterior Sampling}
-\\author{Nasrin Khorasani \\and Emil Vandermeer \\and Priya Raghunathan}
+\\author{Aurelio Vantreight \\and Ilse Marrowfield \\and Teodor Quenzel}
 
 \\begin{document}
 \\maketitle
@@ -61,17 +61,17 @@ A trust region on the guidance term is enough to keep diffusion posterior sampli
 `,
   [`${root}/refs.bib`]: `@article{okonkwo2021,
   title={Generative priors for ill-posed inverse problems},
-  author={Okonkwo, Adaeze and Bergstr{\\"o}m, Lina},
+  author={Quillfeather, Odalys and Brannock-Sayle, Wendeline},
   journal={IEEE Trans. Comput. Imaging}, year={2021}
 }
 @inproceedings{lindqvist2022,
   title={Denoising diffusion models as image priors},
-  author={Lindqvist, Sofia and Adebayo, Tunde and Marchetti, Giulia},
+  author={Halvering, Corisande and Ostrowicz-Bell, Tamsin and Pellegrew, Ansel},
   booktitle={NeurIPS}, year={2022}
 }
 @inproceedings{morales2023,
   title={Posterior sampling with diffusion guidance for noisy inverse problems},
-  author={Morales, Xiomara and Petrov, Ilya and others},
+  author={Verhoeckx-Lind, Marisol and Dunstable, Barnaby and others},
   booktitle={ICLR}, year={2023}
 }
 `,
