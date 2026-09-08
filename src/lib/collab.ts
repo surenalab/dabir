@@ -8,7 +8,8 @@ import { ManualProvider } from "./manual";
 import type { Awareness } from "y-protocols/awareness";
 
 export interface Peer { clientId: number; name: string; color: string; file?: string; me: boolean }
-export interface Comment { id: string; author: string; color: string; text: string; file: string; anchor: string; head: string; at: number; resolved: boolean }
+export interface Reply { author: string; color: string; text: string; at: number }
+export interface Comment { id: string; author: string; color: string; text: string; file: string; anchor: string; head: string; at: number; resolved: boolean; replies?: Reply[] }
 
 export type Transport = "relay" | "p2p" | "direct";
 
@@ -98,6 +99,13 @@ export function resolveComment(s: Session, id: string, resolved = true) {
   if (i < 0) return;
   const c = s.comments.get(i);
   s.doc.transact(() => { s.comments.delete(i, 1); s.comments.insert(i, [{ ...c, resolved }]); });
+}
+
+export function replyComment(s: Session, id: string, reply: Omit<Reply, "at">) {
+  const i = s.comments.toArray().findIndex((c) => c.id === id);
+  if (i < 0) return;
+  const c = s.comments.get(i);
+  s.doc.transact(() => { s.comments.delete(i, 1); s.comments.insert(i, [{ ...c, replies: [...(c.replies ?? []), { ...reply, at: Date.now() }] }]); });
 }
 
 export function removeComment(s: Session, id: string) {
