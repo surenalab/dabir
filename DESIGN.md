@@ -50,3 +50,6 @@ Classes prefixed `vz-` in `app.css` style the decoration layer: `vz-title`, `vz-
 
 ## Review and memory
 Provenance badges: fresh in ok green, stale in warn amber, missing in deletion red. Sample data carries the amber `sample` tag. Agent log lines fold into a details element; tool steps use a check, failures an X, running a spinner with a text fallback under reduced motion.
+
+## Mark
+`design/dabir-logo.svg`: a line of manuscript in ink and, beneath it, the proofreader's caret in madder, the oldest editing mark there is and the one thing a coauthor does to a page. Two flat colours (#1D1F24, #A8322D) on paper (#FBFAF7), no gradients, no letters, drawn on a 24-unit grid inside the macOS rounded-square silhouette. It reads at 16 px because it is two shapes. Principles: one metaphor, two colours, geometry over illustration. The other candidates are kept in `design/` for the record; the caret came from a Grok concept and was redrawn to the grid.

@@ -74,12 +74,20 @@ At run time Dabir prepends a preamble of about ten lines: the identity sentence,
 
 **2026-09-08.** Native relay in Rust (axum + yrs) replaces the Node process for hosting; two-client sync is a unit test. Tectonic sidecar 0.17. Problems panel: the TeX log is parsed into traceable diagnostics with file, line, category and excerpt; each can be jumped to, is marked in the editor, and can be handed to the agent under the compile-and-fix skill, singly or all at once. Phase 4: New Paper from five templates with Git and memory set up, Typst compile for `main.typ` projects, Zotero local-API and .bib import merged without duplicates.
 
+**2026-09-08, editor and collaboration.** Settings sheet with system spelling, LanguageTool grammar on demand (matches underline, hover offers replacements, off by default), LaTeX and project completions, sizes, wrapping, reveal-on-click, compile on save. Comments work without a session (quote-anchored in `.dabir/comments.json`) and show as numbered pins on the compiled PDF through SyncTeX; Option-click on the PDF comments at that spot. Peer-to-peer live sessions over WebRTC with free public signalling and a key in the link, so nobody hosts a server; verified with two clients. New sample paper (Score Anchoring, diffusion posterior sampling, imaginary authors). New mark: the proofreader's caret.
+
+## Why no server is needed for live sessions
+
+Three free options, all in the Share sheet or one step away: peer to peer over WebRTC (the default; a public signalling server only introduces peers and never sees the text), the built-in relay on the host's machine for the same network, and Tailscale to stretch that relay across the internet with no port forwarding. A hosted relay remains the optional paid service for teams who want a fixed address.
+
 ## Still open
 
 - **Windows and Linux have not been run.** The CI matrix builds them; the visual layer, vibrancy fallbacks and menu chords need a pass on a real machine.
 - **Remote cursors** render in Source mode; in Visual mode the widgets hide them.
 - **Track changes** for coauthors who will not use Git, and per-comment threads.
 - **Plugin API** and a hosted relay as the optional paid service.
+- **Offline spell dictionary for LaTeX-aware checking** (today the system checker also underlines command names inside the editor when it feels like it).
+- **Comment threads and mentions.**
 - **Visual layer for Typst.** Typst projects edit in Source mode only.
 - **Per-comment threads** and track changes for coauthors who will not use Git.
 - **Local index** for retrieval over long papers; agents currently rely on the brief plus their own file reading.
