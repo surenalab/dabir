@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Candidate C: "the reed nib". A qalam nib in ink, cut square at the tip as reed pens are,
+       with the split (the slit that carries the ink) in madder. Nothing else. -->
+  <rect width="1024" height="1024" rx="228" fill="#FBFAF7"/>
+  <path d="M512 176 C 372 176, 300 300, 300 460 C 300 640, 440 800, 512 848 C 584 800, 724 640, 724 460 C 724 300, 652 176, 512 176 Z" fill="#1D1F24"/>
+  <path d="M480 560 H544 L528 848 H496 Z" fill="#A8322D"/>
+  <circle cx="512" cy="500" r="54" fill="#FBFAF7"/>
+  <circle cx="512" cy="500" r="54" fill="#A8322D"/>
+</svg>

@@ -37,7 +37,7 @@ To preview the UI in a browser without Tauri (uses the bundled sample paper):
 npm run dev
 ```
 
-Open `examples/isgd-tci` (File › Open Paper…) to see a real project with memory and provenance files. Run `python3 examples/isgd-tci/code/sweep.py` to regenerate its figure and table, then ⌘B to compile.
+Open `examples/score-anchor` (File › Open Paper…) to see a real project with memory and provenance files. Run `python3 examples/score-anchor/code/sweep.py` to regenerate its figure and table, then ⌘B to compile.
 
 ## Layout
 

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Dabir mark, candidate A: "the scribe's stroke". A folded sheet in ink, the reed pen's single
+       stroke in madder red crossing it: the correction a scribe makes. Two colours on paper.
+       Built on a 24-unit grid (1 unit = 32px inside the 256px safe margin). -->
+  <rect width="1024" height="1024" rx="228" fill="#FBFAF7"/>
+  <!-- sheet: a quire seen slightly folded, two panels -->
+  <path d="M256 224 H608 L768 384 V800 H256 Z" fill="#1D1F24"/>
+  <path d="M608 224 V384 H768 Z" fill="#FBFAF7" opacity="0.18"/>
+  <!-- ruled lines of the page, negative space -->
+  <g fill="#FBFAF7">
+    <rect x="336" y="448" width="288" height="24" rx="12"/>
+    <rect x="336" y="528" width="352" height="24" rx="12"/>
+    <rect x="336" y="608" width="224" height="24" rx="12"/>
+  </g>
+  <!-- the stroke: one confident diagonal in madder, the pen leaving the page -->
+  <path d="M312 748 C 420 640, 560 520, 792 296" fill="none" stroke="#A8322D" stroke-width="72" stroke-linecap="round"/>
+  <circle cx="792" cy="296" r="36" fill="#A8322D"/>
+</svg>

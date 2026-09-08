@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Candidate B: "the marginal note". A page in ink with a folded corner; three ruled lines in
+       negative space; one madder dot in the margin, the scribe's mark beside the line that matters. -->
+  <rect width="1024" height="1024" rx="228" fill="#FBFAF7"/>
+  <path d="M288 208 H624 L752 336 V816 H288 Z" fill="#1D1F24"/>
+  <path d="M624 208 V336 H752 Z" fill="#FBFAF7"/>
+  <path d="M624 208 L752 336 H624 Z" fill="#1D1F24" opacity="0.35"/>
+  <g fill="#FBFAF7">
+    <rect x="392" y="456" width="272" height="28" rx="14"/>
+    <rect x="392" y="544" width="200" height="28" rx="14"/>
+    <rect x="392" y="632" width="240" height="28" rx="14"/>
+  </g>
+  <circle cx="336" cy="558" r="30" fill="#A8322D"/>
+</svg>

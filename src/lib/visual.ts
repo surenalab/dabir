@@ -8,6 +8,7 @@ import katex from "katex";
 import type { BibEntry } from "./latex";
 
 export interface VisualContext {
+  revealOnClick: boolean;
   root: string;
   bib: Record<string, BibEntry>;
   macros: Record<string, string>;
@@ -15,7 +16,7 @@ export interface VisualContext {
   openFile: (relPath: string) => void;
 }
 
-let ctx: VisualContext = { root: "", bib: {}, macros: {}, loadImage: async () => null, openFile: () => {} };
+let ctx: VisualContext = { revealOnClick: true, root: "", bib: {}, macros: {}, loadImage: async () => null, openFile: () => {} };
 export function setVisualContext(c: VisualContext) { ctx = c; }
 
 // ---------------------------------------------------------------- widgets
@@ -374,6 +375,7 @@ const visualEvents = EditorView.domEventHandlers({
     const t = (e.target as HTMLElement).closest<HTMLElement>("[data-from]");
     if (!t) return false;
     if (t.dataset.open) { ctx.openFile(t.dataset.open); e.preventDefault(); return true; }
+    if (!ctx.revealOnClick) return false;
     const from = Number(t.dataset.from);
     const isBlock = t.classList.contains("vz-eq") || t.classList.contains("vz-figure");
     // Place the cursor just inside the construct so it reveals its source.
@@ -386,7 +388,7 @@ const visualEvents = EditorView.domEventHandlers({
 });
 
 export const visualTheme = EditorView.theme({
-  "&": { fontFamily: "var(--font-doc)", fontSize: "var(--doc-size)" },
+  "&": { fontFamily: "var(--font-doc)", fontSize: "var(--doc-size, 16.5px)" },
   ".cm-content": { maxWidth: "68ch", margin: "0 auto", padding: "56px 48px 160px", lineHeight: "var(--doc-leading)", fontFamily: "var(--font-doc)" },
   ".cm-line": { padding: "0" },
   ".cm-gutters": { display: "none" },

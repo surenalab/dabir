@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { Copy, Radio, Square, Upload, Download, Link2, BookMarked } from "lucide-react";
-import { parseShareLink, shareLink, userName, setUserName } from "../lib/collab";
+import { parseShareLink, shareLink, userName, setUserName, type Transport } from "../lib/collab";
 
-export type LiveState = { url: string; lanUrl: string; room: string; host: boolean } | null;
+export type LiveState = { url: string; lanUrl: string; room: string; host: boolean; transport: Transport; password?: string } | null;
 
 interface Props {
   projectName: string;
@@ -10,8 +10,8 @@ interface Props {
   overleafUrl: string | null;
   busy: string | null;
   onClose: () => void;
-  onStart: (name: string) => Promise<void>;
-  onJoin: (name: string, url: string, room: string) => Promise<void>;
+  onStart: (name: string, transport: Transport) => Promise<void>;
+  onJoin: (name: string, url: string, room: string, transport: Transport, password?: string) => Promise<void>;
   onStop: () => Promise<void>;
   onSetOverleaf: (url: string) => Promise<void>;
   onPull: () => Promise<void>;
@@ -26,6 +26,7 @@ export function ShareSheet(p: Props) {
   const [overleaf, setOverleaf] = useState(p.overleafUrl ?? "");
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [transport, setTransport] = useState<Transport>("p2p");
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") p.onClose(); };
     window.addEventListener("keydown", onKey);
@@ -33,12 +34,12 @@ export function ShareSheet(p: Props) {
   }, [p]);
 
   const need = () => { if (!name.trim()) { setError("Enter the name coauthors will see."); return false; } setUserName(name.trim()); setError(null); return true; };
-  const start = async () => { if (!need()) return; try { await p.onStart(name.trim()); } catch (e) { setError(String(e)); } };
+  const start = async () => { if (!need()) return; try { await p.onStart(name.trim(), transport); } catch (e) { setError(String(e)); } };
   const join = async () => {
     if (!need()) return;
     const parsed = parseShareLink(link);
     if (!parsed) { setError("Paste a dabir:// link or a ws:// address with the room."); return; }
-    try { await p.onJoin(name.trim(), parsed.url, parsed.room); } catch (e) { setError(String(e)); }
+    try { await p.onJoin(name.trim(), parsed.url, parsed.room, parsed.transport, parsed.password); } catch (e) { setError(String(e)); }
   };
   const copy = async (text: string) => { try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { setError("Could not copy. Select the link and copy it by hand."); } };
   const wrap = (f: () => Promise<void>) => async () => { try { setError(null); await f(); } catch (e) { setError(String(e)); } };
@@ -52,8 +53,13 @@ export function ShareSheet(p: Props) {
           <h3><Radio aria-hidden /> Live session</h3>
           {!p.live ? (
             <>
-              <p className="memory-note">Edit together in real time. The host's checkout stays the source of truth; the relay only carries keystrokes and presence, and forgets everything when the session ends.</p>
+              <p className="memory-note">Edit together in real time. The host's checkout stays the source of truth; nothing is stored anywhere else, and no server of yours is needed.</p>
               <label className="share-label">Your name<input className="sheet-input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Shown next to your cursor" /></label>
+              <div className="share-radio" role="radiogroup" aria-label="How to connect">
+                <label><input type="radio" name="transport" checked={transport === "p2p"} onChange={() => setTransport("p2p")} /> Peer to peer over the internet</label>
+                <label><input type="radio" name="transport" checked={transport === "relay"} onChange={() => setTransport("relay")} /> Same network</label>
+              </div>
+              <p className="target">{transport === "p2p" ? "Browsers connect directly with WebRTC. A free public signalling server only introduces peers; the text is encrypted and never passes through it. The link carries a key." : "Dabir hosts a small relay on this machine; coauthors on the same Wi-Fi or VPN (Tailscale works well) paste the link."}</p>
               <div className="actions">
                 <button className="btn primary" onClick={start} disabled={!!p.busy}>{p.busy === "start" ? "Starting…" : "Start a Session"}</button>
               </div>
@@ -62,12 +68,12 @@ export function ShareSheet(p: Props) {
             </>
           ) : (
             <>
-              <p className="memory-note">{p.live.host ? "You are hosting." : "You joined a session."} Room <code>{p.live.room}</code>{p.live.host ? <> on <code>{p.live.lanUrl}</code></> : null}.</p>
+              <p className="memory-note">{p.live.host ? "You are hosting" : "You joined"} {p.live.transport === "p2p" ? "a peer-to-peer session" : "a session on this network"}. Room <code>{p.live.room}</code>.</p>
               <div className="share-link">
-                <code>{shareLink(p.live.host ? p.live.lanUrl : p.live.url, p.live.room)}</code>
-                <button className="btn" onClick={() => copy(shareLink(p.live!.host ? p.live!.lanUrl : p.live!.url, p.live!.room))}><Copy /> {copied ? "Copied" : "Copy Link"}</button>
+                <code>{shareLink(p.live.host && p.live.transport === "relay" ? p.live.lanUrl : p.live.url, p.live.room, p.live.transport, p.live.password)}</code>
+                <button className="btn" onClick={() => copy(shareLink(p.live!.host && p.live!.transport === "relay" ? p.live!.lanUrl : p.live!.url, p.live!.room, p.live!.transport, p.live!.password))}><Copy /> {copied ? "Copied" : "Copy Link"}</button>
               </div>
-              <p className="target">The relay runs inside Dabir on port 1234; coauthors on the same network paste the link into File › Share. For people elsewhere, forward that port or run the standalone relay on a server you control (<code>node relay/dist/relay.cjs</code>) and join it from both sides.</p>
+              <p className="target">{p.live.transport === "p2p" ? "Send the link to coauthors; it contains the room key. Anyone with the link can join while the session is open." : "Coauthors on the same network paste the link into File › Share. For people elsewhere, use Tailscale or the peer-to-peer mode, or run the standalone relay on a server you control (node relay/dist/relay.cjs)."}</p>
               <div className="actions"><button className="btn danger" onClick={wrap(p.onStop)} disabled={!!p.busy}><Square /> {p.live.host ? "End Session" : "Leave Session"}</button></div>
             </>
           )}

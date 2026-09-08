@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Candidate D: "the quire". Three sheets gathered and folded, seen edge-on as nested arcs in ink;
+       the stitch that binds them is one madder line. The folded gathering is literally what a quire is. -->
+  <rect width="1024" height="1024" rx="228" fill="#FBFAF7"/>
+  <g fill="none" stroke="#1D1F24" stroke-linecap="round" stroke-width="72">
+    <path d="M260 776 V400 C 260 296, 344 212, 448 212 H512"/>
+    <path d="M412 776 V468 C 412 424, 448 388, 492 388 H512"/>
+  </g>
+  <g fill="none" stroke="#1D1F24" stroke-linecap="round" stroke-width="72">
+    <path d="M764 776 V400 C 764 296, 680 212, 576 212 H512"/>
+    <path d="M612 776 V468 C 612 424, 576 388, 532 388 H512"/>
+  </g>
+  <rect x="482" y="176" width="60" height="640" rx="30" fill="#A8322D"/>
+</svg>

@@ -1,35 +1,31 @@
 import { useEffect, useRef } from "react";
-import { EditorState, Compartment } from "@codemirror/state";
-import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, dropCursor, rectangularSelection, crosshairCursor } from "@codemirror/view";
+import { EditorState, Compartment, StateEffect, StateField } from "@codemirror/state";
+import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, dropCursor, rectangularSelection, crosshairCursor, Decoration, hoverTooltip, type DecorationSet } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { bracketMatching, syntaxHighlighting, HighlightStyle, indentOnInput } from "@codemirror/language";
 import { search, searchKeymap, openSearchPanel, highlightSelectionMatches } from "@codemirror/search";
-import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
+import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap, startCompletion, completionStatus, currentCompletions, type CompletionSource } from "@codemirror/autocomplete";
 import { tags } from "@lezer/highlight";
-import { latex } from "codemirror-lang-latex";
-import { visualExtensions } from "../lib/visual";
+import { latex, latexCompletionSource } from "codemirror-lang-latex";
 import { yCollab } from "y-codemirror.next";
 import type * as Y from "yjs";
 import type { Awareness } from "y-protocols/awareness";
-import { StateEffect, StateField } from "@codemirror/state";
-import { Decoration, type DecorationSet } from "@codemirror/view";
+import { visualExtensions } from "../lib/visual";
+import { projectCompletions, type CompletionSources } from "../lib/completions";
+import type { GrammarMatch } from "../lib/grammar";
+import type { Settings } from "../lib/settings";
 
+const highlight = HighlightStyle.define([
+  { tag: [tags.keyword, tags.controlKeyword, tags.function(tags.variableName), tags.macroName], class: "tok-cmd" },
+  { tag: tags.comment, class: "tok-cmt" },
+  { tag: [tags.string, tags.special(tags.string)], class: "tok-str" },
+  { tag: [tags.number, tags.literal], class: "tok-num" },
+  { tag: [tags.tagName, tags.typeName, tags.className, tags.labelName], class: "tok-env" },
+  { tag: [tags.operator, tags.special(tags.variableName), tags.processingInstruction], class: "tok-math" },
+]);
+
+// ---- comments
 export interface CommentRange { id: string; from: number; to: number; resolved: boolean; color: string }
-export interface LineMark { line: number; severity: string; message: string }
-const setMarks = StateEffect.define<LineMark[]>();
-const markField = StateField.define<DecorationSet>({
-  create: () => Decoration.none,
-  update(deco, tr) {
-    deco = deco.map(tr.changes);
-    for (const e of tr.effects) if (e.is(setMarks)) {
-      const ranges = e.value.filter((m) => m.line >= 1 && m.line <= tr.state.doc.lines).sort((a, b) => a.line - b.line)
-        .map((m) => Decoration.line({ class: `cm-diag ${m.severity}`, attributes: { title: m.message } }).range(tr.state.doc.line(m.line).from));
-      deco = Decoration.set(ranges, true);
-    }
-    return deco;
-  },
-  provide: (f) => EditorView.decorations.from(f),
-});
 const setComments = StateEffect.define<CommentRange[]>();
 const commentField = StateField.define<DecorationSet>({
   create: () => Decoration.none,
@@ -45,23 +41,79 @@ const commentField = StateField.define<DecorationSet>({
   provide: (f) => EditorView.decorations.from(f),
 });
 
-const highlight = HighlightStyle.define([
-  { tag: [tags.keyword, tags.controlKeyword, tags.function(tags.variableName), tags.macroName], class: "tok-cmd" },
-  { tag: tags.comment, class: "tok-cmt" },
-  { tag: [tags.string, tags.special(tags.string)], class: "tok-str" },
-  { tag: [tags.number, tags.literal], class: "tok-num" },
-  { tag: [tags.tagName, tags.typeName, tags.className, tags.labelName], class: "tok-env" },
-  { tag: [tags.operator, tags.special(tags.variableName), tags.processingInstruction], class: "tok-math" },
-]);
+// ---- compile diagnostics on lines
+export interface LineMark { line: number; severity: string; message: string }
+const setMarks = StateEffect.define<LineMark[]>();
+const markField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(deco, tr) {
+    deco = deco.map(tr.changes);
+    for (const e of tr.effects) if (e.is(setMarks)) {
+      const ranges = e.value.filter((m) => m.line >= 1 && m.line <= tr.state.doc.lines).sort((a, b) => a.line - b.line)
+        .map((m) => Decoration.line({ class: `cm-diag ${m.severity}`, attributes: { title: m.message } }).range(tr.state.doc.line(m.line).from));
+      deco = Decoration.set(ranges, true);
+    }
+    return deco;
+  },
+  provide: (f) => EditorView.decorations.from(f),
+});
+
+// ---- grammar matches with a hover card offering replacements
+const setGrammar = StateEffect.define<GrammarMatch[]>();
+const grammarField = StateField.define<{ deco: DecorationSet; matches: GrammarMatch[] }>({
+  create: () => ({ deco: Decoration.none, matches: [] }),
+  update(v, tr) {
+    let deco = v.deco.map(tr.changes);
+    let matches = v.matches;
+    for (const e of tr.effects) if (e.is(setGrammar)) {
+      matches = e.value;
+      const ranges = matches.filter((m) => m.to > m.from && m.to <= tr.state.doc.length).sort((a, b) => a.from - b.from)
+        .map((m) => Decoration.mark({ class: `cm-grammar ${m.category.toLowerCase()}`, attributes: { title: m.message } }).range(m.from, m.to));
+      deco = Decoration.set(ranges, true);
+    }
+    if (tr.docChanged && !tr.effects.some((e) => e.is(setGrammar))) {
+      matches = matches.map((m) => ({ ...m, from: tr.changes.mapPos(m.from), to: tr.changes.mapPos(m.to) }));
+    }
+    return { deco, matches };
+  },
+  provide: (f) => EditorView.decorations.from(f, (v) => v.deco),
+});
+const grammarHover = hoverTooltip((view, pos) => {
+  const m = view.state.field(grammarField).matches.find((x) => pos >= x.from && pos <= x.to);
+  if (!m) return null;
+  return {
+    pos: m.from, end: m.to, above: true,
+    create() {
+      const dom = document.createElement("div");
+      dom.className = "grammar-card";
+      const msg = document.createElement("div"); msg.className = "gc-msg"; msg.textContent = m.message; dom.appendChild(msg);
+      if (m.replacements.length) {
+        const row = document.createElement("div"); row.className = "gc-row";
+        for (const r of m.replacements) {
+          const b = document.createElement("button"); b.textContent = r || "(remove)"; b.className = "gc-fix";
+          b.onmousedown = (e) => { e.preventDefault(); view.dispatch({ changes: { from: m.from, to: m.to, insert: r } }); };
+          row.appendChild(b);
+        }
+        dom.appendChild(row);
+      }
+      const rule = document.createElement("div"); rule.className = "gc-rule"; rule.textContent = m.rule; dom.appendChild(rule);
+      return { dom };
+    },
+  };
+});
+
 
 interface Props {
   value: string;
   visual: boolean;
+  settings: Settings;
+  completions: CompletionSources;
   collab: { text: Y.Text; awareness: Awareness } | null;
   comments: CommentRange[];
+  grammar: GrammarMatch[];
+  marks: LineMark[];
   onSelection: (from: number, to: number) => void;
   jumpOffset: { pos: number; stamp: number } | null;
-  marks: LineMark[];
   onChange: (text: string) => void;
   onSave: () => void;
   onCursorLine: (line: number) => void;
@@ -72,16 +124,33 @@ interface Props {
 
 const sourceOnly = () => [lineNumbers(), highlightActiveLineGutter(), highlightActiveLine(), syntaxHighlighting(highlight)];
 
-export function SourceEditor({ value, visual, collab, comments, onSelection, jumpOffset, marks, onChange, onSave, onCursorLine, jumpLine, jumpStamp, findRequest }: Props) {
+export function SourceEditor({ value, visual, settings, completions, collab, comments, grammar, marks, onSelection, jumpOffset, onChange, onSave, onCursorLine, jumpLine, jumpStamp, findRequest }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const modeComp = useRef(new Compartment());
   const collabComp = useRef(new Compartment());
-  const onSelRef = useRef(onSelection); onSelRef.current = onSelection;
+  const prefsComp = useRef(new Compartment());
+  const completeComp = useRef(new Compartment());
   const onChangeRef = useRef(onChange); onChangeRef.current = onChange;
   const onSaveRef = useRef(onSave); onSaveRef.current = onSave;
   const onCursorRef = useRef(onCursorLine); onCursorRef.current = onCursorLine;
+  const onSelRef = useRef(onSelection); onSelRef.current = onSelection;
+  const completionsRef = useRef(completions); completionsRef.current = completions;
   const loading = useRef(false);
+
+  const prefs = (s: Settings) => [
+    EditorView.contentAttributes.of({ spellcheck: s.spellcheck ? "true" : "false", autocorrect: "off", autocapitalize: "off" }),
+    s.lineWrap ? EditorView.lineWrapping : [],
+    EditorView.theme({ "&": { "--doc-size": `${s.fontSize}px`, "--mono-size": `${s.monoSize}px` } }),
+  ];
+  const completionExt = (s: Settings) => {
+    if (!s.autocomplete && !s.citeComplete) return [];
+    const project = projectCompletions({ bib: () => completionsRef.current.bib(), labels: () => completionsRef.current.labels(), files: () => completionsRef.current.files() });
+    const override: CompletionSource[] = [];
+    if (s.citeComplete) override.push(project);
+    if (s.autocomplete) override.push(latexCompletionSource(true) as CompletionSource);
+    return autocompletion({ override, activateOnTyping: true, maxRenderedOptions: 40, icons: true });
+  };
 
   useEffect(() => {
     if (!host.current) return;
@@ -90,13 +159,12 @@ export function SourceEditor({ value, visual, collab, comments, onSelection, jum
       extensions: [
         history(), drawSelection(), dropCursor(), rectangularSelection(), crosshairCursor(),
         indentOnInput(), bracketMatching(), closeBrackets(), highlightSelectionMatches(),
-        autocompletion(), search({ top: true }),
-        latex(),
-        EditorView.lineWrapping,
+        completeComp.current.of(completionExt(settings)), search({ top: true }),
+        latex({ enableAutocomplete: false, autoCloseBrackets: false }),
+        prefsComp.current.of(prefs(settings)),
         modeComp.current.of(visual ? visualExtensions() : sourceOnly()),
         collabComp.current.of([]),
-        commentField,
-        markField,
+        commentField, markField, grammarField, grammarHover,
         keymap.of([
           { key: "Mod-s", run: () => { onSaveRef.current(); return true; } },
           ...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...historyKeymap, ...completionKeymap, indentWithTab,
@@ -112,16 +180,16 @@ export function SourceEditor({ value, visual, collab, comments, onSelection, jum
     });
     const v = new EditorView({ state, parent: host.current });
     view.current = v;
-    (host.current as HTMLDivElement & { __view?: EditorView }).__view = v; // for automated tests
+    const h = host.current as HTMLDivElement & { __view?: EditorView; __complete?: () => unknown };
+    h.__view = v; // for automated tests
+    h.__complete = () => { startCompletion(v); return { status: completionStatus(v.state), count: currentCompletions(v.state).length }; };
     return () => { v.destroy(); view.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    view.current?.dispatch({ effects: modeComp.current.reconfigure(visual ? visualExtensions() : sourceOnly()) });
-  }, [visual]);
+  useEffect(() => { view.current?.dispatch({ effects: modeComp.current.reconfigure(visual ? visualExtensions() : sourceOnly()) }); }, [visual]);
+  useEffect(() => { view.current?.dispatch({ effects: [prefsComp.current.reconfigure(prefs(settings)), completeComp.current.reconfigure(completionExt(settings))] }); }, [settings]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Live session: bind the shared text. The editor takes the shared content as its own.
   useEffect(() => {
     const v = view.current;
     if (!v) return;
@@ -139,6 +207,7 @@ export function SourceEditor({ value, visual, collab, comments, onSelection, jum
 
   useEffect(() => { view.current?.dispatch({ effects: setComments.of(comments) }); }, [comments]);
   useEffect(() => { view.current?.dispatch({ effects: setMarks.of(marks) }); }, [marks, value]);
+  useEffect(() => { view.current?.dispatch({ effects: setGrammar.of(grammar) }); }, [grammar]);
 
   useEffect(() => {
     const v = view.current;
@@ -148,12 +217,11 @@ export function SourceEditor({ value, visual, collab, comments, onSelection, jum
     v.focus();
   }, [jumpOffset]);
 
-  // Replace the document only when a different file is loaded.
   useEffect(() => {
     const v = view.current;
     if (!v) return;
+    if (collab) return;
     const current = v.state.doc.toString();
-    if (collab) return; // the shared text owns the document during a session
     if (current !== value) { loading.current = true; v.dispatch({ changes: { from: 0, to: current.length, insert: value }, selection: { anchor: 0 } }); loading.current = false; v.scrollDOM.scrollTop = 0; }
   }, [value, collab]);
 
