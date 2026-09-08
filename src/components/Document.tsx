@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from "react";
-import { AlertCircle, AlertTriangle, CheckCircle2, FolderOpen, GitBranch, Loader2, Circle, Upload } from "lucide-react";
+import { AlertCircle, CheckCircle2, FolderOpen, GitBranch, Loader2, Circle, Upload } from "lucide-react";
 import { parseDocument, type BibEntry } from "../lib/latex";
 import { setVisualContext } from "../lib/visual";
 import { readBinary, type PdfPos, type Project } from "../lib/backend";
@@ -7,6 +7,7 @@ import * as pdfjs from "pdfjs-dist";
 import type { ViewMode } from "./Toolbar";
 import type { CompileState } from "../App";
 import { SourceEditor, type CommentRange } from "./SourceEditor";
+import { Problems, groupProblems } from "./Problems";
 import type * as Y from "yjs";
 import type { Awareness } from "y-protocols/awareness";
 import { PdfView } from "./PdfView";
@@ -76,6 +77,9 @@ interface Props {
   onPdfClick: (page: number, x: number, y: number) => void;
   compileOnSave: boolean;
   onToggleCompileOnSave: () => void;
+  agentReady: boolean;
+  onJumpFile: (file: string | null, line: number) => void;
+  onFix: (prompt: string) => void;
   collab: { text: Y.Text; awareness: Awareness } | null;
   comments: CommentRange[];
   onSelection: (from: number, to: number) => void;
@@ -100,14 +104,12 @@ export function Document(p: Props) {
 
   const result = compileState.status === "done" ? compileState.result : null;
   const diagnostics = result?.diagnostics ?? [];
-  const errors = diagnostics.filter((d) => d.severity === "error").length;
-  // Tectonic repeats the same note once per pass; show it once with a count.
-  const grouped = diagnostics.reduce<(typeof diagnostics[number] & { count: number })[]>((acc, d) => {
-    const same = acc.find((g) => g.severity === d.severity && g.file === d.file && g.line === d.line && g.message === d.message);
-    if (same) same.count += 1; else acc.push({ ...d, count: 1 });
-    return acc;
-  }, []);
+  const grouped = groupProblems(diagnostics);
+  const errors = grouped.filter((d) => d.severity === "error").length;
   const warnings = grouped.filter((d) => d.severity === "warning").length;
+  const mainRel = project?.mainTex ? project.mainTex.replace(project.root + "/", "") : "main.tex";
+  const currentRel = p.file && project ? p.file.replace(project.root + "/", "") : null;
+  const editorMarks = grouped.filter((d) => d.line != null && (d.file ?? mainRel) === currentRel).map((d) => ({ line: d.line!, severity: d.severity, message: d.message }));
 
   if (!project || (source == null && mode !== "pdf")) {
     return (
@@ -134,23 +136,14 @@ export function Document(p: Props) {
   return (
     <main className="document">
       {error && <div className="banner error" role="alert"><span>{error}</span><button onClick={p.onDismissError}>Dismiss</button></div>}
-      {grouped.length > 0 && (
-        <div className="diagnostics" role="list" aria-label="Compile diagnostics">
-          {grouped.map((d, i) => (
-            <button key={i} className={`diag ${d.severity}`} role="listitem" onClick={() => d.line != null && p.onJump(d.line, true)} title={d.line != null ? "Go to line in Source" : (d.count > 1 ? `Reported ${d.count} times, once per compile pass` : undefined)}>
-              {d.severity === "error" ? <AlertCircle aria-label="Error" /> : <AlertTriangle aria-label="Warning" />}
-              <span className="where">{d.file ?? ""}{d.line != null ? `:${d.line}` : ""}</span>
-              <span className="msg">{d.message}{d.count > 1 && <span className="count"> ×{d.count}</span>}</span>
-            </button>
-          ))}
-        </div>
-      )}
+      <Problems problems={grouped} mainFile={mainRel} agentReady={p.agentReady}
+        onJump={(file, line) => p.onJumpFile(file, line)} onFix={p.onFix} />
 
       <div className="scroll" hidden={mode === "pdf"}>
         {source != null && isTex && (
           <SourceEditor value={source} visual={mode === "visual" && /\.tex$/i.test(p.file ?? "")} onChange={p.onSourceChange} onSave={p.onSave}
             onCursorLine={p.onCursorLine} jumpLine={p.jumpLine} jumpStamp={p.jumpStamp} findRequest={p.findRequest}
-            collab={p.collab} comments={p.comments} onSelection={p.onSelection} jumpOffset={p.jumpOffset} />
+            collab={p.collab} comments={p.comments} onSelection={p.onSelection} jumpOffset={p.jumpOffset} marks={editorMarks} />
         )}
         {source != null && !isTex && <div className="doc-empty"><div className="card"><p>This file type is not editable in Dabir yet.</p></div></div>}
       </div>

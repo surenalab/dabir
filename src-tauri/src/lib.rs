@@ -9,6 +9,7 @@ mod git;
 mod memory;
 mod relay;
 mod synctex;
+mod texlog;
 
 use serde::Serialize;
 use std::fs;
@@ -198,14 +199,7 @@ fn import_overleaf_zip(zip_path: String, dest: Option<String>) -> Result<String,
 
 // ---------------------------------------------------------------- compile
 
-#[derive(Serialize, Clone, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct Diagnostic {
-    pub severity: String, // "error" | "warning"
-    pub file: Option<String>,
-    pub line: Option<u32>,
-    pub message: String,
-}
+pub use texlog::Diagnostic;
 
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -271,7 +265,7 @@ fn parse_log(log: &str) -> Vec<Diagnostic> {
         if message.is_empty() || message.starts_with("see the LaTeX manual") || message.starts_with("Type  H <return>") {
             continue;
         }
-        out.push(Diagnostic { severity: severity.into(), file, line: lineno, message });
+        out.push(Diagnostic { severity: severity.into(), category: "other".into(), file, line: lineno, message, context: None });
     }
     out
 }
@@ -298,9 +292,11 @@ fn compile(app: AppHandle, main_tex: String) -> Result<CompileResult, String> {
             log: String::new(),
             diagnostics: vec![Diagnostic {
                 severity: "error".into(),
+                category: "other".into(),
                 file: None,
                 line: None,
                 message: "Tectonic is not installed. Install it with `brew install tectonic`, or set DABIR_TECTONIC to its path.".into(),
+                context: None,
             }],
             engine: "none".into(),
             millis: 0,
@@ -353,10 +349,21 @@ fn compile(app: AppHandle, main_tex: String) -> Result<CompileResult, String> {
     let stem = main.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or("main".into());
     let pdf = outdir.join(format!("{}.pdf", stem));
     let ok = output.0.success() && pdf.exists();
+    let main_name = main.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or("main.tex".into());
+    let mut diagnostics = parse_log(&log);
+    if let Ok(texlog_text) = fs::read_to_string(outdir.join(format!("{}.log", stem))) {
+        for d in texlog::parse(&texlog_text, &main_name) {
+            // Prefer the .log entry: it carries the excerpt. Drop the stderr twin.
+            diagnostics.retain(|e| !(e.line == d.line && e.severity == d.severity && d.message.starts_with(e.message.split(':').next().unwrap_or("")) && e.context.is_none() && e.line.is_some()));
+            if !diagnostics.iter().any(|e| e.line == d.line && e.message == d.message) { diagnostics.push(d); }
+        }
+    }
+    // Errors first, then warnings, then info; stable within a group.
+    diagnostics.sort_by_key(|d| match d.severity.as_str() { "error" => 0, "warning" => 1, _ => 2 });
     Ok(CompileResult {
         ok,
         pdf: if pdf.exists() { Some(pdf.to_string_lossy().to_string()) } else { None },
-        diagnostics: parse_log(&log),
+        diagnostics,
         log,
         engine: format!("tectonic ({})", tectonic.display()),
         millis,

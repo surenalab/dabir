@@ -15,6 +15,21 @@ import { StateEffect, StateField } from "@codemirror/state";
 import { Decoration, type DecorationSet } from "@codemirror/view";
 
 export interface CommentRange { id: string; from: number; to: number; resolved: boolean; color: string }
+export interface LineMark { line: number; severity: string; message: string }
+const setMarks = StateEffect.define<LineMark[]>();
+const markField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(deco, tr) {
+    deco = deco.map(tr.changes);
+    for (const e of tr.effects) if (e.is(setMarks)) {
+      const ranges = e.value.filter((m) => m.line >= 1 && m.line <= tr.state.doc.lines).sort((a, b) => a.line - b.line)
+        .map((m) => Decoration.line({ class: `cm-diag ${m.severity}`, attributes: { title: m.message } }).range(tr.state.doc.line(m.line).from));
+      deco = Decoration.set(ranges, true);
+    }
+    return deco;
+  },
+  provide: (f) => EditorView.decorations.from(f),
+});
 const setComments = StateEffect.define<CommentRange[]>();
 const commentField = StateField.define<DecorationSet>({
   create: () => Decoration.none,
@@ -46,6 +61,7 @@ interface Props {
   comments: CommentRange[];
   onSelection: (from: number, to: number) => void;
   jumpOffset: { pos: number; stamp: number } | null;
+  marks: LineMark[];
   onChange: (text: string) => void;
   onSave: () => void;
   onCursorLine: (line: number) => void;
@@ -56,7 +72,7 @@ interface Props {
 
 const sourceOnly = () => [lineNumbers(), highlightActiveLineGutter(), highlightActiveLine(), syntaxHighlighting(highlight)];
 
-export function SourceEditor({ value, visual, collab, comments, onSelection, jumpOffset, onChange, onSave, onCursorLine, jumpLine, jumpStamp, findRequest }: Props) {
+export function SourceEditor({ value, visual, collab, comments, onSelection, jumpOffset, marks, onChange, onSave, onCursorLine, jumpLine, jumpStamp, findRequest }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const modeComp = useRef(new Compartment());
@@ -80,6 +96,7 @@ export function SourceEditor({ value, visual, collab, comments, onSelection, jum
         modeComp.current.of(visual ? visualExtensions() : sourceOnly()),
         collabComp.current.of([]),
         commentField,
+        markField,
         keymap.of([
           { key: "Mod-s", run: () => { onSaveRef.current(); return true; } },
           ...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...historyKeymap, ...completionKeymap, indentWithTab,
@@ -121,6 +138,7 @@ export function SourceEditor({ value, visual, collab, comments, onSelection, jum
   }, [collab]);
 
   useEffect(() => { view.current?.dispatch({ effects: setComments.of(comments) }); }, [comments]);
+  useEffect(() => { view.current?.dispatch({ effects: setMarks.of(marks) }); }, [marks, value]);
 
   useEffect(() => {
     const v = view.current;
