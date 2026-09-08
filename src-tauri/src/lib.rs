@@ -126,6 +126,89 @@ fn find_main_tex(root: &Path) -> Option<PathBuf> {
         .find(|p| fs::read_to_string(p).map(|s| s.contains("\\documentclass")).unwrap_or(false))
 }
 
+// ---------------------------------------------------------------- live session mirrors
+//
+// A joiner gets the host's whole working tree, not just the open file, so figures, tables and the
+// .bib match. The snapshot travels inside the shared document (text as text, assets as base64
+// chunks), so it works over every transport and needs no extra channel.
+
+#[derive(Serialize, serde::Deserialize, Clone, Debug)]
+pub struct SnapFile {
+    pub path: String,           // relative, forward slashes
+    pub text: Option<String>,   // editable text files
+    pub base64: Option<String>, // everything else
+    pub size: u64,
+}
+
+const SNAP_TEXT_EXT: &[&str] = &["tex", "sty", "cls", "bib", "bst", "md", "txt", "toml", "yaml", "yml", "json", "csv", "py", "jl", "r", "typ", "cfg", "def", "gitignore"];
+const SNAP_MAX_FILE: u64 = 12 * 1024 * 1024;
+const SNAP_MAX_TOTAL: u64 = 80 * 1024 * 1024;
+
+fn snapshot_walk(root: &Path, dir: &Path, out: &mut Vec<SnapFile>, total: &mut u64, skipped: &mut Vec<String>) {
+    let Ok(read) = fs::read_dir(dir) else { return };
+    let mut entries: Vec<_> = read.filter_map(|e| e.ok()).collect();
+    entries.sort_by_key(|e| e.file_name());
+    for e in entries {
+        let path = e.path();
+        let name = e.file_name().to_string_lossy().to_string();
+        const SNAP_SKIP: &[&str] = &[".git", "node_modules", "target", "__pycache__", ".venv", "venv", "dist", "build", "worktrees", "index"];
+        if SNAP_SKIP.contains(&name.as_str()) { continue; }
+        if path.is_dir() { snapshot_walk(root, &path, out, total, skipped); continue; }
+        let Ok(meta) = fs::metadata(&path) else { continue };
+        let rel = path.strip_prefix(root).unwrap_or(&path).to_string_lossy().replace('\\', "/");
+        if meta.len() > SNAP_MAX_FILE || *total + meta.len() > SNAP_MAX_TOTAL { skipped.push(rel); continue; }
+        let ext = path.extension().and_then(|x| x.to_str()).map(|x| x.to_ascii_lowercase()).unwrap_or_default();
+        let is_text = SNAP_TEXT_EXT.contains(&ext.as_str()) || name.starts_with('.') && ext.is_empty();
+        let Ok(bytes) = fs::read(&path) else { continue };
+        *total += meta.len();
+        if is_text {
+            match String::from_utf8(bytes) {
+                Ok(t) => out.push(SnapFile { path: rel, text: Some(t), base64: None, size: meta.len() }),
+                Err(e) => out.push(SnapFile { path: rel, text: None, base64: Some(base64::Engine::encode(&base64::engine::general_purpose::STANDARD, e.into_bytes())), size: meta.len() }),
+            }
+        } else {
+            out.push(SnapFile { path: rel, text: None, base64: Some(base64::Engine::encode(&base64::engine::general_purpose::STANDARD, bytes)), size: meta.len() });
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub struct Snapshot { pub files: Vec<SnapFile>, pub skipped: Vec<String>, pub total: u64 }
+
+/// Every file of the project small enough to travel, with the paths a joiner needs to rebuild it.
+#[tauri::command]
+fn project_snapshot(root: String) -> Result<Snapshot, String> {
+    let root = PathBuf::from(&root);
+    let mut files = vec![]; let mut skipped = vec![]; let mut total = 0;
+    snapshot_walk(&root, &root, &mut files, &mut total, &mut skipped);
+    Ok(Snapshot { files, skipped, total })
+}
+
+fn sessions_dir() -> Result<PathBuf, String> {
+    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(PathBuf::from).ok_or("No home directory")?;
+    Ok(home.join("Dabir Sessions"))
+}
+
+/// Write a snapshot into ~/Dabir Sessions/<name> and return that folder. Existing files are overwritten;
+/// files the host no longer has are left alone (they may be the joiner's own).
+#[tauri::command]
+fn session_materialize(name: String, files: Vec<SnapFile>) -> Result<String, String> {
+    let safe: String = name.chars().map(|c| if c.is_alphanumeric() || c == '-' || c == '_' || c == ' ' { c } else { '-' }).collect();
+    let root = sessions_dir()?.join(safe.trim());
+    fs::create_dir_all(&root).map_err(|e| e.to_string())?;
+    for f in files {
+        if f.path.contains("..") { continue; }
+        let dest = root.join(&f.path);
+        if let Some(parent) = dest.parent() { fs::create_dir_all(parent).map_err(|e| e.to_string())?; }
+        if let Some(t) = f.text { fs::write(&dest, t).map_err(|e| e.to_string())?; }
+        else if let Some(b) = f.base64 {
+            let bytes = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b.as_bytes()).map_err(|e| e.to_string())?;
+            fs::write(&dest, bytes).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(root.to_string_lossy().to_string())
+}
+
 #[tauri::command]
 fn open_project(path: String) -> Result<Project, String> {
     let root = PathBuf::from(&path);
@@ -802,6 +885,7 @@ pub fn run() {
             templates_list, new_paper, bib_import_file, zotero_import,
             synctex_forward, synctex_inverse,
             git_status, git_init, git_commit, git_clone, git_remote_add, git_remote_url, git_pull, git_push, relay_start, relay_stop,
+            project_snapshot, session_materialize,
             agent_providers, agent_run, agent_cancel, agent_diff, agent_accept, agent_reject, agent_pull_request,
             memory_read, memory_setup, provenance_rerun, context_pack
         ])
@@ -824,6 +908,23 @@ mod tests {
         assert_eq!(d[1].severity, "warning");
         assert_eq!(d[1].line, Some(40));
         assert_eq!(d[2].line, None);
+    }
+
+    #[test]
+    fn snapshot_round_trip() {
+        let dir = std::env::temp_dir().join(format!("dabir-snap-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(dir.join("figures")).unwrap();
+        fs::write(dir.join("main.tex"), "\\documentclass{article}").unwrap();
+        fs::write(dir.join("figures/a.png"), [137u8, 80, 78, 71, 0, 1, 2]).unwrap();
+        fs::create_dir_all(dir.join(".git")).unwrap();
+        fs::write(dir.join(".git/HEAD"), "ref").unwrap();
+        let snap = project_snapshot(dir.to_string_lossy().to_string()).unwrap();
+        let paths: Vec<_> = snap.files.iter().map(|f| f.path.clone()).collect();
+        assert!(paths.contains(&"main.tex".to_string()) && paths.contains(&"figures/a.png".to_string()) && !paths.iter().any(|p| p.starts_with(".git")), "{:?}", paths);
+        let root = session_materialize(format!("test-{}", uuid::Uuid::new_v4()), snap.files).unwrap();
+        assert_eq!(fs::read(Path::new(&root).join("figures/a.png")).unwrap(), vec![137u8, 80, 78, 71, 0, 1, 2]);
+        assert_eq!(fs::read_to_string(Path::new(&root).join("main.tex")).unwrap(), "\\documentclass{article}");
+        fs::remove_dir_all(&root).ok(); fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

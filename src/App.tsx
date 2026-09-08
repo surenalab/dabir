@@ -14,10 +14,10 @@ import { checkGrammar, type GrammarMatch } from "./lib/grammar";
 import { collectLabels } from "./lib/completions";
 import type { PdfPin, PdfZoom } from "./components/PdfView";
 import type { ManualProvider } from "./lib/manual";
-import { addComment as yAddComment, connect as yConnect, decodeRange, disconnect as yDisconnect, encodeRange, peers as yPeers, randomRoom, removeComment as yRemoveComment, resolveComment as yResolveComment, setCurrentFile, textFor, whenSynced, type Comment, type Peer, type Session, type Transport } from "./lib/collab";
+import { addComment as yAddComment, connect as yConnect, decodeRange, disconnect as yDisconnect, encodeRange, peers as yPeers, randomRoom, removeComment as yRemoveComment, resolveComment as yResolveComment, setCurrentFile, textFor, whenSynced, type Comment, type Peer, type Session, type Transport, markHost, hostPresent, publishProject, republishChanged, awaitSnapshot, sharedTexts, persist } from "./lib/collab";
 import type { CommentRange } from "./components/SourceEditor";
 import {
-  bibImportFile, checkForUpdates, newPaper, zoteroImport, compile as runCompile, compileCancel, gitClone, gitPull, gitPush, gitRemoteAdd, gitRemoteUrl, isMac, onCompileProgress, relayStart, relayStop, gitCommit, gitInit, gitStatus, importOverleaf, native, onMenu, onWindowFocus,
+  bibImportFile, checkForUpdates, projectSnapshot, sessionMaterialize, newPaper, zoteroImport, compile as runCompile, compileCancel, gitClone, gitPull, gitPush, gitRemoteAdd, gitRemoteUrl, isMac, onCompileProgress, relayStart, relayStop, gitCommit, gitInit, gitStatus, importOverleaf, native, onMenu, onWindowFocus,
   openProject, pickFolder, readText, setWindowTitle, synctexForward, synctexInverse, writeText,
   type CompileResult, type GitStatus, type PdfPos, type Project,
 } from "./lib/backend";
@@ -67,6 +67,12 @@ export default function App() {
   const [directPeers, setDirectPeers] = useState(0);
   const [session, setSession] = useState<Session | null>(null);
   const [live, setLive] = useState<LiveState>(null);
+  const [hostAway, setHostAway] = useState(false);
+  const [commitDraft, setCommitDraft] = useState("");
+  const seenHost = useRef(false);
+  const unpersist = useRef<(() => void) | null>(null);
+  const projectRef = useRef<Project | null>(null);
+  const fileRef = useRef<string | null>(null);
   const [liveBusy, setLiveBusy] = useState<string | null>(null);
   const [peers, setPeers] = useState<Peer[]>([]);
   const [comments, setComments] = useState<Comment[]>([]);
@@ -234,7 +240,13 @@ export default function App() {
   const attachSession = useCallback((sess: Session) => {
     setSession(sess);
     (window as unknown as { __session?: Session }).__session = sess; // for automated tests
-    const refresh = () => { setPeers(yPeers(sess)); };
+    seenHost.current = sess.host;
+    setHostAway(false);
+    persist(sess).then((u) => { unpersist.current = u; }).catch(() => {});
+    const refresh = () => {
+      setPeers(yPeers(sess));
+      if (!sess.host) { const here = hostPresent(sess); if (here) seenHost.current = true; setHostAway(seenHost.current && !here); }
+    };
     sess.awareness.on("change", refresh);
     const onComments = () => setComments(sess.comments.toArray());
     sess.comments.observe(onComments);
@@ -243,7 +255,7 @@ export default function App() {
   }, []);
 
   const startSession = useCallback(async (name: string, transport: Transport) => {
-    if (!project) return;
+    if (!project) throw new Error("Open a paper first; joining needs no paper, hosting does.");
     setLiveBusy("start");
     try {
       const room = randomRoom(project.name);
@@ -259,25 +271,36 @@ export default function App() {
       if (transport === "relay") (sess.provider as { once: (e: string, f: () => void) => void }).once("sync", seed); else seed();
       if (transport === "direct") (sess.provider as ManualProvider).on("peers", () => setDirectPeers((sess.provider as ManualProvider).peerCount));
       attachSession(sess);
+      markHost(sess);
       setLive({ url: info.url, lanUrl: info.lanUrl, room, host: true, transport, password });
-      setNote(transport === "direct" ? "Direct session ready. Make an invite code for each coauthor." : "Live session started. Share the link from the Share sheet.");
+      // Every joiner rebuilds this working tree locally, so figures, tables and the .bib match.
+      const snap = await projectSnapshot(project.root);
+      await publishProject(sess, snap.files, snap.skipped);
+      setNote(transport === "direct" ? "Direct session ready. Make an invite code for each coauthor." : "Live session started. Share the link from the Share sheet." + (snap.skipped.length ? ` ${snap.skipped.length} large file${snap.skipped.length > 1 ? "s" : ""} stay on this machine.` : ""));
     } finally { setLiveBusy(null); }
   }, [project, file, source, rel, attachSession, settings.signalingUrl]);
 
   // Direct mode as a guest: answer an invite, then wait for the host to connect.
+  // A joiner works in a local mirror of the host's tree (~/Dabir Sessions/<room>), so compiles and figures match.
+  const mirrorFromHost = useCallback(async (sess: Session, room: string) => {
+    const snap = await awaitSnapshot(sess, 45000);
+    const root = await sessionMaterialize(room, snap.files);
+    if (root) { await openFolder(root); setNote(`Working in a mirror of the host's paper${snap.skipped.length ? `; ${snap.skipped.length} large file${snap.skipped.length > 1 ? "s" : ""} did not travel` : ""}.`); }
+    setCurrentFile(sess, rel(fileRef.current));
+  }, [openFolder, rel]);
+
   const answerDirect = useCallback(async (name: string, invite: string): Promise<string> => {
-    if (!project) throw new Error("Open a paper first.");
     const sess = session?.transport === "direct" ? session : yConnect("", "direct", name, false, "direct");
     const prov = sess.provider as ManualProvider;
     const code = await prov.answerInvite(invite);
     if (sess !== session) {
       prov.on("peers", () => setDirectPeers(prov.peerCount));
-      prov.once("synced", () => { setCurrentFile(sess, rel(file)); setNote("Connected to the host."); });
+      prov.once("synced", () => { setNote("Connected to the host. Receiving the paper…"); mirrorFromHost(sess, `direct-${name}`).catch((e) => setError(String(e))); });
       attachSession(sess);
       setLive({ url: "", lanUrl: "", room: "direct", host: false, transport: "direct" });
     }
     return code;
-  }, [project, session, file, rel, attachSession]);
+  }, [session, attachSession, mirrorFromHost]);
   const directApi = session?.transport === "direct" ? {
     invite: () => (session.provider as ManualProvider).createInvite(),
     accept: (answer: string) => (session.provider as ManualProvider).acceptAnswer(answer),
@@ -286,23 +309,71 @@ export default function App() {
   } : { invite: async () => { throw new Error("Start a direct session first."); }, accept: async () => {}, answer: answerDirect, peers: 0 };
 
   const joinSession = useCallback(async (name: string, url: string, room: string, transport: Transport, password?: string) => {
-    if (!project) return;
     setLiveBusy("join");
     try {
       const sess = yConnect(url, room, name, false, transport, password);
       try { await whenSynced(sess, transport === "p2p" ? 20000 : 8000); } catch (e) { yDisconnect(sess); throw e; }
-      setCurrentFile(sess, rel(file));
       attachSession(sess);
       setLive({ url, lanUrl: url, room, host: false, transport, password });
-      setNote("Joined the live session.");
+      setNote("Joined. Receiving the host's paper…");
+      await mirrorFromHost(sess, room);
     } finally { setLiveBusy(null); }
-  }, [project, file, rel, attachSession]);
+  }, [attachSession, mirrorFromHost]);
 
   const stopSession = useCallback(async () => {
+    const names = peers.filter((p) => !p.me).map((p) => p.name);
     if (session) yDisconnect(session);
-    setSession(null); setPeers([]); setComments([]); setLive(null);
+    unpersist.current?.(); unpersist.current = null;
+    setSession(null); setPeers([]); setComments([]); setLive(null); setHostAway(false);
     if (live?.host && live.transport === "relay") await relayStop();
-  }, [session, live]);
+    // The host's checkout is the record of the session: suggest the commit.
+    if (live?.host) { setCommitDraft(`Live session${names.length ? ` with ${names.join(", ")}` : ""}`); setNavOpen(true); }
+  }, [session, live, peers]);
+
+  // Every client writes shared files it does not have open to its own disk, so the host's checkout
+  // and each joiner's mirror stay complete even for files only somebody else is editing.
+  useEffect(() => { projectRef.current = project; fileRef.current = file; }, [project, file]);
+  useEffect(() => {
+    if (!session) return;
+    const written = new Map<string, string>();
+    let timer: number | null = null;
+    const flush = () => {
+      const root = projectRef.current?.root; if (!root) return;
+      const openRel = rel(fileRef.current);
+      for (const { rel: r, text } of sharedTexts(session)) {
+        if (r === openRel || r.includes("..")) continue;
+        const content = text.toString();
+        if (!content || written.get(r) === content) continue;
+        written.set(r, content);
+        writeText(`${root}/${r}`, content).catch(() => {});
+      }
+    };
+    const onUpdate = () => { if (timer) clearTimeout(timer); timer = window.setTimeout(flush, 800); };
+    session.doc.on("update", onUpdate);
+    return () => { session.doc.off("update", onUpdate); if (timer) clearTimeout(timer); };
+  }, [session, rel]);
+
+  // The host seeds any file a joiner opens that nobody has seeded yet.
+  useEffect(() => {
+    if (!session || !live?.host || !project) return;
+    const seedFor = async () => {
+      for (const p of yPeers(session)) {
+        if (p.me || !p.file) continue;
+        const t = textFor(session, p.file);
+        if (t.length > 0) continue;
+        try { const content = await readText(`${project.root}/${p.file}`); if (content && t.length === 0) t.insert(0, content); } catch { /* not a text file the host has */ }
+      }
+    };
+    session.awareness.on("change", seedFor);
+    seedFor();
+    return () => session.awareness.off("change", seedFor);
+  }, [session, live, project]);
+
+  // After a compile, figures and tables may have changed: send only what changed.
+  useEffect(() => {
+    if (!session || !live?.host || !project || compileState.status !== "done") return;
+    projectSnapshot(project.root).then((snap) => republishChanged(session, snap.files)).catch(() => {});
+  }, [compileState, session, live, project]);
 
   useEffect(() => { if (session) setCurrentFile(session, rel(file)); }, [session, file, rel]);
 
@@ -524,12 +595,12 @@ export default function App() {
       <Toolbar project={project} file={file} dirty={dirty} mode={mode} navOpen={navOpen} inspectorOpen={inspectorOpen}
         compiling={compileState.status === "running"} onMode={setMode} onToggleNav={toggleNav} onToggleInspector={toggleInspector} onOpen={open} onCompile={compile} onCancelCompile={() => compileCancel()}
         onShare={() => setSheet("share")} live={!!live} />
-      <Navigator project={project} current={file} outline={outline} git={git} commitFocus={commitFocus} busy={gitBusy}
+      <Navigator project={project} current={file} outline={outline} git={git} commitFocus={commitFocus} busy={gitBusy} draftMessage={commitDraft}
         onSelect={selectFile} onJump={(l) => jumpTo(l)} onInitGit={initGit} onCommit={commitAll} />
       <Document project={project} file={file} source={source} bib={bib} mode={mode} jumpLine={jumpLine} jumpStamp={jumpStamp}
         compileState={compileState} progress={progress} showLog={showLog} onToggleLog={() => setShowLog((v) => !v)} findRequest={findRequest}
         error={error ?? note} onDismissError={() => { setError(null); setNote(null); }} pdfTarget={pdfTarget}
-        onOpen={open} onImport={importFromOverleaf} onClone={() => setSheet("clone")} onNew={() => setSheet("new")} onOutline={setOutline}
+        onOpen={open} onImport={importFromOverleaf} onClone={() => setSheet("clone")} onNew={() => setSheet("new")} onJoin={() => setSheet("share")} hostAway={hostAway} onOutline={setOutline}
         onSourceChange={onSourceChange} onSave={save} onCursorLine={setCursorLine} onSelectFile={selectFile} onJump={jumpTo} onPdfClick={onPdfClick}
         compileOnSave={compileOnSave} onToggleCompileOnSave={toggleCompileOnSave}
         agentReady={agentReady} onJumpFile={jumpToFile} onFix={fixWithAgent}
@@ -545,8 +616,8 @@ export default function App() {
       <div className={`divider inspector ${dragging === "inspector" ? "dragging" : ""}`} onPointerDown={() => setDragging("inspector")} role="separator" aria-orientation="vertical" aria-label="Resize inspector" />
       {sheet === "shortcuts" && <ShortcutSheet onClose={() => setSheet(null)} />}
       {sheet === "clone" && <CloneSheet onClose={() => setSheet(null)} onClone={cloneRepo} />}
-      {sheet === "share" && project && (
-        <ShareSheet projectName={project.name} live={live} overleafUrl={overleafUrl} busy={liveBusy} onClose={() => setSheet(null)}
+      {sheet === "share" && (
+        <ShareSheet projectName={project?.name ?? "Dabir"} live={live} overleafUrl={overleafUrl} busy={liveBusy} onClose={() => setSheet(null)}
           onStart={startSession} onJoin={joinSession} onStop={stopSession} onSetOverleaf={setOverleaf} onPull={pullOverleaf} onPush={pushOverleaf}
           onZotero={importZotero} onBibFile={importBib} signalingUrl={settings.signalingUrl} direct={directApi} />
       )}
