@@ -27,7 +27,9 @@ jobs:
             args: ""
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
-            args: ""
+            # NSIS only: WiX's light.exe fails on the bundled template resources without saying why; the
+            # .exe installer is what the updater uses anyway.
+            args: --bundles nsis
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
