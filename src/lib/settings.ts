@@ -12,6 +12,7 @@ export interface Settings {
   lineWrap: boolean;
   revealOnClick: boolean;       // visual view: click a widget to reveal its source
   compileOnSave: boolean;
+  signalingUrl: string;         // for the "signalling server" live mode; empty means none configured
 }
 
 export const DEFAULTS: Settings = {
@@ -26,6 +27,7 @@ export const DEFAULTS: Settings = {
   lineWrap: true,
   revealOnClick: true,
   compileOnSave: false,
+  signalingUrl: "",
 };
 
 const KEY = "dabir.settings";

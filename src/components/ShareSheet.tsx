@@ -12,6 +12,8 @@ interface Props {
   onClose: () => void;
   onStart: (name: string, transport: Transport) => Promise<void>;
   onJoin: (name: string, url: string, room: string, transport: Transport, password?: string) => Promise<void>;
+  signalingUrl: string;
+  direct: { invite: () => Promise<string>; accept: (answer: string) => Promise<void>; answer: (name: string, invite: string) => Promise<string>; peers: number } | null;
   onStop: () => Promise<void>;
   onSetOverleaf: (url: string) => Promise<void>;
   onPull: () => Promise<void>;
@@ -26,7 +28,11 @@ export function ShareSheet(p: Props) {
   const [overleaf, setOverleaf] = useState(p.overleafUrl ?? "");
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [transport, setTransport] = useState<Transport>("p2p");
+  const [transport, setTransport] = useState<Transport>("direct");
+  const [invite, setInvite] = useState("");
+  const [answerIn, setAnswerIn] = useState("");
+  const [guestInvite, setGuestInvite] = useState("");
+  const [guestAnswer, setGuestAnswer] = useState("");
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") p.onClose(); };
     window.addEventListener("keydown", onKey);
@@ -56,24 +62,59 @@ export function ShareSheet(p: Props) {
               <p className="memory-note">Edit together in real time. The host's checkout stays the source of truth; nothing is stored anywhere else, and no server of yours is needed.</p>
               <label className="share-label">Your name<input className="sheet-input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Shown next to your cursor" /></label>
               <div className="share-radio" role="radiogroup" aria-label="How to connect">
-                <label><input type="radio" name="transport" checked={transport === "p2p"} onChange={() => setTransport("p2p")} /> Peer to peer over the internet</label>
+                <label><input type="radio" name="transport" checked={transport === "direct"} onChange={() => setTransport("direct")} /> Direct, no server</label>
                 <label><input type="radio" name="transport" checked={transport === "relay"} onChange={() => setTransport("relay")} /> Same network</label>
+                <label><input type="radio" name="transport" checked={transport === "p2p"} onChange={() => setTransport("p2p")} disabled={!p.signalingUrl} title={p.signalingUrl ? "" : "Set a signalling server in Settings first"} /> Signalling server</label>
               </div>
-              <p className="target">{transport === "p2p" ? "Browsers connect directly with WebRTC. A free public signalling server only introduces peers; the text is encrypted and never passes through it. The link carries a key." : "Dabir hosts a small relay on this machine; coauthors on the same Wi-Fi or VPN (Tailscale works well) paste the link."}</p>
+              <p className="target">{transport === "direct" ? "Machines connect straight to each other over WebRTC. You swap two short codes with each coauthor once; after that the text goes directly between you, encrypted. Nothing is hosted anywhere." : transport === "relay" ? "Dabir hosts a small relay on this machine; coauthors on the same Wi-Fi or VPN (Tailscale is free and stretches this across the internet) paste the link." : "Peers meet through the signalling server in Settings; the text goes peer to peer. relay/signaling-worker.js deploys one to Cloudflare's free tier."}</p>
               <div className="actions">
                 <button className="btn primary" onClick={start} disabled={!!p.busy}>{p.busy === "start" ? "Starting…" : "Start a Session"}</button>
               </div>
-              <label className="share-label">Or join one<input className="sheet-input" value={link} onChange={(e) => setLink(e.target.value)} placeholder="dabir://join?relay=…&room=…" onKeyDown={(e) => { if (e.key === "Enter") join(); }} /></label>
-              <div className="actions"><button className="btn" onClick={join} disabled={!link.trim() || !!p.busy}>{p.busy === "join" ? "Joining…" : "Join"}</button></div>
+              {transport !== "direct" ? (
+                <>
+                  <label className="share-label">Or join one<input className="sheet-input" value={link} onChange={(e) => setLink(e.target.value)} placeholder="dabir://join?relay=…&room=…" onKeyDown={(e) => { if (e.key === "Enter") join(); }} /></label>
+                  <div className="actions"><button className="btn" onClick={join} disabled={!link.trim() || !!p.busy}>{p.busy === "join" ? "Joining…" : "Join"}</button></div>
+                </>
+              ) : (
+                <>
+                  <label className="share-label">Or join with an invite code<textarea className="sheet-input code" value={guestInvite} onChange={(e) => setGuestInvite(e.target.value)} placeholder="Paste the host's invite code" rows={3} /></label>
+                  <div className="actions"><button className="btn" onClick={async () => { if (!need() || !p.direct) return; try { setGuestAnswer(await p.direct.answer(name.trim(), guestInvite.trim())); } catch (e) { setError(String(e)); } }} disabled={!guestInvite.trim() || !!p.busy}>Make Answer Code</button></div>
+                  {guestAnswer && (
+                    <>
+                      <p className="target">Send this answer code back to the host. The session connects when they paste it.</p>
+                      <div className="share-link"><code>{guestAnswer}</code><button className="btn" onClick={() => copy(guestAnswer)}><Copy /> {copied ? "Copied" : "Copy"}</button></div>
+                    </>
+                  )}
+                </>
+              )}
             </>
           ) : (
             <>
-              <p className="memory-note">{p.live.host ? "You are hosting" : "You joined"} {p.live.transport === "p2p" ? "a peer-to-peer session" : "a session on this network"}. Room <code>{p.live.room}</code>.</p>
-              <div className="share-link">
+              <p className="memory-note">{p.live.host ? "You are hosting" : "You joined"} {p.live.transport === "direct" ? "a direct session" : p.live.transport === "p2p" ? "a peer-to-peer session" : "a session on this network"}{p.live.transport === "direct" && p.direct ? <>, {p.direct.peers} connected</> : null}.</p>
+              {p.live.transport === "direct" && p.live.host && p.direct && (
+                <>
+                  <div className="actions"><button className="btn primary" onClick={wrap(async () => setInvite(await p.direct!.invite()))} disabled={!!p.busy}>New Invite Code</button></div>
+                  {invite && (
+                    <>
+                      <p className="target">Send this to one coauthor. Each coauthor needs their own invite.</p>
+                      <div className="share-link"><code>{invite}</code><button className="btn" onClick={() => copy(invite)}><Copy /> {copied ? "Copied" : "Copy"}</button></div>
+                    </>
+                  )}
+                  <label className="share-label">Paste their answer code<textarea className="sheet-input code" value={answerIn} onChange={(e) => setAnswerIn(e.target.value)} rows={3} placeholder="Answer code from the coauthor" /></label>
+                  <div className="actions"><button className="btn" onClick={wrap(async () => { await p.direct!.accept(answerIn.trim()); setAnswerIn(""); setInvite(""); })} disabled={!answerIn.trim()}>Connect</button></div>
+                </>
+              )}
+              {p.live.transport === "direct" && !p.live.host && guestAnswer && (
+                <>
+                  <p className="target">Send this answer code back to the host. The session connects when they paste it.</p>
+                  <div className="share-link"><code>{guestAnswer}</code><button className="btn" onClick={() => copy(guestAnswer)}><Copy /> {copied ? "Copied" : "Copy"}</button></div>
+                </>
+              )}
+              {p.live.transport !== "direct" && <div className="share-link">
                 <code>{shareLink(p.live.host && p.live.transport === "relay" ? p.live.lanUrl : p.live.url, p.live.room, p.live.transport, p.live.password)}</code>
                 <button className="btn" onClick={() => copy(shareLink(p.live!.host && p.live!.transport === "relay" ? p.live!.lanUrl : p.live!.url, p.live!.room, p.live!.transport, p.live!.password))}><Copy /> {copied ? "Copied" : "Copy Link"}</button>
-              </div>
-              <p className="target">{p.live.transport === "p2p" ? "Send the link to coauthors; it contains the room key. Anyone with the link can join while the session is open." : "Coauthors on the same network paste the link into File › Share. For people elsewhere, use Tailscale or the peer-to-peer mode, or run the standalone relay on a server you control (node relay/dist/relay.cjs)."}</p>
+              </div>}
+              {p.live.transport !== "direct" && <p className="target">{p.live.transport === "p2p" ? "Send the link to coauthors; it contains the room key. Anyone with the link can join while the session is open." : "Coauthors on the same network paste the link into File › Share. For people elsewhere, use Tailscale or the direct mode, or run the standalone relay on a server you control (node relay/dist/relay.cjs)."}</p>}
               <div className="actions"><button className="btn danger" onClick={wrap(p.onStop)} disabled={!!p.busy}><Square /> {p.live.host ? "End Session" : "Leave Session"}</button></div>
             </>
           )}

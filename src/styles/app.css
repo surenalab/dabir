@@ -668,3 +668,5 @@ input[type="range"] { accent-color: var(--accent); width: 140px; }
 .pdf-pin { position: absolute; right: -14px; width: 22px; height: 22px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); background: var(--pin-color, var(--warn)); color: #fff; display: grid; place-items: center; font: 700 10px/1 var(--font-ui); cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
 .pdf-pin span { transform: rotate(45deg); }
 .pdf-pin.resolved { opacity: .45; }
+.sheet-input.code { font-family: var(--font-mono); font-size: 11px; line-height: 1.4; resize: vertical; height: auto; padding: 6px 8px; word-break: break-all; }
+.share-link code { word-break: break-all; white-space: normal; max-height: 72px; overflow: auto; }
