@@ -55,6 +55,8 @@ export default function App() {
   const [selection, setSelection] = useState<{ from: number; to: number }>({ from: 0, to: 0 });
   const [jumpOffset, setJumpOffset] = useState<{ pos: number; stamp: number } | null>(null);
   const [overleafUrl, setOverleafUrl] = useState<string | null>(null);
+  const [prefill, setPrefill] = useState<{ text: string; stamp: number } | null>(null);
+  const [agentReady, setAgentReady] = useState(false);
   const [askFocus, setAskFocus] = useState(0);
   const [commitFocus, setCommitFocus] = useState(0);
   const [findRequest, setFindRequest] = useState(0);
@@ -135,7 +137,7 @@ export default function App() {
       setCompileState({ status: "done", result, at: Date.now() });
       if (result.ok && result.pdf) setMode("pdf");
     } catch (e) {
-      setCompileState({ status: "done", at: Date.now(), result: { ok: false, pdf: null, log: String(e), engine: "", millis: 0, diagnostics: [{ severity: "error", file: null, line: null, message: String(e) }] } });
+      setCompileState({ status: "done", at: Date.now(), result: { ok: false, pdf: null, log: String(e), engine: "", millis: 0, diagnostics: [{ severity: "error", category: "other", file: null, line: null, message: String(e), context: null }] } });
     }
   }, [project, dirty, file, compileState.status]);
   compileRef.current = compile;
@@ -343,6 +345,11 @@ export default function App() {
   }, [dragging]);
 
   const onSourceChange = useCallback((text: string) => { setSource(text); setDirty(true); }, []);
+  const jumpToFile = useCallback(async (relFile: string | null, line: number) => {
+    if (project && relFile) { const abs = `${project.root}/${relFile}`; if (abs !== file) await selectFile(abs); }
+    setMode("source"); setJumpLine(line); setJumpStamp(Date.now());
+  }, [project, file, selectFile]);
+  const fixWithAgent = useCallback((prompt: string) => { if (!inspectorOpen) toggleInspector(); setPrefill({ text: prompt, stamp: Date.now() }); }, [inspectorOpen, toggleInspector]);
   const jumpTo = useCallback((line: number, inSource?: boolean) => { if (inSource) setMode("source"); setJumpLine(line); setJumpStamp(Date.now()); }, []);
   const onChanged = useCallback(() => { refreshGit(); reloadProject(); if (file) readText(file).then((t) => { if (!dirty) setSource(t); }).catch(() => {}); }, [refreshGit, reloadProject, file, dirty]);
 
@@ -361,8 +368,9 @@ export default function App() {
         onOpen={open} onImport={importFromOverleaf} onClone={() => setSheet("clone")} onOutline={setOutline}
         onSourceChange={onSourceChange} onSave={save} onCursorLine={setCursorLine} onSelectFile={selectFile} onJump={jumpTo} onPdfClick={onPdfClick}
         compileOnSave={compileOnSave} onToggleCompileOnSave={toggleCompileOnSave}
+        agentReady={agentReady} onJumpFile={jumpToFile} onFix={fixWithAgent}
         collab={collab} comments={commentRanges} onSelection={(from, to) => setSelection({ from, to })} jumpOffset={jumpOffset} />
-      <Inspector project={project} gitRepo={!!git?.isRepo} askFocus={askFocus} onChanged={onChanged} onOpenFile={selectFile} onNote={setNote}
+      <Inspector project={project} gitRepo={!!git?.isRepo} askFocus={askFocus} prefill={prefill} onProviderReady={setAgentReady} onChanged={onChanged} onOpenFile={selectFile} onNote={setNote}
         live={!!live} peers={peers} comments={comments} currentFile={rel(file)} hasSelection={selection.to > selection.from}
         onAddComment={addCommentAtSelection} onResolveComment={(id, r) => session && yResolveComment(session, id, r)} onRemoveComment={(id) => session && yRemoveComment(session, id)} onJumpComment={jumpToComment} onShare={() => setSheet("share")} />
       <div className={`divider nav ${dragging === "nav" ? "dragging" : ""}`} onPointerDown={() => setDragging("nav")} role="separator" aria-orientation="vertical" aria-label="Resize sidebar" />
