@@ -107,6 +107,9 @@ fn short(v: &Value) -> String {
     if s.chars().count() > 160 { format!("{}…", s.chars().take(160).collect::<String>()) } else { s }
 }
 
+#[cfg(test)]
+pub fn parse_line_for_test(id: &str, line: &str) -> Vec<(String, String, Option<String>, Option<bool>)> { parse_line(id, line) }
+
 /// Turn one JSON line from a vendor CLI into zero or more events.
 fn parse_line(id: &str, line: &str) -> Vec<(String, String, Option<String>, Option<bool>)> {
     let Ok(v) = serde_json::from_str::<Value>(line) else {
@@ -146,8 +149,10 @@ fn parse_line(id: &str, line: &str) -> Vec<(String, String, Option<String>, Opti
                 }
                 Some("tool_call") if v["subtype"] == "started" => {
                     // Cursor: {"tool_call": {"shellToolCall": {"args": {...}}}}
+                    // The object also carries hookAdditionalContexts, toolCallId and timestamps; only the
+                    // key ending in ToolCall names the tool (serde's map is sorted, so "first key" was wrong).
                     if let Some(obj) = v["tool_call"].as_object() {
-                        if let Some((k, val)) = obj.iter().next() {
+                        if let Some((k, val)) = obj.iter().find(|(k, _)| k.ends_with("ToolCall")) {
                             let name = k.trim_end_matches("ToolCall");
                             let name = format!("{}{}", name[..1].to_uppercase(), &name[1..]);
                             let args = &val["args"];
