@@ -40,19 +40,27 @@ jobs:
       - name: Tectonic sidecar
         shell: bash
         run: TARGET_TRIPLE=${{ matrix.target }} node scripts/fetch-tectonic.mjs
+      # macOS code signing and notarisation, only when the secrets exist. An empty APPLE_CERTIFICATE
+      # would make the bundler try to import nothing and fail; unsigned builds still produce a DMG.
+      - name: Apple signing secrets
+        if: startsWith(matrix.platform, 'macos') && env.HAVE_CERT == 'true'
+        env:
+          HAVE_CERT: ${{ secrets.APPLE_CERTIFICATE != '' }}
+        run: |
+          {
+            echo "APPLE_CERTIFICATE<<__EOF__"; echo "${{ secrets.APPLE_CERTIFICATE }}"; echo "__EOF__"
+            echo "APPLE_CERTIFICATE_PASSWORD=${{ secrets.APPLE_CERTIFICATE_PASSWORD }}"
+            echo "APPLE_SIGNING_IDENTITY=${{ secrets.APPLE_SIGNING_IDENTITY }}"
+            echo "APPLE_ID=${{ secrets.APPLE_ID }}"
+            echo "APPLE_PASSWORD=${{ secrets.APPLE_PASSWORD }}"
+            echo "APPLE_TEAM_ID=${{ secrets.APPLE_TEAM_ID }}"
+          } >> "$GITHUB_ENV"
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Updater signing (required for auto-update artifacts)
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # macOS code signing and notarisation (optional; unsigned builds still produce a DMG)
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Dabir ${{ github.ref_name }}"
