@@ -11,7 +11,7 @@ import { SettingsSheet } from "./components/SettingsSheet";
 import { useSettings, updateSettings } from "./lib/settings";
 import { checkGrammar, type GrammarMatch } from "./lib/grammar";
 import { collectLabels } from "./lib/completions";
-import type { PdfPin } from "./components/PdfView";
+import type { PdfPin, PdfZoom } from "./components/PdfView";
 import type { ManualProvider } from "./lib/manual";
 import { addComment as yAddComment, connect as yConnect, decodeRange, disconnect as yDisconnect, encodeRange, peers as yPeers, randomRoom, removeComment as yRemoveComment, resolveComment as yResolveComment, setCurrentFile, textFor, whenSynced, type Comment, type Peer, type Session, type Transport } from "./lib/collab";
 import type { CommentRange } from "./components/SourceEditor";
@@ -58,6 +58,7 @@ export default function App() {
   const [grammar, setGrammar] = useState<GrammarMatch[]>([]);
   const [localComments, setLocalComments] = useState<Comment[]>([]);
   const [pins, setPins] = useState<PdfPin[]>([]);
+  const [pdfZoom, setPdfZoom] = useState<PdfZoom>("fit");
   const addCommentRef = useRef<(text: string, at?: { from: number; to: number }) => void>(() => {});
   const [directPeers, setDirectPeers] = useState(0);
   const [session, setSession] = useState<Session | null>(null);
@@ -418,12 +419,15 @@ export default function App() {
       case "find": setMode("source"); setFindRequest((n) => n + 1); break;
       case "shortcuts": setSheet((v) => (v === "shortcuts" ? null : "shortcuts")); break;
       case "settings": setSheet("settings"); break;
+      case "zoom-in": setPdfZoom((z) => Math.min(4, (z === "fit" ? 1 : z) * 1.18)); if (mode !== "pdf") setMode("pdf"); break;
+      case "zoom-out": setPdfZoom((z) => Math.max(0.3, (z === "fit" ? 1 : z) * 0.85)); break;
+      case "zoom-fit": setPdfZoom("fit"); break;
       case "check-grammar": runGrammar(); break;
       case "check-updates":
         checkForUpdates(async (v, notes) => window.confirm(`Dabir ${v} is available.\n\n${notes}\n\nDownload and restart now?`)).then(setNote).catch((e) => setNote(String(e)));
         break;
     }
-  }, [open, importFromOverleaf, save, compile, showInPdf, toggleNav, toggleInspector, inspectorOpen, navOpen, runGrammar]);
+  }, [open, importFromOverleaf, save, compile, showInPdf, toggleNav, toggleInspector, inspectorOpen, navOpen, runGrammar, mode]);
 
   useEffect(() => onMenu(command), [command]);
   useEffect(() => onCompileProgress((line) => setProgress(line.length > 90 ? line.slice(0, 87) + "…" : line)), []);
@@ -439,6 +443,9 @@ export default function App() {
       const k = e.key.toLowerCase();
       const map: Record<string, string> = { o: "open", n: "new", s: "save", b: "compile", "1": "view-visual", "2": "view-source", "3": "view-pdf", k: "ask-agent", f: "find", "/": "shortcuts", ",": "settings" };
       if (e.shiftKey && k === "g") { e.preventDefault(); command("check-grammar"); return; }
+      if (k === "=" || k === "+") { e.preventDefault(); command("zoom-in"); return; }
+      if (k === "-") { e.preventDefault(); command("zoom-out"); return; }
+      if (k === "0") { e.preventDefault(); command("zoom-fit"); return; }
       if (e.ctrlKey && k === "s") { e.preventDefault(); command("toggle-sidebar"); return; }
       if (e.altKey && (k === "i" || e.code === "KeyI")) { e.preventDefault(); command("toggle-inspector"); return; }
       if (e.shiftKey && k === "l") { e.preventDefault(); command("show-log"); return; }
@@ -498,7 +505,7 @@ export default function App() {
         compileOnSave={compileOnSave} onToggleCompileOnSave={toggleCompileOnSave}
         agentReady={agentReady} onJumpFile={jumpToFile} onFix={fixWithAgent}
         collab={collab} comments={commentRanges} onSelection={(from, to) => setSelection({ from, to })} jumpOffset={jumpOffset}
-        settings={settings} grammar={grammar} pins={pins} onPin={(id) => { const c = allComments.find((x) => x.id === id); if (c) jumpToComment(c); }}
+        settings={settings} grammar={grammar} pins={pins} pdfZoom={pdfZoom} onPdfZoom={setPdfZoom} onOpenSettings={() => setSheet("settings")} onPin={(id) => { const c = allComments.find((x) => x.id === id); if (c) jumpToComment(c); }}
         completions={{ bib: () => bib, labels: () => (source ? collectLabels(source) : []), files: () => project?.tree ?? [] }} />
       <Inspector project={project} gitRepo={!!git?.isRepo} askFocus={askFocus} prefill={prefill} onProviderReady={setAgentReady} onChanged={onChanged} onOpenFile={selectFile} onNote={setNote}
         live={!!live} peers={peers} comments={allComments} currentFile={rel(file)} hasSelection={selection.to > selection.from}
