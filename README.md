@@ -1,10 +1,12 @@
 # Dabir
 
+<img src="design/dabir-logo.svg" width="96" alt="Dabir mark: a line of ink with a madder proofreader's caret beneath it" align="right">
+
 **A local-first workspace where a paper, its code, its Git history and its AI agents live in one window.**
 
 Dabir (دبیر, Persian for *scribe*) opens a folder that holds your manuscript and the code that made its figures. It shows LaTeX like a document, compiles locally, and lets the agent you already pay for, whether Claude Code, Codex, Cursor, Grok or OpenCode, rerun an experiment, update the figure and the table, and open the pull request. Nothing is uploaded. Delete the app and your project is still a plain Git repo.
 
-> Status: phases 0 to 4 built, run on macOS; Windows and Linux build in CI but are untested. Open a folder, an Overleaf zip or a GitHub repo; edit the paper visually or as source in one buffer; compile with Tectonic; click the PDF to jump to the line; commit from the sidebar; ask Claude Code, Codex, Cursor, Grok or OpenCode to change the paper on a worktree and review the diff hunk by hunk before it touches your checkout (verified live with Claude Code, Codex, Cursor and Grok); keep the project brief, facts and provenance in `.dabir/` so every agent shares them. Start a live session from Share and coauthors edit with you in real time, with presence and comments; pull and push to Overleaf's Git bridge; import references from Zotero or a .bib file; start new papers from journal templates or in Typst. Compile problems are traceable to the line and fixable by the agent. Progress and next steps are in [PLAN.md](PLAN.md).
+> Status: phases 0 to 4 built, run on macOS; Windows and Linux build in CI but are untested. Open a folder, an Overleaf zip or a GitHub repo; edit the paper visually or as source in one buffer; compile with Tectonic; click the PDF to jump to the line; commit from the sidebar; ask Claude Code, Codex, Cursor, Grok or OpenCode to change the paper on a worktree and review the diff hunk by hunk before it touches your checkout (verified live with Claude Code, Codex, Cursor and Grok); keep the project brief, facts and provenance in `.dabir/` so every agent shares them. Start a live session from Share and coauthors edit with you in real time, with presence and comments; pull and push to Overleaf's Git bridge; import references from Zotero or a .bib file; start new papers from journal templates or in Typst. Compile problems are traceable to the line and fixable by the agent. Comments live with the paper and show as pins on the compiled PDF. Spelling, grammar and completion are built in, each with an off switch (⌘,). Progress and next steps are in [PLAN.md](PLAN.md).
 
 ## Why
 
@@ -17,6 +19,14 @@ Overleaf is where coauthors are, but it is paid, remote, and cannot run your cod
 - **Agents are coauthors, not chatbots.** They get the repo, a terminal and the compile log, run on a worktree, and produce diffs you review.
 - **Memory lives in the repo.** `.dabir/` holds a project brief, one-fact memory files and a provenance graph, committed with the paper, so every coauthor's agent shares it whichever vendor they use.
 - **Design is the product.** Every screen follows Apple's Human Interface Guidelines and is reviewed with Impeccable before merge.
+
+## Writing tools
+
+Settings (⌘,) hold every switch: system spelling, LanguageTool grammar on demand (⇧⌘G, off until you name a server, since text leaves the machine), LaTeX command and snippet completion, project completion for citation keys, labels and file paths, text sizes, wrapping, and compile on save.
+
+## Working together without a server
+
+Share (⇧⌘S) offers two ways: peer to peer over the internet, where the text travels directly between coauthors over WebRTC and a free public signalling server only introduces peers, or same-network, where Dabir hosts a small relay on your machine (Tailscale extends that across the internet at no cost). Comments are anchored to the text, survive concurrent edits, are saved in `.dabir/comments.json` when you work alone, and appear as numbered pins on the compiled PDF; Option-click a spot on the PDF to comment there.
 
 ## Agents, briefly
 
