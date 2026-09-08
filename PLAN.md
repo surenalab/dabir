@@ -69,7 +69,7 @@ At run time Dabir prepends a preamble of about ten lines: the identity sentence,
 
 - `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` secrets from `~/.tauri/dabir.key` (never commit the key). The public key is in `tauri.conf.json`.
 - Apple: `APPLE_CERTIFICATE` (base64 .p12), `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD` (app-specific), `APPLE_TEAM_ID`. Without them the workflow still produces an unsigned DMG.
-- The updater endpoint points at `github.com/sadeghsalehi/dabir`; change it if the repo lives elsewhere.
+- The updater endpoint points at `github.com/MohammadSadeghSalehi/dabir`; change it if the repo lives elsewhere.
 - Tag `v0.1.0` to run the release workflow. It fetches Tectonic per target and builds the relay.
 
 **2026-09-08.** Native relay in Rust (axum + yrs) replaces the Node process for hosting; two-client sync is a unit test. Tectonic sidecar 0.17. Problems panel: the TeX log is parsed into traceable diagnostics with file, line, category and excerpt; each can be jumped to, is marked in the editor, and can be handed to the agent under the compile-and-fix skill, singly or all at once. Phase 4: New Paper from five templates with Git and memory set up, Typst compile for `main.typ` projects, Zotero local-API and .bib import merged without duplicates.

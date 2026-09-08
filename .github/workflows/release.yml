@@ -38,7 +38,7 @@ jobs:
       - run: npm ci
       - name: Tectonic sidecar
         shell: bash
-        run: TARGET_TRIPLE=${{ matrix.target }} sh scripts/fetch-tectonic.sh
+        run: TARGET_TRIPLE=${{ matrix.target }} node scripts/fetch-tectonic.mjs
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
