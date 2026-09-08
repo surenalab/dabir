@@ -1,0 +1,93 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Persian icon directions</title>
+<style>
+  body { margin: 0; padding: 24px; background: #e9e7e1; font: 13px -apple-system, Helvetica, sans-serif; color: #444; }
+  .row { display: flex; gap: 22px; flex-wrap: wrap; }
+  .v { text-align: center; width: 236px; }
+  .v svg { width: 236px; height: 236px; filter: drop-shadow(0 6px 10px rgba(0,0,0,.18)); }
+  .v b { display: block; margin-top: 6px; font-size: 14px; color: #222; }
+  .sizes { display: flex; gap: 16px; align-items: flex-end; margin-top: 18px; padding: 10px 16px; background: rgba(255,255,255,.55); border-radius: 18px; width: max-content; }
+  .sizes svg { display: block; }
+</style>
+<div class="row" id="row"></div>
+<div class="sizes" id="sizes"></div>
+<script>
+const defs = (k) => `
+  <defs>
+    <linearGradient id="bg${k}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2E3138"/><stop offset=".55" stop-color="#1D1F24"/><stop offset="1" stop-color="#121317"/></linearGradient>
+    <linearGradient id="rim${k}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFF" stop-opacity=".2"/><stop offset=".12" stop-color="#FFF" stop-opacity=".04"/><stop offset="1" stop-color="#FFF" stop-opacity="0"/></linearGradient>
+    <linearGradient id="paper${k}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#E4E1D7"/></linearGradient>
+    <linearGradient id="madder${k}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#C64842"/><stop offset=".55" stop-color="#A8322D"/><stop offset="1" stop-color="#7E221F"/></linearGradient>
+    <filter id="sh${k}" x="-20%" y="-20%" width="140%" height="160%"><feGaussianBlur in="SourceAlpha" stdDeviation="12"/><feOffset dy="16" result="o"/><feComponentTransfer><feFuncA type="linear" slope=".5"/></feComponentTransfer><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <clipPath id="sq${k}"><rect x="100" y="100" width="824" height="824" rx="184"/></clipPath>
+  </defs>
+  <g clip-path="url(#sq${k})"><rect x="100" y="100" width="824" height="824" fill="url(#bg${k})"/><rect x="100" y="100" width="824" height="824" fill="url(#rim${k})"/></g>`;
+const wrap = (k, body) => `<svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">${defs(k)}${body}</svg>`;
+
+// A. Dāl: the first letter of Dabir, in the nastaʿlīq hand, written with a reed. One rhombic dot in madder: the nuqta,
+//    the calligrapher's unit of measure. The stroke is thick where the reed is flat and thin where it turns.
+const dal = (k) => wrap(k, `
+  <g filter="url(#sh${k})" transform="translate(512 512) scale(1.22) translate(-586 -470)">
+    <!-- the stroke: heavy where the reed lies flat on the descent, fine where it turns and lifts -->
+    <path fill="url(#paper${k})" d="M688 236 C728 232 768 262 760 302 C752 336 722 360 696 388 C654 434 616 486 588 540 C568 580 574 616 618 634 C672 656 742 640 806 604 C766 662 684 700 598 686 C512 672 464 606 484 530 C512 428 590 328 668 250 C674 244 680 238 688 236 Z"/>
+  </g>
+  <g filter="url(#sh${k})"><path fill="url(#madder${k})" d="M346 676 L408 730 L346 784 L284 730 Z"/></g>`);
+
+// B. Qalam: the reed pen, cut nib, laid diagonally as it rests on the page. The ink it leaves is the same rhombic dot.
+const qalam = (k) => wrap(k, `
+  <g filter="url(#sh${k})" transform="rotate(-38 512 512)">
+    <rect x="452" y="180" width="120" height="560" rx="44" fill="url(#paper${k})"/>
+    <!-- the cut of the nib -->
+    <path d="M452 700 L512 836 L572 700 Z" fill="url(#paper${k})"/>
+    <path d="M512 836 L512 720" stroke="#1D1F24" stroke-width="8" stroke-linecap="round"/>
+    <!-- reed nodes -->
+    <path d="M452 340 H572 M452 470 H572" stroke="#1D1F24" stroke-opacity=".18" stroke-width="10"/>
+  </g>
+  <g filter="url(#sh${k})"><path fill="url(#madder${k})" d="M300 690 L352 738 L300 786 L248 738 Z"/></g>`);
+
+// C. Boteh: the bent cypress of Persian gardens and manuscript borders, drawn as one leaf. The madder seed sits at its heart.
+const boteh = (k) => wrap(k, `
+  <g filter="url(#sh${k})">
+    <path fill="url(#paper${k})" d="M500 800 C372 800 290 706 290 580 C290 452 372 350 468 306 C540 274 606 240 656 190 C680 168 704 160 726 172 C700 200 690 240 690 276 C690 322 668 356 640 380 C712 416 746 494 746 580 C746 706 640 800 500 800 Z"/>
+    <!-- inner line, as the illuminators draw it -->
+    <path fill="none" stroke="#1D1F24" stroke-opacity=".22" stroke-width="14" stroke-linecap="round" d="M500 742 C410 742 350 676 350 586 C350 496 410 428 480 396 C534 372 590 340 630 300"/>
+  </g>
+  <g filter="url(#sh${k})"><path fill="url(#madder${k})" d="M520 500 L574 566 L520 632 L466 566 Z"/></g>`);
+
+// D. Eslimi: a single arabesque tendril from a manuscript margin, curling into the counter of a dāl. Madder bud at the tip.
+const eslimi = (k) => wrap(k, `
+  <g filter="url(#sh${k})" fill="none" stroke="url(#paper${k})" stroke-linecap="round" stroke-width="82">
+    <path d="M300 300 C420 300 520 340 560 430 C610 540 560 660 440 680 C360 692 300 640 320 580 C336 532 400 526 424 560"/>
+    <path d="M560 430 C640 380 720 380 760 430" stroke-width="60"/>
+  </g>
+  <g filter="url(#sh${k})"><path fill="url(#madder${k})" d="M762 434 C790 400 806 360 796 320 C830 356 826 410 794 452 C786 456 770 448 762 434 Z"/></g>`);
+
+const V = { A: ["Dāl", "first letter of Dabir, reed-pen stroke, one nuqta", dal], B: ["Qalam", "the reed pen and its ink", qalam], C: ["Boteh", "bent cypress, madder seed", boteh], D: ["Eslimi", "arabesque tendril, madder bud", eslimi] };
+const row = document.getElementById("row"), sizes = document.getElementById("sizes");
+for (const [k, [name, note, fn]] of Object.entries(V)) {
+  row.insertAdjacentHTML("beforeend", `<div class="v">${fn(k)}<b>${k} · ${name}</b><span>${note}</span></div>`);
+  for (const s of [64, 32, 16]) sizes.insertAdjacentHTML("beforeend", fn(k + s).replace("<svg ", `<svg width="${s}" height="${s}" `));
+}
+window.svgOf = (k) => V[k][2]("x");
+window.renderFile = async (name, size = 1024) => {
+  const svg = await (await fetch(name + "?ts=" + Date.now())).text();
+  const img = new Image(); img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svg))); await img.decode();
+  const c = document.createElement("canvas"); c.width = c.height = size; c.getContext("2d").drawImage(img, 0, 0, size, size);
+  return c.toDataURL("image/png");
+};
+window.sheet = async () => {
+  const c = document.createElement("canvas"); c.width = 1100; c.height = 420; const g = c.getContext("2d");
+  g.fillStyle = "#e9e7e1"; g.fillRect(0, 0, c.width, c.height);
+  let x = 20;
+  for (const [k, [name, note, fn]] of Object.entries(V)) {
+    const img = new Image(); img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(fn(k)))); await img.decode();
+    g.drawImage(img, x, 20, 240, 240);
+    for (const [i, s] of [64, 32, 16].entries()) g.drawImage(img, x + 20 + i * 80, 290, s, s);
+    g.fillStyle = "#222"; g.font = "600 17px -apple-system, Helvetica"; g.textAlign = "center"; g.fillText(k + " · " + name, x + 120, 380);
+    g.fillStyle = "#666"; g.font = "13px -apple-system, Helvetica"; g.fillText(note, x + 120, 402);
+    x += 270;
+  }
+  return c.toDataURL("image/jpeg", 0.9);
+};
+</script>

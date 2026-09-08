@@ -1,10 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <!-- Dabir mark: the proofreader's caret. A line of manuscript in ink; beneath it, the madder
-       caret that says "insert here", the oldest editing mark there is. Two colours, two shapes,
-       built on a 24-unit grid (unit = 32 px). Concept from a Grok draft, drawn to the grid here. -->
+  <!-- Dabir mark, flat: the nastaʿlīq dāl of دبیر written with a reed, and the calligrapher's
+       rhombic nuqta in madder. Two flat colours on paper, no gradients. For the README, the website
+       and anywhere the dimensional app icon would be wrong. -->
   <rect width="1024" height="1024" rx="228" fill="#FBFAF7"/>
-  <!-- the line of text: rounded, spans 16 units, sits 2 units above centre -->
-  <rect x="160" y="352" width="704" height="112" rx="56" fill="#1D1F24"/>
-  <!-- the caret: apex touches the line's underside at centre; legs 2.5 units thick with mitred feet -->
-  <path d="M512 464 L800 800 H656 L512 632 L368 800 H224 Z" fill="#A8322D"/>
+  <g transform="translate(512 512) scale(1.22) translate(-586 -470)">
+    <path fill="#1D1F24" d="M688 236 C728 232 768 262 760 302 C752 336 722 360 696 388 C654 434 616 486 588 540 C568 580 574 616 618 634 C672 656 742 640 806 604 C766 662 684 700 598 686 C512 672 464 606 484 530 C512 428 590 328 668 250 C674 244 680 238 688 236 Z"/>
+  </g>
+  <path fill="#A8322D" d="M346 676 L408 730 L346 784 L284 730 Z"/>
 </svg>
