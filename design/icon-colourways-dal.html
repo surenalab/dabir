@@ -1,0 +1,61 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Dāl colourways</title>
+<style>
+  body { margin: 0; padding: 24px; background: #e9e7e1; font: 13px -apple-system, Helvetica, sans-serif; color: #444; }
+  .row { display: flex; gap: 22px; flex-wrap: wrap; }
+  .v { text-align: center; width: 200px; }
+  .v svg { width: 200px; height: 200px; filter: drop-shadow(0 6px 10px rgba(0,0,0,.18)); }
+  .v b { display: block; margin-top: 6px; font-size: 14px; color: #222; }
+</style>
+<div class="row" id="row"></div>
+<script>
+// The corrected dāl: head at the top left of the letter, knee at the right, tail running left along the baseline.
+const STROKE = "M688 236 C728 232 768 262 760 302 C752 336 722 360 696 388 C654 434 616 486 588 540 C568 580 574 616 618 634 C672 656 742 640 806 604 C766 662 684 700 598 686 C512 672 464 606 484 530 C512 428 590 328 668 250 C674 244 680 238 688 236 Z";
+const NUQTA = "M672 676 L734 730 L672 784 L610 730 Z";
+const PAL = {
+  A: { name: "Graphite · madder", bg: ["#2E3138", "#1D1F24", "#121317"], ink: ["#FFFFFF", "#E4E1D7"], dot: ["#C64842", "#A8322D", "#7E221F"], light: false },
+  B: { name: "Paper · madder", bg: ["#FFFFFF", "#F6F4EE", "#E8E5DC"], ink: ["#2A2D33", "#1D1F24"], dot: ["#C64842", "#A8322D", "#7E221F"], light: true },
+  C: { name: "Lajvard · saffron", bg: ["#2E4E8C", "#22396B", "#15254A"], ink: ["#FFFFFF", "#E9E6DD"], dot: ["#F2C25A", "#E0A62E", "#B07E17"], light: false },
+  D: { name: "Firouzeh · madder", bg: ["#2AA39C", "#1B7F7A", "#0F5A57"], ink: ["#FFFFFF", "#E9E6DD"], dot: ["#C64842", "#A8322D", "#7E221F"], light: false },
+  E: { name: "Graphite · saffron", bg: ["#2E3138", "#1D1F24", "#121317"], ink: ["#FFFFFF", "#E4E1D7"], dot: ["#F2C25A", "#E0A62E", "#B07E17"], light: false },
+  F: { name: "Paper · lajvard", bg: ["#FFFFFF", "#F6F4EE", "#E8E5DC"], ink: ["#2E4E8C", "#1E3565"], dot: ["#C64842", "#A8322D", "#7E221F"], light: true },
+};
+function icon(k, p) {
+  return `<svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg${k}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${p.bg[0]}"/><stop offset=".55" stop-color="${p.bg[1]}"/><stop offset="1" stop-color="${p.bg[2]}"/></linearGradient>
+    <linearGradient id="rim${k}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFF" stop-opacity="${p.light ? .6 : .2}"/><stop offset=".12" stop-color="#FFF" stop-opacity=".04"/><stop offset="1" stop-color="#FFF" stop-opacity="0"/></linearGradient>
+    <linearGradient id="ink${k}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${p.ink[0]}"/><stop offset="1" stop-color="${p.ink[1]}"/></linearGradient>
+    <linearGradient id="dot${k}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${p.dot[0]}"/><stop offset=".55" stop-color="${p.dot[1]}"/><stop offset="1" stop-color="${p.dot[2]}"/></linearGradient>
+    <filter id="sh${k}" x="-20%" y="-20%" width="140%" height="160%"><feGaussianBlur in="SourceAlpha" stdDeviation="12"/><feOffset dy="16" result="o"/><feComponentTransfer><feFuncA type="linear" slope="${p.light ? .25 : .5}"/></feComponentTransfer><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <clipPath id="sq${k}"><rect x="100" y="100" width="824" height="824" rx="184"/></clipPath>
+  </defs>
+  <g clip-path="url(#sq${k})"><rect x="100" y="100" width="824" height="824" fill="url(#bg${k})"/><rect x="100" y="100" width="824" height="824" fill="url(#rim${k})"/></g>
+  <g filter="url(#sh${k})" transform="translate(1024 0) scale(-1 1) translate(512 512) scale(1.22) translate(-586 -470)"><path fill="url(#ink${k})" d="${STROKE}"/></g>
+  <g filter="url(#sh${k})"><path fill="url(#dot${k})" d="${NUQTA}"/></g>
+</svg>`;
+}
+const row = document.getElementById("row");
+for (const [k, p] of Object.entries(PAL)) row.insertAdjacentHTML("beforeend", `<div class="v">${icon(k, p)}<b>${k} · ${p.name}</b></div>`);
+window.svgOf = (k) => icon("", PAL[k]);
+window.render = async (k, size = 1024) => {
+  const img = new Image(); img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(icon("", PAL[k])))); await img.decode();
+  const c = document.createElement("canvas"); c.width = c.height = size; c.getContext("2d").drawImage(img, 0, 0, size, size);
+  return c.toDataURL("image/png");
+};
+window.sheet = async () => {
+  const keys = Object.keys(PAL), S = 220;
+  const c = document.createElement("canvas"); c.width = 30 + keys.length * (S + 30); c.height = 400; const g = c.getContext("2d");
+  g.fillStyle = "#e9e7e1"; g.fillRect(0, 0, c.width, c.height);
+  let x = 30;
+  for (const k of keys) {
+    const img = new Image(); img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(icon(k, PAL[k])))); await img.decode();
+    g.drawImage(img, x, 20, S, S);
+    for (const [i, s] of [64, 32, 16].entries()) g.drawImage(img, x + 20 + i * 72, 270, s, s);
+    g.fillStyle = "#222"; g.font = "600 16px -apple-system, Helvetica"; g.textAlign = "center"; g.fillText(k + " · " + PAL[k].name, x + S / 2, 372);
+    x += S + 30;
+  }
+  return c.toDataURL("image/jpeg", 0.9);
+};
+</script>
