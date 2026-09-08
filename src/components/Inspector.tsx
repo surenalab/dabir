@@ -75,6 +75,7 @@ interface Props {
   hasSelection: boolean;
   onAddComment: (text: string) => void;
   onResolveComment: (id: string, resolved: boolean) => void;
+  onReplyComment: (id: string, text: string) => void;
   onRemoveComment: (id: string) => void;
   onJumpComment: (c: Comment) => void;
   onShare: () => void;
@@ -88,8 +89,11 @@ interface Props {
   onNote: (text: string) => void;
 }
 
-export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady, onChanged, onOpenFile, onNote, live, peers, comments, currentFile, hasSelection, onAddComment, onResolveComment, onRemoveComment, onJumpComment, onShare }: Props) {
+export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady, onChanged, onOpenFile, onNote, live, peers, comments, currentFile, hasSelection, onAddComment, onResolveComment, onReplyComment, onRemoveComment, onJumpComment, onShare }: Props) {
   const [commentDraft, setCommentDraft] = useState("");
+  const [replyTo, setReplyTo] = useState<string | null>(null);
+  const [replyDraft, setReplyDraft] = useState("");
+  const sendReply = (id: string) => { const t = replyDraft.trim(); if (!t) return; onReplyComment(id, t); setReplyDraft(""); setReplyTo(null); };
   const [tab, setTab] = useState<Tab>("agent");
   const [providers, setProviders] = useState<Provider[]>([]);
   const [provider, setProvider] = useState("claude");
@@ -361,8 +365,22 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
                     <div className={`comment ${c.resolved ? "resolved" : ""}`} key={c.id} style={{ "--comment-color": c.color } as React.CSSProperties}>
                       <div className="who"><b>{c.author}</b><span>{new Date(c.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></div>
                       <div className="text">{c.text}</div>
+                      {(c.replies ?? []).map((r, i) => (
+                        <div className="reply" key={i} style={{ "--comment-color": r.color } as React.CSSProperties}>
+                          <div className="who"><b>{r.author}</b><span>{new Date(r.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></div>
+                          <div className="text">{r.text}</div>
+                        </div>
+                      ))}
+                      {replyTo === c.id ? (
+                        <div className="comment-box reply-box">
+                          <input autoFocus value={replyDraft} onChange={(e) => setReplyDraft(e.target.value)} placeholder="Reply" aria-label="Reply"
+                            onKeyDown={(e) => { if (e.key === "Enter") sendReply(c.id); if (e.key === "Escape") { setReplyTo(null); setReplyDraft(""); } }} />
+                          <button className="btn" onClick={() => sendReply(c.id)} disabled={!replyDraft.trim()}>Send</button>
+                        </div>
+                      ) : null}
                       <div className="row">
                         <button onClick={() => onJumpComment(c)}>Show</button>
+                        <button onClick={() => { setReplyTo(replyTo === c.id ? null : c.id); setReplyDraft(""); }}>Reply</button>
                         <button onClick={() => onResolveComment(c.id, !c.resolved)}>{c.resolved ? "Reopen" : "Resolve"}</button>
                         <button onClick={() => onRemoveComment(c.id)}>Delete</button>
                       </div>
