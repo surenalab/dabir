@@ -68,7 +68,7 @@ At run time Dabir prepends a preamble of about ten lines: the identity sentence,
 ## Release checklist
 
 - `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` secrets from `~/.tauri/dabir.key` (never commit the key). The public key is in `tauri.conf.json`.
-- Apple: `APPLE_CERTIFICATE` (base64 .p12), `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD` (app-specific), `APPLE_TEAM_ID`. Without them the workflow still produces an unsigned DMG.
+- Apple: `APPLE_CERTIFICATE` (base64 .p12), `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD` (app-specific), `APPLE_TEAM_ID`. `scripts/apple-secrets.sh` sets all six from the keychain and prompts, so no secret passes through anyone but you. Needs the paid Developer Program and a "Developer ID Application" certificate (the free account only issues "Apple Development", which Gatekeeper does not trust for distribution). Without them the workflow still produces an unsigned DMG.
 - The updater endpoint points at `github.com/MohammadSadeghSalehi/dabir`; change it if the repo lives elsewhere.
 - Tag `v0.1.0` to run the release workflow. It fetches Tectonic per target and builds the relay.
 
