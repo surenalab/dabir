@@ -192,9 +192,10 @@ pub fn worktree_add(root: &Path, run_id: &str) -> Result<PathBuf, String> {
     if let Ok(git_dir) = repo.path().canonicalize() {
         let exclude = git_dir.join("info").join("exclude");
         let existing = std::fs::read_to_string(&exclude).unwrap_or_default();
-        if !existing.contains(".dabir/worktrees/") {
+        // `**/` so the rule also covers a paper that lives in a subfolder of the repository.
+        if !existing.contains("**/.dabir/worktrees/") {
             let _ = std::fs::create_dir_all(exclude.parent().unwrap());
-            let _ = std::fs::write(&exclude, format!("{}{}.dabir/worktrees/\n.dabir/build/\n.dabir/index/\n", existing, if existing.is_empty() || existing.ends_with('\n') { "" } else { "\n" }));
+            let _ = std::fs::write(&exclude, format!("{}{}**/.dabir/worktrees/\n**/.dabir/build/\n**/.dabir/index/\n", existing, if existing.is_empty() || existing.ends_with('\n') { "" } else { "\n" }));
         }
     }
     let out = Command::new("git").current_dir(root)
