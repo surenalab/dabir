@@ -28,7 +28,10 @@ if (!res.ok) { console.error(`download failed: ${res.status} ${res.statusText}`)
 const tmp = mkdtempSync(join(tmpdir(), "tectonic-"));
 const archive = join(tmp, asset);
 writeFileSync(archive, Buffer.from(await res.arrayBuffer()));
-execFileSync("tar", ["-xf", archive, "-C", tmp], { stdio: "inherit" });
+// On Windows, Git Bash puts GNU tar first on PATH, which cannot read zip files and mistakes "C:" for a host;
+// the system bsdtar reads both formats. Relative paths keep every tar happy.
+const tar = process.platform === "win32" ? join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe") : "tar";
+execFileSync(tar, ["-xf", asset], { cwd: tmp, stdio: "inherit" });
 mkdirSync(join("src-tauri", "binaries"), { recursive: true });
 renameSync(join(tmp, `tectonic${win ? ".exe" : ""}`), out);
 if (!win) chmodSync(out, 0o755);

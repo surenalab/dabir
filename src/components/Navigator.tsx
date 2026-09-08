@@ -47,12 +47,14 @@ interface Props {
   onJump: (line: number) => void;
   onInitGit: () => void;
   onCommit: (message: string) => Promise<void>;
+  draftMessage?: string;
 }
 
-export function Navigator({ project, current, outline, git, commitFocus, busy, onSelect, onJump, onInitGit, onCommit }: Props) {
+export function Navigator({ project, current, outline, git, commitFocus, busy, onSelect, onJump, onInitGit, onCommit, draftMessage }: Props) {
   const ref = useRef<HTMLElement>(null);
   const commitInput = useRef<HTMLInputElement>(null);
   const [message, setMessage] = useState("");
+  useEffect(() => { if (draftMessage) { setMessage(draftMessage); commitInput.current?.focus(); } }, [draftMessage]);
 
   useEffect(() => { if (commitFocus) commitInput.current?.focus(); }, [commitFocus]);
 

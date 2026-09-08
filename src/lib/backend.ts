@@ -64,6 +64,19 @@ export async function readBinary(path: string): Promise<Uint8Array> {
   return bytes instanceof ArrayBuffer ? new Uint8Array(bytes) : Uint8Array.from(bytes);
 }
 
+export interface SnapFile { path: string; text: string | null; base64: string | null; size: number }
+export interface Snapshot { files: SnapFile[]; skipped: string[]; total: number }
+/** Every file of the project small enough to travel to a live-session joiner. */
+export async function projectSnapshot(root: string): Promise<Snapshot> {
+  if (!native) return { files: Object.entries(SAMPLE_FILES).filter(([k]) => k.startsWith(root)).map(([k, v]) => ({ path: k.slice(root.length + 1), text: v, base64: null, size: v.length })), skipped: [], total: 0 };
+  return invoke<Snapshot>("project_snapshot", { root });
+}
+/** Rebuild a host's project under ~/Dabir Sessions/<name>; returns that folder. */
+export async function sessionMaterialize(name: string, files: SnapFile[]): Promise<string | null> {
+  if (!native) return null;
+  return invoke<string>("session_materialize", { name, files });
+}
+
 export function onCompileProgress(handler: (line: string) => void): () => void {
   if (!native) return () => {};
   let un: (() => void) | undefined;
