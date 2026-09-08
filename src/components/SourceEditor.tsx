@@ -14,6 +14,7 @@ import { visualExtensions } from "../lib/visual";
 import { projectCompletions, type CompletionSources } from "../lib/completions";
 import type { GrammarMatch } from "../lib/grammar";
 import type { Settings } from "../lib/settings";
+import { prediction } from "../lib/predict";
 
 const highlight = HighlightStyle.define([
   { tag: [tags.keyword, tags.controlKeyword, tags.function(tags.variableName), tags.macroName], class: "tok-cmd" },
@@ -153,6 +154,7 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
     EditorView.contentAttributes.of({ spellcheck: s.spellcheck ? "true" : "false", autocorrect: "off", autocapitalize: "off" }),
     s.lineWrap ? EditorView.lineWrapping : [],
     EditorView.theme({ "&": { "--doc-size": `${s.fontSize}px`, "--mono-size": `${s.monoSize}px` } }),
+    s.prediction ? prediction() : [],
   ];
   const completionExt = (s: Settings) => {
     if (!s.autocomplete && !s.citeComplete) return [];
