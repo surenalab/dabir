@@ -14,7 +14,7 @@ The paper is a Git repo that also holds the experiment code. The agent is a coau
 | 1 | An editor you would use: source editing, compile, PDF, outline, citations, Overleaf import | Done |
 | 2 | Git and agents: clone, commit, branch, PR; provider adapters; `.dabir` memory and provenance | Done, needs real-world testing |
 | 3 | Collaboration: Yjs live sessions, comments, self-hostable relay, Overleaf sync | Built, tested with two clients |
-| 4 | Ecosystem: Typst, Zotero, journal templates, plugin API, hosted relay as the optional paid service | Later |
+| 4 | Ecosystem: Typst, Zotero, journal templates, plugin API, hosted relay as the optional paid service | Templates, Typst, Zotero done; plugin API and hosted relay later |
 
 ## Progress log
 
@@ -72,13 +72,16 @@ At run time Dabir prepends a preamble of about ten lines: the identity sentence,
 - The updater endpoint points at `github.com/sadeghsalehi/dabir`; change it if the repo lives elsewhere.
 - Tag `v0.1.0` to run the release workflow. It fetches Tectonic per target and builds the relay.
 
+**2026-09-08.** Native relay in Rust (axum + yrs) replaces the Node process for hosting; two-client sync is a unit test. Tectonic sidecar 0.17. Problems panel: the TeX log is parsed into traceable diagnostics with file, line, category and excerpt; each can be jumped to, is marked in the editor, and can be handed to the agent under the compile-and-fix skill, singly or all at once. Phase 4: New Paper from five templates with Git and memory set up, Typst compile for `main.typ` projects, Zotero local-API and .bib import merged without duplicates.
+
 ## Still open
 
 - **Windows and Linux have not been run.** The CI matrix builds them; the visual layer, vibrancy fallbacks and menu chords need a pass on a real machine.
 - **Remote cursors** render in Source mode; in Visual mode the widgets hide them.
-- **Relay hosting** needs Node on the host's machine. A Rust relay would remove that dependency.
 - **Track changes** for coauthors who will not use Git, and per-comment threads.
-- **Phase 4:** Typst, Zotero, journal templates, plugin API, hosted relay.
+- **Plugin API** and a hosted relay as the optional paid service.
+- **Visual layer for Typst.** Typst projects edit in Source mode only.
+- **Per-comment threads** and track changes for coauthors who will not use Git.
 - **Local index** for retrieval over long papers; agents currently rely on the brief plus their own file reading.
 - **Windows and Linux builds.** The shell is cross-platform, but only macOS has been run.
 - **Packaging.** Bundle Tectonic as a sidecar, sign and notarise, auto-update.
