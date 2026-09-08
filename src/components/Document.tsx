@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, CheckCircle2, FolderOpen, FilePlus, GitBranch, Loader2, Circle, Upload } from "lucide-react";
 import { parseDocument, type BibEntry } from "../lib/latex";
 import { setVisualContext } from "../lib/visual";
@@ -6,7 +6,8 @@ import { readBinary, type PdfPos, type Project } from "../lib/backend";
 import * as pdfjs from "pdfjs-dist";
 import type { ViewMode } from "./Toolbar";
 import type { CompileState } from "../App";
-import { SourceEditor, type CommentRange } from "./SourceEditor";
+import { SourceEditor, type CommentRange, type EditorApi } from "./SourceEditor";
+import { FormatBar } from "./FormatBar";
 import { Problems, groupProblems } from "./Problems";
 import type * as Y from "yjs";
 import type { Awareness } from "y-protocols/awareness";
@@ -78,7 +79,7 @@ interface Props {
   onCursorLine: (line: number) => void;
   onSelectFile: (path: string) => void;
   onJump: (line: number, inSource?: boolean) => void;
-  onPdfClick: (page: number, x: number, y: number, alt: boolean) => void;
+  onPdfClick: (page: number, x: number, y: number) => void;
   compileOnSave: boolean;
   onToggleCompileOnSave: () => void;
   agentReady: boolean;
@@ -96,11 +97,28 @@ interface Props {
   pdfZoom: PdfZoom;
   onPdfZoom: (z: PdfZoom) => void;
   onOpenSettings: () => void;
+  onPdfComment: (page: number, x: number, y: number) => void;
+  pdfFindRequest: number;
+  editorRef: React.RefObject<EditorApi | null>;
+  onFind: () => void;
+  onCommentSelection: () => void;
+  hasSelection: boolean;
+  splitRatio: number;
+  onSplitRatio: (r: number) => void;
 }
 
 export function Document(p: Props) {
   const { project, source, mode, compileState, showLog, error } = p;
   const macros = useMemo(() => (source ? collectMacros(source) : {}), [source]);
+  const [dragging, setDragging] = useState(false);
+  const splitRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!dragging) return;
+    const move = (e: PointerEvent) => { const r = splitRef.current?.getBoundingClientRect(); if (r) p.onSplitRatio(Math.min(0.8, Math.max(0.2, (e.clientX - r.left) / r.width))); };
+    const up = () => setDragging(false);
+    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+    return () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
+  }, [dragging, p]);
 
   useEffect(() => {
     setVisualContext({
@@ -146,6 +164,15 @@ export function Document(p: Props) {
   }
 
   const isTex = !p.file || /\.(tex|sty|cls|bib|md|txt|toml|py|json|typ)$/i.test(p.file);
+  const showEditor = mode !== "pdf";
+  const showPdf = mode === "pdf" || mode === "split";
+  const editor = source != null && isTex ? (
+    <SourceEditor ref={p.editorRef} value={source} visual={(mode === "visual" || mode === "split") && /\.tex$/i.test(p.file ?? "")} onChange={p.onSourceChange} onSave={p.onSave}
+      onCursorLine={p.onCursorLine} jumpLine={p.jumpLine} jumpStamp={p.jumpStamp} findRequest={p.findRequest}
+      collab={p.collab} comments={p.comments} onSelection={p.onSelection} jumpOffset={p.jumpOffset} marks={editorMarks}
+      settings={p.settings} grammar={p.grammar} completions={p.completions} />
+  ) : source != null ? <div className="doc-empty"><div className="card"><p>This file type is not editable in Dabir yet.</p></div></div> : null;
+  const pdf = <PdfView path={result?.pdf ?? null} stamp={compileState.status === "done" ? compileState.at : 0} target={p.pdfTarget} onJump={p.onPdfClick} onComment={p.onPdfComment} pins={p.pins} onPin={p.onPin} zoom={p.pdfZoom} onZoom={p.onPdfZoom} findRequest={p.pdfFindRequest} />;
 
   return (
     <main className="document">
@@ -153,20 +180,12 @@ export function Document(p: Props) {
       <Problems problems={grouped} mainFile={mainRel} agentReady={p.agentReady}
         onJump={(file, line) => p.onJumpFile(file, line)} onFix={p.onFix} />
 
-      <div className="scroll" hidden={mode === "pdf"}>
-        {source != null && isTex && (
-          <SourceEditor value={source} visual={mode === "visual" && /\.tex$/i.test(p.file ?? "")} onChange={p.onSourceChange} onSave={p.onSave}
-            onCursorLine={p.onCursorLine} jumpLine={p.jumpLine} jumpStamp={p.jumpStamp} findRequest={p.findRequest}
-            collab={p.collab} comments={p.comments} onSelection={p.onSelection} jumpOffset={p.jumpOffset} marks={editorMarks}
-            settings={p.settings} grammar={p.grammar} completions={p.completions} />
-        )}
-        {source != null && !isTex && <div className="doc-empty"><div className="card"><p>This file type is not editable in Dabir yet.</p></div></div>}
+      {showEditor && isTex && <FormatBar api={p.editorRef.current} onFind={p.onFind} onComment={p.onCommentSelection} canComment={p.hasSelection} />}
+      <div className={`panes ${mode === "split" ? "split" : ""}`} ref={splitRef} style={mode === "split" ? { "--split": `${Math.round(p.splitRatio * 100)}%` } as React.CSSProperties : undefined}>
+        <div className="scroll" hidden={!showEditor}>{editor}</div>
+        {mode === "split" && <div className={`vdivider ${dragging ? "dragging" : ""}`} onPointerDown={() => setDragging(true)} role="separator" aria-orientation="vertical" aria-label="Resize editor and PDF" />}
+        {showPdf && <div className="scroll pdfpane">{pdf}</div>}
       </div>
-      {mode === "pdf" && (
-        <div className="scroll">
-          <PdfView path={result?.pdf ?? null} stamp={compileState.status === "done" ? compileState.at : 0} target={p.pdfTarget} onClickAt={p.onPdfClick} pins={p.pins} onPin={p.onPin} zoom={p.pdfZoom} onZoom={p.onPdfZoom} />
-        </div>
-      )}
 
       {showLog && (
         <section className="log" aria-label="Compile log">
@@ -189,7 +208,8 @@ export function Document(p: Props) {
             {[p.settings.spellcheck ? "spelling" : null, p.settings.grammar !== "off" ? "grammar" : null, p.settings.autocomplete || p.settings.citeComplete ? "completion" : null].filter(Boolean).join(" · ") || "writing aids off"}
           </button>
         )}
-        {mode === "visual" && <span title="Click any equation, figure or citation to edit its source">click to reveal source</span>}
+        {(mode === "visual" || mode === "split") && <span title="Click any equation, figure or citation to edit its source">click to reveal source</span>}
+        {mode === "split" && <span title="The PDF follows the cursor; double-click the PDF to go to the source line">PDF follows the cursor</span>}
       </footer>
     </main>
   );
