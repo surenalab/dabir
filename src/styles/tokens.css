@@ -19,6 +19,9 @@
   --ink-3: #676a74;
   --ink-4: #7a7c84;
 
+  /* Brand pigments from the icon (lajvard lapis, saffron). Identity moments only; the UI accent stays madder. */
+  --lajvard: #22396b;
+  --saffron: #e0a62e;
   --accent: #a8322d;
   --accent-hover: #8f2823;
   --accent-ink: #ffffff;
