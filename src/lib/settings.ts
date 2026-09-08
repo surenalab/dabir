@@ -7,6 +7,7 @@ export interface Settings {
   grammarLanguage: string;      // e.g. en-GB, en-US, auto
   autocomplete: boolean;        // LaTeX commands, environments, snippets
   citeComplete: boolean;        // \cite and \ref keys, \input paths
+  prediction: boolean;          // grey predictive text learned from the paper; Tab accepts
   fontSize: number;             // document view, px
   monoSize: number;             // source view, px
   lineWrap: boolean;
@@ -22,6 +23,7 @@ export const DEFAULTS: Settings = {
   grammarLanguage: "en-GB",
   autocomplete: true,
   citeComplete: true,
+  prediction: true,
   fontSize: 16.5,
   monoSize: 13,
   lineWrap: true,

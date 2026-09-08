@@ -84,6 +84,8 @@ Three free options in the Share sheet. Direct: the host makes an invite code, th
 
 **2026-09-08, editing surface.** Formatting bar with Word-style actions driven by an imperative editor API (wrap, block, list, heading, complete, undo, redo); Format menu with shortcuts; Both view (⌘4) with editor and PDF side by side and a draggable divider, the PDF following the cursor through SyncTeX; PDF toolbar with page navigation, zoom presets, fit modes and find; double-click to jump to source, Option-click to comment, plain click to select. Icon redrawn as a dimensional macOS app icon (graphite squircle, paper line, madder caret) and the full icon set regenerated.
 
+**2026-09-08, second editing pass.** Predictive text (`src/lib/predict.ts`): a per-paper word and phrase model (frequency, bigram, trigram over the prose only) that shows ghost text after the cursor; Tab, ⌘→ and Escape; off switch in Settings. Formatting bar measures its groups and moves them into a More menu by priority as the window narrows; the status bar drops its hints, line count and pills through container queries. Split view is Source beside PDF (Visual stays its own mode). Visual view: preamble folds into a labelled row, live rendered preview under an equation while its source is open, align and gather render through their inner forms, footnotes become hover markers, links, small caps, super and subscripts, curly quotes, escaped symbols and ellipses render.
+
 ## Parked until the Linux and Windows builds run
 
 Live co-working, second pass. Best practices to adopt then: (1) every joiner gets the host's full working tree, not just the open file, by syncing a throwaway Git bundle or a `git fetch` from the host's relay at join time, so figures, tables and `.bib` files match; (2) the host's checkout stays the single source of truth and the session is a branch of it, with a commit at session end; (3) awareness carries the file each person has open and their cursor, and comments travel with the shared doc; (4) reconnect and resume without losing edits (Yjs handles this; persist the shared state to IndexedDB on each side); (5) a presence banner when the host leaves. The direct mode needs the two-machine test first.
@@ -101,7 +103,7 @@ Live co-working, second pass. Best practices to adopt then: (1) every joiner get
 - **Per-comment threads** and track changes for coauthors who will not use Git.
 - **Local index** for retrieval over long papers; agents currently rely on the brief plus their own file reading.
 - **Apple signing and notarisation** need a paid Apple Developer account; see the release checklist. Unsigned builds run after a right-click › Open.
-- **Word-level completion** (English words from the document) is not offered; completion covers commands, environments, keys, labels and paths.
+- **Prediction from a model.** Today's prediction is statistical and local; an agent-backed continuation (a sentence from the assistant, on demand) is a natural next step once the agent runs are cheap enough to call per keystroke.
 
 ## Decisions
 

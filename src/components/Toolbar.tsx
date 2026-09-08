@@ -47,7 +47,7 @@ export function Toolbar({ project, file, dirty, mode, navOpen, inspectorOpen, co
             { value: "visual", label: "Visual", title: "Visual (⌘1)" },
             { value: "source", label: "Source", title: "Source (⌘2)" },
             { value: "pdf", label: "PDF", title: "Compiled PDF (⌘3)", disabled: !project },
-            { value: "split", label: "Both", title: "Editor and PDF side by side (⌘4)", disabled: !project },
+            { value: "split", label: "Split", title: "Source next to the PDF (⌘4)", disabled: !project },
           ]}
         />
         {compiling ? (

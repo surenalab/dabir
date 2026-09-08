@@ -46,8 +46,36 @@ class MathWidget extends WidgetType {
   ignoreEvent() { return false; }
 }
 
+/** A folded run of preamble lines. Click to open it. */
+class FoldWidget extends WidgetType {
+  constructor(readonly lines: number, readonly first: string, readonly from: number) { super(); }
+  eq(o: FoldWidget) { return o.lines === this.lines && o.first === this.first; }
+  toDOM() {
+    const el = document.createElement("div");
+    el.className = "vz-fold";
+    el.dataset.from = String(this.from);
+    el.title = "Click to edit the preamble";
+    el.innerHTML = `<span class="vz-fold-label">Preamble</span><span class="vz-fold-meta">${this.lines} line${this.lines === 1 ? "" : "s"} · ${this.first.replace(/&/g, "&amp;").replace(/</g, "&lt;").slice(0, 60)}</span>`;
+    return el;
+  }
+  ignoreEvent() { return false; }
+}
+
+/** Rendered preview shown under an equation while its source is open for editing. */
+class PreviewWidget extends WidgetType {
+  constructor(readonly tex: string) { super(); }
+  eq(o: PreviewWidget) { return o.tex === this.tex; }
+  toDOM() {
+    const el = document.createElement("div");
+    el.className = "vz-preview";
+    el.innerHTML = renderMath(this.tex, true);
+    return el;
+  }
+  ignoreEvent() { return true; }
+}
+
 class ChipWidget extends WidgetType {
-  constructor(readonly kind: "cite" | "ref" | "input", readonly label: string, readonly title: string, readonly from: number, readonly target?: string) { super(); }
+  constructor(readonly kind: "cite" | "ref" | "input" | "note" | "link", readonly label: string, readonly title: string, readonly from: number, readonly target?: string) { super(); }
   eq(o: ChipWidget) { return o.kind === this.kind && o.label === this.label && o.title === this.title; }
   toDOM() {
     const el = document.createElement("span");
@@ -157,6 +185,16 @@ function inlineHtml(src: string): string {
     .replace(/~/g, " ");
 }
 
+/** KaTeX renders align and gather only through their inner forms. */
+function mathBody(env: string, inner: string): string {
+  const tex = inner.replace(/\\label\{[^}]*\}/g, "").trim();
+  const base = env.replace("*", "");
+  if (base === "align") return `\\begin{aligned}${tex}\\end{aligned}`;
+  if (base === "gather") return `\\begin{gathered}${tex}\\end{gathered}`;
+  if (base === "multline") return `\\begin{gathered}${tex.replace(/\\\\/g, "\\\\")}\\end{gathered}`;
+  return tex;
+}
+
 function citeLabel(key: string): string {
   const e = ctx.bib[key];
   if (e) return e.label;
@@ -200,8 +238,28 @@ export function buildDecorations(state: EditorState): DecorationSet {
   const beginDoc = text.indexOf("\\begin{document}");
   const bodyStart = beginDoc >= 0 ? beginDoc : 0;
   if (beginDoc > 0) {
+    // Runs of preamble lines fold into one row; title and author stay visible. A run opens when the cursor enters it.
     let l = doc.lineAt(0);
-    while (l.from < beginDoc) { if (!/^\s*\\(title|author)\{/.test(l.text)) push(l.from, l.from, line("vz-preamble")); if (l.to >= doc.length) break; l = doc.lineAt(l.to + 1); }
+    let run: { from: number; to: number; lines: number } | null = null;
+    const flush = () => {
+      if (!run) return;
+      const r0 = run;
+      const touched = state.selection.ranges.some((r) => (r.empty ? r.from > r0.from && r.from <= r0.to : r.from < r0.to && r.to > r0.from));
+      if (touched || r0.lines < 2) {
+        let x = doc.lineAt(r0.from);
+        while (x.from <= r0.to) { push(x.from, x.from, line("vz-preamble")); if (x.to >= doc.length) break; x = doc.lineAt(x.to + 1); }
+      } else {
+        push(r0.from, r0.to, Decoration.replace({ widget: new FoldWidget(r0.lines, doc.lineAt(r0.from).text.trim(), r0.from), block: true }));
+      }
+      run = null;
+    };
+    while (l.from < beginDoc) {
+      if (/^\s*\\(title|author)\{/.test(l.text)) flush();
+      else if (run) { run.to = l.to; run.lines++; }
+      else run = { from: l.from, to: l.to, lines: 1 };
+      if (l.to >= doc.length) break; l = doc.lineAt(l.to + 1);
+    }
+    flush();
   }
 
   // Block environments: equations, figures, tables. Whole-doc scan.
@@ -224,13 +282,14 @@ export function buildDecorations(state: EditorState): DecorationSet {
     if (isTab) tabCount++;
     blocked.push([from, to]);
     if (selectionTouches(state, from, to)) {
-      // Revealed: dim the env tags, keep source editable.
+      // Revealed: dim the env tags, keep source editable, and show the rendered result underneath as it changes.
       push(from, from + m[0].length, mark("vz-envtag"));
       push(end, to, mark("vz-envtag"));
+      if (isMath) push(to, to, Decoration.widget({ widget: new PreviewWidget(mathBody(env, inner)), block: true, side: 1 }));
       continue;
     }
     if (isMath) {
-      const tex = inner.replace(/\\label\{[^}]*\}/g, "").trim();
+      const tex = mathBody(env, inner);
       const tag = env.endsWith("*") ? "" : `(${eqCount})`;
       push(from, to, Decoration.replace({ widget: new MathWidget(tex, true, tag, from), block: true }));
     } else if (isFig) {
@@ -316,23 +375,39 @@ export function buildDecorations(state: EditorState): DecorationSet {
       const rel = mm[1].endsWith(".tex") ? mm[1] : `${mm[1]}.tex`;
       push(from, to, Decoration.replace({ widget: new ChipWidget("input", `Included: ${rel}`, "Click to open", from, rel) }));
     }
+    // Footnotes become a marker that shows the note on hover
+    const fn = /\\footnote\{((?:[^{}]|\{[^{}]*\})*)\}/g;
+    while ((mm = fn.exec(s))) {
+      const from = l.from + mm.index, to = from + mm[0].length;
+      if (selectionTouches(state, from, to)) continue;
+      push(from, to, Decoration.replace({ widget: new ChipWidget("note", "†", mm[1], from) }));
+    }
+    // Links
+    const url = /\\(?:href\{([^}]*)\}\{([^}]*)\}|url\{([^}]*)\})/g;
+    while ((mm = url.exec(s))) {
+      const from = l.from + mm.index, to = from + mm[0].length;
+      if (selectionTouches(state, from, to)) continue;
+      push(from, to, Decoration.replace({ widget: new ChipWidget("link", mm[2] ?? mm[3] ?? "", mm[1] ?? mm[3] ?? "", from) }));
+    }
     // Emphasis: hide the markup, style the content
-    const em = /\\(emph|textit|textbf|texttt)\{([^{}]*)\}/g;
+    const em = /\\(emph|textit|textbf|texttt|textsc|textsuperscript|textsubscript)\{([^{}]*)\}/g;
+    const emClass: Record<string, string> = { textbf: "vz-bold", texttt: "vz-mono", textsc: "vz-sc", textsuperscript: "vz-sup", textsubscript: "vz-sub" };
     while ((mm = em.exec(s))) {
       const from = l.from + mm.index, to = from + mm[0].length;
       if (selectionTouches(state, from, to)) continue;
       const open = from + mm[1].length + 2;
       push(from, open, hide);
-      push(open, to - 1, mark(mm[1] === "textbf" ? "vz-bold" : mm[1] === "texttt" ? "vz-mono" : "vz-em"));
+      push(open, to - 1, mark(emClass[mm[1]] ?? "vz-em"));
       push(to - 1, to, hide);
     }
     // Inline scaffolding inside text
-    const lab = /\\label\{[^}]*\}|~|\\@|\\,|\\and\b|\\\\|---|--/g;
+    const lab = /\\label\{[^}]*\}|~|\\@|\\,|\\;|\\and\b|\\\\|---|--|``|''|\\(?:ldots|dots)\b|\\[%&_#$]/g;
+    const glyph: Record<string, string> = { "~": "\u00a0", "\\and": ", ", "---": "\u2014", "--": "\u2013", "\\\\": "", "``": "\u201c", "''": "\u201d", "\\ldots": "\u2026", "\\dots": "\u2026", "\\%": "%", "\\&": "&", "\\_": "_", "\\#": "#", "\\$": "$" };
     while ((mm = lab.exec(s))) {
       const from = l.from + mm.index, to = from + mm[0].length;
       if (selectionTouches(state, from, to)) continue;
       const t = mm[0];
-      const replacement = t === "~" ? "\u00a0" : t === "\\and" ? ", " : t === "---" ? "\u2014" : t === "--" ? "\u2013" : t === "\\\\" ? "" : null;
+      const replacement = t in glyph ? glyph[t] : null;
       if (replacement === null) push(from, to, hide);
       else push(from, to, Decoration.replace({ widget: new TextWidget(replacement, from) }));
     }

@@ -167,7 +167,7 @@ export function Document(p: Props) {
   const showEditor = mode !== "pdf";
   const showPdf = mode === "pdf" || mode === "split";
   const editor = source != null && isTex ? (
-    <SourceEditor ref={p.editorRef} value={source} visual={(mode === "visual" || mode === "split") && /\.tex$/i.test(p.file ?? "")} onChange={p.onSourceChange} onSave={p.onSave}
+    <SourceEditor ref={p.editorRef} value={source} visual={mode === "visual" && /\.tex$/i.test(p.file ?? "")} onChange={p.onSourceChange} onSave={p.onSave}
       onCursorLine={p.onCursorLine} jumpLine={p.jumpLine} jumpStamp={p.jumpStamp} findRequest={p.findRequest}
       collab={p.collab} comments={p.comments} onSelection={p.onSelection} jumpOffset={p.jumpOffset} marks={editorMarks}
       settings={p.settings} grammar={p.grammar} completions={p.completions} />
@@ -199,17 +199,17 @@ export function Document(p: Props) {
         {compileState.status === "running" && <span className="state running"><Loader2 aria-hidden /> {p.progress ? <span className="progress" title={p.progress}>{p.progress}</span> : "Compiling…"}</span>}
         {result && result.ok && errors === 0 && <span className={`state ${warnings ? "warn" : "ok"}`}><CheckCircle2 aria-hidden /> Compiled in {(result.millis / 1000).toFixed(1)} s{warnings ? `, ${warnings} warning${warnings > 1 ? "s" : ""}` : ""}</span>}
         {result && (!result.ok || errors > 0) && <span className="state error"><AlertCircle aria-hidden /> Compile failed{errors ? `, ${errors} error${errors > 1 ? "s" : ""}` : ""}</span>}
-        {result && <button onClick={p.onToggleLog}>{showLog ? "Hide log" : "Show log"}</button>}
-        <button className={`toggle ${p.compileOnSave ? "on" : ""}`} aria-pressed={p.compileOnSave} onClick={p.onToggleCompileOnSave} title="Compile every time you save (⌘S)">{p.compileOnSave ? "Compiles on save" : "Compile on save"}</button>
+        {result && <button onClick={p.onToggleLog} data-p="2">{showLog ? "Hide log" : "Show log"}</button>}
+        <button data-p="1" className={`toggle ${p.compileOnSave ? "on" : ""}`} aria-pressed={p.compileOnSave} onClick={p.onToggleCompileOnSave} title="Compile every time you save (⌘S)">{p.compileOnSave ? "Compiles on save" : "Compile on save"}</button>
         <span className="grow" />
-        {mode !== "pdf" && source != null && <span>{source.split("\n").length} lines</span>}
+        {mode !== "pdf" && source != null && <span data-p="3">{source.split("\n").length} lines</span>}
         {mode !== "pdf" && (
-          <button className="toggle writing" onClick={p.onOpenSettings} title="Spelling, grammar and completion. Click to change in Settings (⌘,)">
-            {[p.settings.spellcheck ? "spelling" : null, p.settings.grammar !== "off" ? "grammar" : null, p.settings.autocomplete || p.settings.citeComplete ? "completion" : null].filter(Boolean).join(" · ") || "writing aids off"}
+          <button data-p="2" className="toggle writing" onClick={p.onOpenSettings} title="Spelling, grammar, completion and prediction. Click to change in Settings (⌘,)">
+            {[p.settings.spellcheck ? "spelling" : null, p.settings.grammar !== "off" ? "grammar" : null, p.settings.autocomplete || p.settings.citeComplete ? "completion" : null, p.settings.prediction ? "prediction" : null].filter(Boolean).join(" · ") || "writing aids off"}
           </button>
         )}
-        {(mode === "visual" || mode === "split") && <span title="Click any equation, figure or citation to edit its source">click to reveal source</span>}
-        {mode === "split" && <span title="The PDF follows the cursor; double-click the PDF to go to the source line">PDF follows the cursor</span>}
+        {mode === "visual" && <span data-p="4" title="Click any equation, figure or citation to edit its source">click to reveal source</span>}
+        {mode === "split" && <span data-p="4" title="The PDF follows the cursor; double-click the PDF to go to the source line">PDF follows the cursor</span>}
       </footer>
     </main>
   );

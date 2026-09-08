@@ -1,0 +1,60 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Dabir icon variants</title>
+<style>
+  body { margin: 0; padding: 32px; background: #e9e7e1; font: 13px -apple-system, "SF Pro Text", Helvetica, sans-serif; color: #333; }
+  .row { display: flex; gap: 28px; flex-wrap: wrap; }
+  .v { text-align: center; width: 220px; }
+  .v svg { width: 200px; height: 200px; filter: drop-shadow(0 6px 10px rgba(0,0,0,.18)); }
+  .v b { display: block; margin-top: 8px; font-size: 14px; }
+  .v span { color: #666; }
+  .dock { margin-top: 24px; display: flex; gap: 14px; align-items: flex-end; padding: 10px 16px; background: rgba(255,255,255,.55); border-radius: 22px; width: max-content; }
+  .dock svg { width: 64px; height: 64px; }
+</style>
+<div class="row" id="row"></div>
+<div class="dock" id="dock"></div>
+<script>
+// Palette per variant: [background top, background bottom, line, caret, caret dark]
+const V = {
+  A: { name: "Graphite & madder", note: "current", bg: ["#2E3138", "#121317"], line: ["#FFFFFF", "#E9E6DD"], caret: ["#C64842", "#A8322D", "#7E221F"] },
+  B: { name: "Graphite, no colour", note: "mark in paper white", bg: ["#2E3138", "#121317"], line: ["#FFFFFF", "#E9E6DD"], caret: ["#FFFFFF", "#E9E6DD", "#B9B5AA"] },
+  C: { name: "Paper & graphite", note: "light icon, madder caret", bg: ["#FBFAF6", "#E8E5DC"], line: ["#2A2D33", "#1D1F24"], caret: ["#C64842", "#A8322D", "#7E221F"] },
+  D: { name: "Paper & ink", note: "light icon, one colour", bg: ["#FBFAF6", "#E8E5DC"], line: ["#2A2D33", "#1D1F24"], caret: ["#2A2D33", "#1D1F24", "#0E0F12"] },
+  E: { name: "Indigo & paper", note: "cool alternative", bg: ["#2F3B5E", "#1A2138"], line: ["#FFFFFF", "#E9E6DD"], caret: ["#F1B24A", "#D99A2B", "#A9741B"] },
+  F: { name: "Madder & paper", note: "colour as the ground", bg: ["#B33A34", "#7E221F"], line: ["#FFFFFF", "#F3EFE6"], caret: ["#FFFFFF", "#F3EFE6", "#CFC9BB"] },
+};
+function icon(k, v) {
+  return `<svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg${k}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${v.bg[0]}"/><stop offset="1" stop-color="${v.bg[1]}"/></linearGradient>
+    <linearGradient id="rim${k}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFF" stop-opacity="0.22"/><stop offset="0.12" stop-color="#FFF" stop-opacity="0.04"/><stop offset="1" stop-color="#FFF" stop-opacity="0"/></linearGradient>
+    <linearGradient id="ln${k}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${v.line[0]}"/><stop offset="1" stop-color="${v.line[1]}"/></linearGradient>
+    <linearGradient id="cr${k}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${v.caret[0]}"/><stop offset="0.5" stop-color="${v.caret[1]}"/><stop offset="1" stop-color="${v.caret[2]}"/></linearGradient>
+    <linearGradient id="hl${k}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFF" stop-opacity="0.28"/><stop offset="0.45" stop-color="#FFF" stop-opacity="0"/></linearGradient>
+    <filter id="sh${k}" x="-20%" y="-20%" width="140%" height="160%"><feGaussianBlur in="SourceAlpha" stdDeviation="14"/><feOffset dy="18" result="o"/><feComponentTransfer><feFuncA type="linear" slope="0.45"/></feComponentTransfer><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <clipPath id="sq${k}"><rect x="100" y="100" width="824" height="824" rx="184"/></clipPath>
+  </defs>
+  <g clip-path="url(#sq${k})">
+    <rect x="100" y="100" width="824" height="824" fill="url(#bg${k})"/>
+    <rect x="100" y="100" width="824" height="824" fill="url(#rim${k})"/>
+  </g>
+  <g filter="url(#sh${k})"><rect x="236" y="402" width="552" height="92" rx="46" fill="url(#ln${k})"/></g>
+  <rect x="236" y="402" width="552" height="46" rx="46" fill="#FFF" fill-opacity="0.3"/>
+  <g filter="url(#sh${k})"><path d="M512 494 L748 770 H636 L512 628 L388 770 H276 Z" fill="url(#cr${k})"/></g>
+  <path d="M512 494 L748 770 H636 L512 628 L388 770 H276 Z" fill="url(#hl${k})"/>
+</svg>`;
+}
+const row = document.getElementById("row"), dock = document.getElementById("dock");
+for (const [k, v] of Object.entries(V)) {
+  row.insertAdjacentHTML("beforeend", `<div class="v">${icon(k, v)}<b>${k} · ${v.name}</b><span>${v.note}</span></div>`);
+  dock.insertAdjacentHTML("beforeend", icon("d" + k, v));
+}
+window.render = async (k, size = 1024) => {
+  const svg = new Blob([icon(k, V[k])], { type: "image/svg+xml" });
+  const url = URL.createObjectURL(svg);
+  const img = new Image(); img.src = url; await img.decode();
+  const c = document.createElement("canvas"); c.width = c.height = size;
+  c.getContext("2d").drawImage(img, 0, 0, size, size);
+  return c.toDataURL("image/png");
+};
+</script>
