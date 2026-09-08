@@ -1083,7 +1083,7 @@ mod tests {
         let wt = git::worktree_add(&dir, &run_id).unwrap();
         let (tx, rx) = std::sync::mpsc::channel::<agents::AgentEvent>();
         let started = std::time::Instant::now();
-        agents::run_with(provider.clone(), "Open main.tex and change the abstract's phrase '1.8 dB margin' to '1.8 dB PSNR margin'. Do not touch anything else. Reply DONE when finished.".into(), wt.clone(), run_id.clone(), move |e| { let _ = tx.send(e); }).unwrap();
+        agents::run_with(provider.clone(), "Open main.tex and change the abstract's phrase 'three baselines' to 'three strong baselines'. Do not touch anything else. Reply DONE when finished.".into(), wt.clone(), run_id.clone(), move |e| { let _ = tx.send(e); }).unwrap();
         let mut ok = None;
         let mut tools = 0;
         while let Ok(e) = rx.recv_timeout(std::time::Duration::from_secs(240)) {
@@ -1096,7 +1096,7 @@ mod tests {
         let d = git::worktree_diff(&dir, &run_id).unwrap();
         eprintln!("changed: {:?}", d.changes.iter().map(|c| &c.path).collect::<Vec<_>>());
         assert!(d.changes.iter().any(|c| c.path == "main.tex"), "main.tex should have changed");
-        assert!(d.patch.contains("PSNR margin"));
+        assert!(d.patch.contains("strong baselines"));
         let id = git::worktree_accept(&dir, &run_id, "live agent change", Some(vec![git::Pick { path: "main.tex".into(), hunks: None }])).unwrap();
         assert_eq!(id.len(), 7);
         assert!(fs::read_to_string(dir.join("main.tex")).unwrap().contains("1.8 dB PSNR margin"));
