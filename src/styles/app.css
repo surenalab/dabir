@@ -670,3 +670,16 @@ input[type="range"] { accent-color: var(--accent); width: 140px; }
 .pdf-pin.resolved { opacity: .45; }
 .sheet-input.code { font-family: var(--font-mono); font-size: 11px; line-height: 1.4; resize: vertical; height: auto; padding: 6px 8px; word-break: break-all; }
 .share-link code { word-break: break-all; white-space: normal; max-height: 72px; overflow: auto; }
+
+/* PDF zoom and text layer */
+.pdf { position: relative; }
+.pdf-zoom { position: sticky; top: 8px; z-index: 3; align-self: flex-end; display: inline-flex; align-items: center; gap: 2px; padding: 2px; border-radius: var(--radius-md); background: var(--chrome); border: 1px solid var(--line); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); margin: -8px 0 0; }
+.pdf-zoom .tb-btn { height: 24px; font-variant-numeric: tabular-nums; }
+.pdf-zoom .tb-btn.icon { width: 24px; font-size: 15px; }
+.pdf-page { user-select: text; cursor: text; }
+.textLayer { position: absolute; inset: 0; overflow: clip; opacity: 1; line-height: 1; text-size-adjust: none; forced-color-adjust: none; transform-origin: 0 0; caret-color: transparent; z-index: 2; }
+.textLayer :is(span, br) { color: transparent; position: absolute; white-space: pre; cursor: text; transform-origin: 0% 0%; }
+.textLayer ::selection { background: var(--selection); }
+.textLayer .endOfContent { display: block; position: absolute; inset: 100% 0 0; z-index: 0; cursor: default; user-select: none; }
+.status .toggle.writing { color: var(--ink-3); border-color: transparent; }
+.status .toggle.writing:hover { border-color: var(--line); color: var(--ink); }

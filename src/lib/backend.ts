@@ -142,14 +142,14 @@ export async function synctexInverse(mainTex: string, page: number, x: number, y
 // ---------------------------------------------------------------- git
 
 const SAMPLE_GIT: GitStatus = {
-  isRepo: true, branch: "main", remote: "git@github.com:khorasani/score-anchor.git",
+  isRepo: true, branch: "main", remote: "git@github.com:vantreight/score-anchor.git",
   changes: [
     { path: "figures/psnr-vs-noise.pdf", status: "modified", add: 0, del: 0, binary: true },
     { path: "main.tex", status: "modified", add: 6, del: 4, binary: false },
   ],
   recent: [
-    { id: "a41b9c2", summary: "Add anchor-ratio sweep to Appendix A", author: "Nasrin", when: Date.now() / 1000 - 86400 * 2 },
-    { id: "0f3e1d7", summary: "Address reviewer 2 on the anchor ratio", author: "Emil", when: Date.now() / 1000 - 86400 * 5 },
+    { id: "a41b9c2", summary: "Add anchor-ratio sweep to Appendix A", author: "Aurelio", when: Date.now() / 1000 - 86400 * 2 },
+    { id: "0f3e1d7", summary: "Address reviewer 2 on the anchor ratio", author: "Ilse", when: Date.now() / 1000 - 86400 * 5 },
   ],
 };
 
@@ -230,7 +230,7 @@ export async function contextPack(root: string, query: string): Promise<string> 
 export async function compileCancel(): Promise<boolean> { return native ? invoke<boolean>("compile_cancel") : true; }
 export async function agentReject(root: string, runId: string): Promise<void> { if (native) await invoke("agent_reject", { root, runId }); }
 export async function agentPullRequest(root: string, runId: string, message: string): Promise<string> {
-  if (!native) { await wait(400); return "https://github.com/khorasani/score-anchor/pull/12"; }
+  if (!native) { await wait(400); return "https://github.com/vantreight/score-anchor/pull/12"; }
   return invoke<string>("agent_pull_request", { root, runId, message });
 }
 

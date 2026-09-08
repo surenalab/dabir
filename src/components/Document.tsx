@@ -10,7 +10,7 @@ import { SourceEditor, type CommentRange } from "./SourceEditor";
 import { Problems, groupProblems } from "./Problems";
 import type * as Y from "yjs";
 import type { Awareness } from "y-protocols/awareness";
-import { PdfView, type PdfPin } from "./PdfView";
+import { PdfView, type PdfPin, type PdfZoom } from "./PdfView";
 import type { Settings } from "../lib/settings";
 import type { GrammarMatch } from "../lib/grammar";
 import type { CompletionSources } from "../lib/completions";
@@ -93,6 +93,9 @@ interface Props {
   completions: CompletionSources;
   pins: PdfPin[];
   onPin: (id: string) => void;
+  pdfZoom: PdfZoom;
+  onPdfZoom: (z: PdfZoom) => void;
+  onOpenSettings: () => void;
 }
 
 export function Document(p: Props) {
@@ -161,7 +164,7 @@ export function Document(p: Props) {
       </div>
       {mode === "pdf" && (
         <div className="scroll">
-          <PdfView path={result?.pdf ?? null} stamp={compileState.status === "done" ? compileState.at : 0} target={p.pdfTarget} onClickAt={p.onPdfClick} pins={p.pins} onPin={p.onPin} />
+          <PdfView path={result?.pdf ?? null} stamp={compileState.status === "done" ? compileState.at : 0} target={p.pdfTarget} onClickAt={p.onPdfClick} pins={p.pins} onPin={p.onPin} zoom={p.pdfZoom} onZoom={p.onPdfZoom} />
         </div>
       )}
 
@@ -181,7 +184,12 @@ export function Document(p: Props) {
         <button className={`toggle ${p.compileOnSave ? "on" : ""}`} aria-pressed={p.compileOnSave} onClick={p.onToggleCompileOnSave} title="Compile every time you save (⌘S)">{p.compileOnSave ? "Compiles on save" : "Compile on save"}</button>
         <span className="grow" />
         {mode !== "pdf" && source != null && <span>{source.split("\n").length} lines</span>}
-        {mode === "visual" && <span title="Click any equation, figure or citation to edit its source">visual · click to reveal source</span>}
+        {mode !== "pdf" && (
+          <button className="toggle writing" onClick={p.onOpenSettings} title="Spelling, grammar and completion. Click to change in Settings (⌘,)">
+            {[p.settings.spellcheck ? "spelling" : null, p.settings.grammar !== "off" ? "grammar" : null, p.settings.autocomplete || p.settings.citeComplete ? "completion" : null].filter(Boolean).join(" · ") || "writing aids off"}
+          </button>
+        )}
+        {mode === "visual" && <span title="Click any equation, figure or citation to edit its source">click to reveal source</span>}
       </footer>
     </main>
   );
