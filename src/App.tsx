@@ -362,7 +362,7 @@ export default function App() {
         onSourceChange={onSourceChange} onSave={save} onCursorLine={setCursorLine} onSelectFile={selectFile} onJump={jumpTo} onPdfClick={onPdfClick}
         compileOnSave={compileOnSave} onToggleCompileOnSave={toggleCompileOnSave}
         collab={collab} comments={commentRanges} onSelection={(from, to) => setSelection({ from, to })} jumpOffset={jumpOffset} />
-      <Inspector project={project} askFocus={askFocus} onChanged={onChanged} onOpenFile={selectFile} onNote={setNote}
+      <Inspector project={project} gitRepo={!!git?.isRepo} askFocus={askFocus} onChanged={onChanged} onOpenFile={selectFile} onNote={setNote}
         live={!!live} peers={peers} comments={comments} currentFile={rel(file)} hasSelection={selection.to > selection.from}
         onAddComment={addCommentAtSelection} onResolveComment={(id, r) => session && yResolveComment(session, id, r)} onRemoveComment={(id) => session && yRemoveComment(session, id)} onJumpComment={jumpToComment} onShare={() => setSheet("share")} />
       <div className={`divider nav ${dragging === "nav" ? "dragging" : ""}`} onPointerDown={() => setDragging("nav")} role="separator" aria-orientation="vertical" aria-label="Resize sidebar" />

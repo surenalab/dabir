@@ -2,7 +2,7 @@
 # Fetch the Tectonic binary for the current Rust target triple into src-tauri/binaries,
 # where Tauri picks it up as an external binary (sidecar) at bundle time.
 set -eu
-VERSION="${TECTONIC_VERSION:-0.15.0}"
+VERSION="${TECTONIC_VERSION:-0.17.0}"
 TRIPLE="${TARGET_TRIPLE:-$(rustc -vV 2>/dev/null | sed -n 's/^host: //p')}"
 [ -n "$TRIPLE" ] || { echo "rustc not found; set TARGET_TRIPLE"; exit 1; }
 OUT="src-tauri/binaries/tectonic-$TRIPLE"

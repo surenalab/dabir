@@ -101,7 +101,13 @@ export function Document(p: Props) {
   const result = compileState.status === "done" ? compileState.result : null;
   const diagnostics = result?.diagnostics ?? [];
   const errors = diagnostics.filter((d) => d.severity === "error").length;
-  const warnings = diagnostics.length - errors;
+  // Tectonic repeats the same note once per pass; show it once with a count.
+  const grouped = diagnostics.reduce<(typeof diagnostics[number] & { count: number })[]>((acc, d) => {
+    const same = acc.find((g) => g.severity === d.severity && g.file === d.file && g.line === d.line && g.message === d.message);
+    if (same) same.count += 1; else acc.push({ ...d, count: 1 });
+    return acc;
+  }, []);
+  const warnings = grouped.filter((d) => d.severity === "warning").length;
 
   if (!project || (source == null && mode !== "pdf")) {
     return (
@@ -128,13 +134,13 @@ export function Document(p: Props) {
   return (
     <main className="document">
       {error && <div className="banner error" role="alert"><span>{error}</span><button onClick={p.onDismissError}>Dismiss</button></div>}
-      {diagnostics.length > 0 && (
+      {grouped.length > 0 && (
         <div className="diagnostics" role="list" aria-label="Compile diagnostics">
-          {diagnostics.map((d, i) => (
-            <button key={i} className={`diag ${d.severity}`} role="listitem" onClick={() => d.line != null && p.onJump(d.line, true)} title={d.line != null ? "Go to line in Source" : undefined}>
+          {grouped.map((d, i) => (
+            <button key={i} className={`diag ${d.severity}`} role="listitem" onClick={() => d.line != null && p.onJump(d.line, true)} title={d.line != null ? "Go to line in Source" : (d.count > 1 ? `Reported ${d.count} times, once per compile pass` : undefined)}>
               {d.severity === "error" ? <AlertCircle aria-label="Error" /> : <AlertTriangle aria-label="Warning" />}
               <span className="where">{d.file ?? ""}{d.line != null ? `:${d.line}` : ""}</span>
-              <span className="msg">{d.message}</span>
+              <span className="msg">{d.message}{d.count > 1 && <span className="count"> ×{d.count}</span>}</span>
             </button>
           ))}
         </div>
