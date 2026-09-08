@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, CheckCircle2, FolderOpen, FilePlus, GitBranch, Loader2, Circle, Upload } from "lucide-react";
+import { AlertCircle, CheckCircle2, FolderOpen, FilePlus, GitBranch, Loader2, Circle, Upload, Radio } from "lucide-react";
 import { parseDocument, type BibEntry } from "../lib/latex";
 import { setVisualContext } from "../lib/visual";
 import { readBinary, type PdfPos, type Project } from "../lib/backend";
@@ -73,6 +73,8 @@ interface Props {
   onImport: () => void;
   onClone: () => void;
   onNew: () => void;
+  onJoin: () => void;
+  hostAway: boolean;
   onOutline: (o: ReturnType<typeof parseDocument>["outline"]) => void;
   onSourceChange: (text: string) => void;
   onSave: () => void;
@@ -146,6 +148,7 @@ export function Document(p: Props) {
     return (
       <main className="document">
         {error && <div className="banner error" role="alert"><span>{error}</span><button onClick={p.onDismissError}>Dismiss</button></div>}
+      {p.hostAway && <div className="banner" role="status"><span>The host has left. Your edits stay in this mirror and rejoin when they are back.</span></div>}
         <div className="doc-empty">
           <div className="card">
             <h1>Open a paper to begin</h1>
@@ -155,6 +158,7 @@ export function Document(p: Props) {
               <button className="btn" onClick={p.onNew} title="Start from a journal template"><FilePlus /> New Paper…</button>
               <button className="btn" onClick={p.onImport} title="Unpack an Overleaf source zip into a folder"><Upload /> Import from Overleaf…</button>
               <button className="btn" onClick={p.onClone}><GitBranch /> Clone from GitHub…</button>
+              <button className="btn" onClick={p.onJoin} title="Paste a coauthor's link or invite code; their paper is mirrored here"><Radio /> Join a Live Session…</button>
             </div>
             <div className="hint">Try the bundled sample at <code>examples/score-anchor</code>. Press <kbd>⌘/</kbd> for shortcuts.</div>
           </div>
@@ -177,6 +181,7 @@ export function Document(p: Props) {
   return (
     <main className="document">
       {error && <div className="banner error" role="alert"><span>{error}</span><button onClick={p.onDismissError}>Dismiss</button></div>}
+      {p.hostAway && <div className="banner" role="status"><span>The host has left. Your edits stay in this mirror and rejoin when they are back.</span></div>}
       <Problems problems={grouped} mainFile={mainRel} agentReady={p.agentReady}
         onJump={(file, line) => p.onJumpFile(file, line)} onFix={p.onFix} />
 
