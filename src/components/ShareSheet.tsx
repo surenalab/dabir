@@ -65,7 +65,7 @@ export function ShareSheet(p: Props) {
                 <code>{shareLink(p.live.host ? p.live.lanUrl : p.live.url, p.live.room)}</code>
                 <button className="btn" onClick={() => copy(shareLink(p.live!.host ? p.live!.lanUrl : p.live!.url, p.live!.room))}><Copy /> {copied ? "Copied" : "Copy Link"}</button>
               </div>
-              <p className="target">Coauthors on the same network paste the link into File › Share. For people elsewhere, run the relay on a server you control (<code>node relay/dist/relay.cjs</code>) and start the session there.</p>
+              <p className="target">The relay runs inside Dabir on port 1234; coauthors on the same network paste the link into File › Share. For people elsewhere, forward that port or run the standalone relay on a server you control (<code>node relay/dist/relay.cjs</code>) and join it from both sides.</p>
               <div className="actions"><button className="btn danger" onClick={wrap(p.onStop)} disabled={!!p.busy}><Square /> {p.live.host ? "End Session" : "Leave Session"}</button></div>
             </>
           )}
