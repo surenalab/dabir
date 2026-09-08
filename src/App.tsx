@@ -325,6 +325,7 @@ export default function App() {
     if (session) yDisconnect(session);
     unpersist.current?.(); unpersist.current = null;
     setSession(null); setPeers([]); setComments([]); setLive(null); setHostAway(false);
+    (window as unknown as { __session?: Session }).__session = undefined;
     if (live?.host && live.transport === "relay") await relayStop();
     // The host's checkout is the record of the session: suggest the commit.
     if (live?.host) { setCommitDraft(`Live session${names.length ? ` with ${names.join(", ")}` : ""}`); setNavOpen(true); }
