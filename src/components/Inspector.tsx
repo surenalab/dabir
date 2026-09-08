@@ -81,12 +81,14 @@ interface Props {
   project: Project | null;
   gitRepo: boolean;
   askFocus: number;
+  prefill: { text: string; stamp: number } | null;
+  onProviderReady: (ready: boolean) => void;
   onChanged: () => void;         // git status or files changed
   onOpenFile: (path: string) => void;
   onNote: (text: string) => void;
 }
 
-export function Inspector({ project, gitRepo, askFocus, onChanged, onOpenFile, onNote, live, peers, comments, currentFile, hasSelection, onAddComment, onResolveComment, onRemoveComment, onJumpComment, onShare }: Props) {
+export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady, onChanged, onOpenFile, onNote, live, peers, comments, currentFile, hasSelection, onAddComment, onResolveComment, onRemoveComment, onJumpComment, onShare }: Props) {
   const [commentDraft, setCommentDraft] = useState("");
   const [tab, setTab] = useState<Tab>("agent");
   const [providers, setProviders] = useState<Provider[]>([]);
@@ -103,6 +105,8 @@ export function Inspector({ project, gitRepo, askFocus, onChanged, onOpenFile, o
 
   useEffect(() => { agentProviders().then((ps) => { setProviders(ps); const first = ps.find((p) => p.installed); if (first && !ps.find((p) => p.id === provider)?.installed) setProvider(first.id); }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (askFocus) { setTab("agent"); textarea.current?.focus(); } }, [askFocus]);
+  useEffect(() => { if (prefill) { setTab("agent"); setDraft(prefill.text); setTimeout(() => textarea.current?.focus(), 50); } }, [prefill]);
+  useEffect(() => { onProviderReady(!!providers.find((p) => p.id === provider)?.installed); }, [providers, provider, onProviderReady]);
 
   const refreshMemory = useCallback(() => { if (project) memoryRead(project.root).then(setMemory).catch(() => setMemory(null)); else setMemory(null); }, [project]);
   useEffect(() => { refreshMemory(); }, [refreshMemory]);

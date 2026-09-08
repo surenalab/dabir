@@ -12,7 +12,7 @@ export type EntryKind = "dir" | "tex" | "bib" | "code" | "figure" | "data" | "ot
 export interface Entry { name: string; path: string; kind: EntryKind; children: Entry[] }
 export interface Project { root: string; name: string; mainTex: string | null; hasGit: boolean; hasMemory: boolean; tree: Entry[] }
 
-export interface Diagnostic { severity: "error" | "warning"; file: string | null; line: number | null; message: string }
+export interface Diagnostic { severity: "error" | "warning" | "info"; category: string; file: string | null; line: number | null; message: string; context: string | null }
 export interface CompileResult { ok: boolean; pdf: string | null; log: string; diagnostics: Diagnostic[]; engine: string; millis: number }
 
 export interface PdfPos { page: number; x: number; y: number }
@@ -90,7 +90,11 @@ export async function compile(mainTex: string): Promise<CompileResult> {
   if (!native) {
     await wait(900);
     return { ok: true, pdf: null, engine: "sample", millis: 900, log: "(browser preview: no TeX engine available)",
-      diagnostics: [{ severity: "warning", file: "main.tex", line: 51, message: "Citation `chung2023dps' undefined in browser preview" }] };
+      diagnostics: [
+        { severity: "error", category: "syntax", file: "main.tex", line: 41, message: "Undefined control sequence", context: "! Undefined control sequence.\nl.41 \\section{Results}\\undefinedmacro\n                                     {x}" },
+        { severity: "warning", category: "citation", file: "main.tex", line: 51, message: "Citation `chung2023dps' on page 1 undefined", context: "LaTeX Warning: Citation `chung2023dps' on page 1 undefined on input line 51." },
+        { severity: "info", category: "font", file: "main.tex", line: 503, message: "Font shape `TU/ptm/m/n' undefined", context: null },
+      ] };
   }
   return invoke<CompileResult>("compile", { mainTex });
 }
