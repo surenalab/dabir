@@ -52,6 +52,9 @@
           "libgtk-3-0"
         ]
       }
+    },
+    "resources": {
+      "../templates/**/*": "templates/"
     }
   },
   "plugins": {

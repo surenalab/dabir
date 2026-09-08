@@ -1,7 +1,9 @@
 import { useEffect } from "react";
 
 const ROWS: [string, string[]][] = [
+  ["New Paper…", ["⌘", "N"]],
   ["Open Paper…", ["⌘", "O"]],
+  ["Share…", ["⇧", "⌘", "S"]],
   ["Save", ["⌘", "S"]],
   ["Compile", ["⌘", "B"]],
   ["Show Compile Log", ["⇧", "⌘", "L"]],

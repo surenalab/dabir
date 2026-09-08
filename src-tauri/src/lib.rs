@@ -110,11 +110,15 @@ fn walk(dir: &Path, depth: usize) -> Vec<Entry> {
     entries
 }
 
-/// Find the root document: a .tex file containing \documentclass, preferring main.tex.
+/// Find the root document: main.tex, a .tex file containing \documentclass, or main.typ.
 fn find_main_tex(root: &Path) -> Option<PathBuf> {
     let preferred = root.join("main.tex");
     if preferred.exists() {
         return Some(preferred);
+    }
+    let typ = root.join("main.typ");
+    if typ.exists() {
+        return Some(typ);
     }
     let Ok(read) = fs::read_dir(root) else { return None };
     read.filter_map(|e| e.ok().map(|e| e.path()))
@@ -237,6 +241,55 @@ fn find_tectonic() -> Option<PathBuf> {
     })
 }
 
+fn find_typst() -> Option<PathBuf> {
+    if let Ok(p) = std::env::var("DABIR_TYPST") { return Some(PathBuf::from(p)); }
+    if let Ok(exe) = std::env::current_exe() { if let Some(dir) = exe.parent() { for n in ["typst", "typst.exe"] { let p = dir.join(n); if p.is_file() { return Some(p); } } } }
+    for c in ["/opt/homebrew/bin/typst", "/usr/local/bin/typst", "/usr/bin/typst"] { if Path::new(c).exists() { return Some(PathBuf::from(c)); } }
+    std::env::var_os("PATH").and_then(|paths| std::env::split_paths(&paths).map(|d| d.join("typst")).find(|p| p.is_file()))
+}
+
+/// Typst diagnostics look like:
+///   error: unknown variable: foo
+///     ┌─ main.typ:12:5
+fn parse_typst_log(log: &str) -> Vec<Diagnostic> {
+    let lines: Vec<&str> = log.lines().collect();
+    let mut out = vec![];
+    let mut i = 0;
+    while i < lines.len() {
+        let l = lines[i].trim_start();
+        let (sev, msg) = if let Some(m) = l.strip_prefix("error: ") { ("error", m) } else if let Some(m) = l.strip_prefix("warning: ") { ("warning", m) } else { i += 1; continue };
+        let mut file = None; let mut line = None; let mut j = i + 1;
+        while j < lines.len() && j < i + 6 {
+            let t = lines[j].trim();
+            if let Some(rest) = t.strip_prefix("┌─ ") {
+                let mut parts = rest.rsplitn(3, ':');
+                let _col = parts.next(); let ln = parts.next(); let f = parts.next();
+                line = ln.and_then(|n| n.parse().ok()); file = f.map(|f| f.to_string());
+                break;
+            }
+            j += 1;
+        }
+        let end = (j + 4).min(lines.len());
+        out.push(Diagnostic { severity: sev.into(), category: "syntax".into(), file, line, message: msg.trim().to_string(), context: Some(lines[i..end].join("\n")) });
+        i = end.max(i + 1);
+    }
+    out
+}
+
+fn compile_typst(app: &AppHandle, main: &Path, root: &Path, outdir: &Path) -> Result<CompileResult, String> {
+    let Some(typst) = find_typst() else {
+        return Ok(CompileResult { ok: false, pdf: None, log: String::new(), engine: "none".into(), millis: 0, diagnostics: vec![Diagnostic { severity: "error".into(), category: "other".into(), file: None, line: None, message: "Typst is not installed. Install it with `brew install typst`, or set DABIR_TYPST to its path.".into(), context: None }] });
+    };
+    let stem = main.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or("main".into());
+    let pdf = outdir.join(format!("{}.pdf", stem));
+    let started = std::time::Instant::now();
+    let _ = app.emit("compile-progress", "typst compile".to_string());
+    let out = Command::new(&typst).current_dir(root).args(["compile", "--root"]).arg(root).arg(main).arg(&pdf).output().map_err(|e| format!("Could not start Typst: {}", e))?;
+    let log = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+    let ok = out.status.success() && pdf.exists();
+    Ok(CompileResult { ok, pdf: if pdf.exists() { Some(pdf.to_string_lossy().to_string()) } else { None }, diagnostics: parse_typst_log(&log), log, engine: format!("typst ({})", typst.display()), millis: started.elapsed().as_millis() })
+}
+
 /// Parse Tectonic's output into diagnostics. Tectonic prints lines like
 /// `error: main.tex:12: Undefined control sequence.` and
 /// `warning: main.tex:40: Citation `foo' on page 2 undefined`.
@@ -284,6 +337,9 @@ fn compile(app: AppHandle, main_tex: String) -> Result<CompileResult, String> {
     let root = main.parent().ok_or("The main .tex file has no parent folder")?;
     let outdir = root.join(".dabir").join("build");
     fs::create_dir_all(&outdir).map_err(|e| e.to_string())?;
+    if main.extension().map(|e| e == "typ").unwrap_or(false) {
+        return compile_typst(&app, &main, root, &outdir);
+    }
 
     let Some(tectonic) = find_tectonic() else {
         return Ok(CompileResult {
@@ -368,6 +424,97 @@ fn compile(app: AppHandle, main_tex: String) -> Result<CompileResult, String> {
         engine: format!("tectonic ({})", tectonic.display()),
         millis,
     })
+}
+
+// ---------------------------------------------------------------- new paper and references
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Template { id: String, label: String, main: String }
+
+fn templates_dir(app: &AppHandle) -> Option<PathBuf> {
+    app.path().resolve("templates", tauri::path::BaseDirectory::Resource).ok().filter(|p| p.is_dir())
+        .or_else(|| { let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../templates"); if dev.is_dir() { Some(dev) } else { None } })
+}
+
+#[tauri::command]
+fn templates_list(app: AppHandle) -> Vec<Template> {
+    let labels = [("ieee-journal", "IEEE journal (IEEEtran)"), ("acm-sigconf", "ACM conference (acmart)"), ("elsevier-article", "Elsevier article (elsarticle)"), ("article", "Plain article"), ("typst-article", "Typst article")];
+    let Some(dir) = templates_dir(&app) else { return vec![] };
+    labels.iter().filter(|(id, _)| dir.join(id).is_dir()).map(|(id, label)| {
+        let main = if dir.join(id).join("main.typ").exists() { "main.typ" } else { "main.tex" };
+        Template { id: id.to_string(), label: label.to_string(), main: main.into() }
+    }).collect()
+}
+
+/// Copy a template into a new folder, initialise Git, and draft the memory scaffold.
+#[tauri::command]
+fn new_paper(app: AppHandle, parent: String, name: String, template: String) -> Result<String, String> {
+    let dir = templates_dir(&app).ok_or("Templates are missing from this build")?.join(&template);
+    if !dir.is_dir() { return Err(format!("Unknown template {}", template)); }
+    let safe = name.trim().replace(|c: char| !(c.is_alphanumeric() || c == '-' || c == '_'), "-");
+    if safe.is_empty() { return Err("Give the paper a folder name".into()); }
+    let dest = PathBuf::from(&parent).join(&safe);
+    if dest.exists() { return Err(format!("{} already exists", dest.display())); }
+    fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
+    for e in fs::read_dir(&dir).map_err(|e| e.to_string())?.flatten() {
+        let p = e.path();
+        if p.is_file() { fs::copy(&p, dest.join(e.file_name())).map_err(|e| e.to_string())?; }
+    }
+    for d in ["figures", "code", "tables"] { let _ = fs::create_dir_all(dest.join(d)); }
+    git::init(&dest)?;
+    let main = find_main_tex(&dest);
+    memory::setup(&dest, main.as_deref())?;
+    git::commit(&dest, "New paper from Dabir template", None)?;
+    Ok(dest.to_string_lossy().to_string())
+}
+
+fn bib_keys(text: &str) -> std::collections::HashSet<String> {
+    text.lines().filter_map(|l| { let t = l.trim(); if t.starts_with('@') { t.split('{').nth(1).map(|k| k.trim_end_matches(',').trim().to_string()) } else { None } }).collect()
+}
+
+/// Merge BibTeX text into the project's references file, skipping keys already present.
+fn merge_bib(root: &Path, incoming: &str) -> Result<(usize, String), String> {
+    let target = ["refs.bib", "references.bib", "bibliography.bib"].iter().map(|n| root.join(n)).find(|p| p.exists()).unwrap_or_else(|| root.join("refs.bib"));
+    let existing = fs::read_to_string(&target).unwrap_or_default();
+    let have = bib_keys(&existing);
+    let mut added = 0;
+    let mut out = existing.clone();
+    let mut entry = String::new();
+    let mut depth = 0i32;
+    let flush = |entry: &mut String, out: &mut String, added: &mut usize| {
+        let key = bib_keys(entry).into_iter().next();
+        if let Some(k) = key { if !have.contains(&k) { if !out.ends_with("\n\n") && !out.is_empty() { out.push_str("\n"); } out.push_str(entry.trim()); out.push_str("\n\n"); *added += 1; } }
+        entry.clear();
+    };
+    for l in incoming.lines() {
+        if l.trim_start().starts_with('@') && depth == 0 && !entry.trim().is_empty() { flush(&mut entry, &mut out, &mut added); }
+        entry.push_str(l); entry.push('\n');
+        depth += l.matches('{').count() as i32 - l.matches('}').count() as i32;
+        if depth <= 0 && entry.trim_start().starts_with('@') { depth = 0; flush(&mut entry, &mut out, &mut added); }
+    }
+    if !entry.trim().is_empty() { flush(&mut entry, &mut out, &mut added); }
+    fs::write(&target, out).map_err(|e| e.to_string())?;
+    Ok((added, target.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()))
+}
+
+#[tauri::command]
+fn bib_import_file(root: String, path: String) -> Result<String, String> {
+    let text = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let (n, target) = merge_bib(Path::new(&root), &text)?;
+    Ok(format!("Added {} new entr{} to {}.", n, if n == 1 { "y" } else { "ies" }, target))
+}
+
+/// Pull the whole library (or a collection) from Zotero's local API as BibTeX and merge it.
+#[tauri::command]
+fn zotero_import(root: String) -> Result<String, String> {
+    let url = "http://127.0.0.1:23119/api/users/0/items?format=bibtex&limit=100&sort=dateModified&direction=desc";
+    let text = ureq::get(url).config().timeout_global(Some(std::time::Duration::from_secs(8))).build().call()
+        .map_err(|_| "Zotero is not reachable. Start Zotero 7 and enable Settings → Advanced → Allow other applications to communicate with Zotero.".to_string())?
+        .body_mut().read_to_string().map_err(|e| e.to_string())?;
+    if !text.contains('@') { return Err("Zotero answered but sent no BibTeX entries.".into()); }
+    let (n, target) = merge_bib(Path::new(&root), &text)?;
+    Ok(format!("Imported {} new entr{} from Zotero into {}.", n, if n == 1 { "y" } else { "ies" }, target))
 }
 
 // ---------------------------------------------------------------- synctex
@@ -538,6 +685,7 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
         .build()?;
 
     let file = SubmenuBuilder::new(app, "File")
+        .item(&MenuItemBuilder::with_id("new", "New Paper…").accelerator("CmdOrCtrl+N").build(app)?)
         .item(&MenuItemBuilder::with_id("open", "Open Paper…").accelerator("CmdOrCtrl+O").build(app)?)
         .item(&MenuItemBuilder::with_id("import-overleaf", "Import from Overleaf…").build(app)?)
         .item(&MenuItemBuilder::with_id("clone", "Clone from GitHub…").accelerator("CmdOrCtrl+Shift+O").build(app)?)
@@ -620,6 +768,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             open_project, read_text, write_text, read_binary, compile, compile_cancel, import_overleaf_zip,
+            templates_list, new_paper, bib_import_file, zotero_import,
             synctex_forward, synctex_inverse,
             git_status, git_init, git_commit, git_clone, git_remote_add, git_remote_url, git_pull, git_push, relay_start, relay_stop,
             agent_providers, agent_run, agent_cancel, agent_diff, agent_accept, agent_reject, agent_pull_request,
@@ -687,6 +836,20 @@ mod tests {
         assert_eq!(id.len(), 7);
         assert_eq!(fs::read_to_string(dir.join("main.tex")).unwrap(), "changed\n");
         assert!(!wt.exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn merges_bib_without_duplicates() {
+        let dir = std::env::temp_dir().join(format!("dabir-bib-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir); fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("refs.bib"), "@article{a2020,\n  title={A},\n  year={2020}\n}\n").unwrap();
+        let (n, t) = merge_bib(&dir, "@article{a2020,\n  title={A dup}\n}\n@book{b2021,\n  title={B},\n  publisher={P}\n}\n").unwrap();
+        assert_eq!((n, t.as_str()), (1, "refs.bib"));
+        let out = fs::read_to_string(dir.join("refs.bib")).unwrap();
+        assert!(out.contains("b2021") && !out.contains("A dup"));
+        let d = parse_typst_log("error: unknown variable: foo\n  ┌─ main.typ:12:5\n  │\n12 │ #foo\n");
+        assert_eq!(d[0].line, Some(12)); assert_eq!(d[0].file.as_deref(), Some("main.typ"));
         let _ = fs::remove_dir_all(&dir);
     }
 

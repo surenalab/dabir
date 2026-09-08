@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Copy, Radio, Square, Upload, Download, Link2 } from "lucide-react";
+import { Copy, Radio, Square, Upload, Download, Link2, BookMarked } from "lucide-react";
 import { parseShareLink, shareLink, userName, setUserName } from "../lib/collab";
 
 export type LiveState = { url: string; lanUrl: string; room: string; host: boolean } | null;
@@ -16,6 +16,8 @@ interface Props {
   onSetOverleaf: (url: string) => Promise<void>;
   onPull: () => Promise<void>;
   onPush: () => Promise<void>;
+  onZotero: () => Promise<void>;
+  onBibFile: () => Promise<void>;
 }
 
 export function ShareSheet(p: Props) {
@@ -79,6 +81,15 @@ export function ShareSheet(p: Props) {
             <button className="btn" onClick={wrap(() => p.onSetOverleaf(overleaf.trim()))} disabled={!overleaf.trim() || overleaf.trim() === p.overleafUrl || !!p.busy}>Save Remote</button>
             <button className="btn" onClick={wrap(p.onPull)} disabled={!p.overleafUrl || !!p.busy}><Download /> {p.busy === "pull" ? "Pulling…" : "Pull from Overleaf"}</button>
             <button className="btn" onClick={wrap(p.onPush)} disabled={!p.overleafUrl || !!p.busy}><Upload /> {p.busy === "push" ? "Pushing…" : "Push to Overleaf"}</button>
+          </div>
+        </section>
+
+        <section className="share-section">
+          <h3><BookMarked aria-hidden /> References</h3>
+          <p className="memory-note">Merge entries into the paper's <code>.bib</code> without duplicates: from Zotero 7 running on this Mac (its local API), or from any BibTeX file.</p>
+          <div className="actions">
+            <button className="btn" onClick={wrap(p.onZotero)} disabled={!!p.busy}>{p.busy === "zotero" ? "Importing…" : "Import from Zotero"}</button>
+            <button className="btn" onClick={wrap(p.onBibFile)} disabled={!!p.busy}>Import .bib File…</button>
           </div>
         </section>
 
