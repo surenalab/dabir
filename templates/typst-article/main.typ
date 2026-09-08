@@ -6,6 +6,7 @@
 *Abstract.* Abstract.
 
 = Introduction
+Cite like this @example2026.
 = Method
 = Results
 = Conclusion

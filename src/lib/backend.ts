@@ -106,6 +106,28 @@ export async function importOverleaf(): Promise<string | null> {
   return invoke<string>("import_overleaf_zip", { zipPath: picked, dest: null });
 }
 
+// ---------------------------------------------------------------- new paper and references
+
+export interface Template { id: string; label: string; main: string }
+export async function templatesList(): Promise<Template[]> {
+  if (!native) return [{ id: "ieee-journal", label: "IEEE journal (IEEEtran)", main: "main.tex" }, { id: "article", label: "Plain article", main: "main.tex" }, { id: "typst-article", label: "Typst article", main: "main.typ" }];
+  return invoke<Template[]>("templates_list");
+}
+export async function newPaper(parent: string, name: string, template: string): Promise<string> {
+  if (!native) { await wait(400); return SAMPLE_PROJECT.root; }
+  return invoke<string>("new_paper", { parent, name, template });
+}
+export async function bibImportFile(root: string): Promise<string | null> {
+  if (!native) { await wait(300); return "Added 3 new entries to refs.bib."; }
+  const picked = await openDialog({ multiple: false, title: "Import references", filters: [{ name: "BibTeX", extensions: ["bib"] }] });
+  if (typeof picked !== "string") return null;
+  return invoke<string>("bib_import_file", { root, path: picked });
+}
+export async function zoteroImport(root: string): Promise<string> {
+  if (!native) { await wait(300); return "Imported 5 new entries from Zotero into refs.bib."; }
+  return invoke<string>("zotero_import", { root });
+}
+
 // ---------------------------------------------------------------- synctex
 
 export async function synctexForward(mainTex: string, file: string, line: number): Promise<PdfPos | null> {

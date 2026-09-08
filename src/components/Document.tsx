@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from "react";
-import { AlertCircle, CheckCircle2, FolderOpen, GitBranch, Loader2, Circle, Upload } from "lucide-react";
+import { AlertCircle, CheckCircle2, FolderOpen, FilePlus, GitBranch, Loader2, Circle, Upload } from "lucide-react";
 import { parseDocument, type BibEntry } from "../lib/latex";
 import { setVisualContext } from "../lib/visual";
 import { readBinary, type PdfPos, type Project } from "../lib/backend";
@@ -68,6 +68,7 @@ interface Props {
   onOpen: () => void;
   onImport: () => void;
   onClone: () => void;
+  onNew: () => void;
   onOutline: (o: ReturnType<typeof parseDocument>["outline"]) => void;
   onSourceChange: (text: string) => void;
   onSave: () => void;
@@ -121,6 +122,7 @@ export function Document(p: Props) {
             <p>Dabir works on a folder: your manuscript, its figures, and the code that made them. Nothing is uploaded, nothing is converted.</p>
             <div className="actions">
               <button className="btn primary" onClick={p.onOpen}><FolderOpen /> Open Folder…</button>
+              <button className="btn" onClick={p.onNew} title="Start from a journal template"><FilePlus /> New Paper…</button>
               <button className="btn" onClick={p.onImport} title="Unpack an Overleaf source zip into a folder"><Upload /> Import from Overleaf…</button>
               <button className="btn" onClick={p.onClone}><GitBranch /> Clone from GitHub…</button>
             </div>
@@ -131,7 +133,7 @@ export function Document(p: Props) {
     );
   }
 
-  const isTex = !p.file || /\.(tex|sty|cls|bib|md|txt|toml|py|json)$/i.test(p.file);
+  const isTex = !p.file || /\.(tex|sty|cls|bib|md|txt|toml|py|json|typ)$/i.test(p.file);
 
   return (
     <main className="document">
