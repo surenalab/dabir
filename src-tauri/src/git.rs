@@ -108,21 +108,25 @@ pub fn init(root: &Path) -> Result<(), String> {
     Repository::init(root).map(|_| ()).map_err(|e| e.to_string())
 }
 
+/// `paths` are repository-relative (the form `git diff --name-only` prints). Without paths, everything
+/// under the paper is staged, so a paper inside a larger repository commits only its own files.
 pub fn commit(root: &Path, message: &str, paths: Option<Vec<String>>) -> Result<String, String> {
     let repo = Repository::discover(root).map_err(|e| e.to_string())?;
+    let (workdir, prefix) = repo_prefix(root)?;
     let mut index = repo.index().map_err(|e| e.to_string())?;
     match paths {
         Some(ps) if !ps.is_empty() => {
             for p in ps {
-                let full = root.join(&p);
+                let full = workdir.join(&p);
                 if full.exists() { index.add_path(Path::new(&p)).map_err(|e| e.to_string())?; }
                 else { let _ = index.remove_path(Path::new(&p)); }
             }
         }
         _ => {
-            let mut skip = |path: &Path, _spec: &[u8]| -> i32 { if path.starts_with(".dabir/worktrees") || path.starts_with(".dabir/build") || path.starts_with(".dabir/index") { 1 } else { 0 } };
-            index.add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, Some(&mut skip)).map_err(|e| e.to_string())?;
-            index.update_all(["*"].iter(), None).map_err(|e| e.to_string())?;
+            let spec = if prefix.is_empty() { "*".to_string() } else { format!("{}*", prefix) };
+            let mut skip = |path: &Path, _spec: &[u8]| -> i32 { let s = path.to_string_lossy(); if s.contains(".dabir/worktrees") || s.contains(".dabir/build") || s.contains(".dabir/index") { 1 } else { 0 } };
+            index.add_all([spec.as_str()].iter(), git2::IndexAddOption::DEFAULT, Some(&mut skip)).map_err(|e| e.to_string())?;
+            index.update_all([spec.as_str()].iter(), None).map_err(|e| e.to_string())?;
         }
     }
     index.write().map_err(|e| e.to_string())?;
@@ -165,6 +169,17 @@ pub fn clone(url: &str, dest: &Path) -> Result<String, String> {
 
 pub fn worktree_dir(root: &Path, run_id: &str) -> PathBuf { root.join(".dabir").join("worktrees").join(run_id) }
 
+/// A paper may live inside a larger repository (a monorepo, or the bundled sample inside Dabir's own
+/// checkout). Everything Git-side works on the repository; everything the user sees is relative to the
+/// paper. This returns the repository's working directory and the paper's prefix inside it ("" or "sub/dir/").
+pub fn repo_prefix(root: &Path) -> Result<(PathBuf, String), String> {
+    let repo = Repository::discover(root).map_err(|_| "This folder is not a Git repository. Initialise one first so agent runs can be isolated.".to_string())?;
+    let wd = repo.workdir().ok_or("Bare repositories are not supported")?.canonicalize().map_err(|e| e.to_string())?;
+    let rootc = root.canonicalize().map_err(|e| e.to_string())?;
+    let rel = rootc.strip_prefix(&wd).map(|p| p.to_string_lossy().replace('\\', "/")).unwrap_or_default();
+    Ok((wd, if rel.is_empty() { String::new() } else { format!("{}/", rel.trim_end_matches('/')) }))
+}
+
 /// Create a worktree on a fresh branch so the agent never touches the user's checkout.
 pub fn worktree_add(root: &Path, run_id: &str) -> Result<PathBuf, String> {
     let dir = worktree_dir(root, run_id);
@@ -186,9 +201,11 @@ pub fn worktree_add(root: &Path, run_id: &str) -> Result<PathBuf, String> {
         .args(["worktree", "add", "-b", &format!("dabir/{}", run_id)]).arg(&dir).arg("HEAD")
         .output().map_err(|e| e.to_string())?;
     if !out.status.success() { return Err(String::from_utf8_lossy(&out.stderr).to_string()); }
-    // Ignore Dabir's own build output inside the worktree.
-    let _ = std::fs::create_dir_all(dir.join(".dabir"));
-    Ok(dir)
+    // The agent works in the paper's folder inside the worktree, which is the whole repository.
+    let (_, prefix) = repo_prefix(root)?;
+    let cwd = dir.join(&prefix);
+    let _ = std::fs::create_dir_all(cwd.join(".dabir"));
+    Ok(cwd)
 }
 
 #[derive(Serialize, Debug)]
@@ -202,12 +219,15 @@ pub fn worktree_diff(root: &Path, run_id: &str) -> Result<WorktreeDiff, String> 
     if !out.status.success() { return Err(String::from_utf8_lossy(&out.stderr).to_string()); }
     let patch = Command::new("git").current_dir(&dir).args(["diff", "--cached", "--binary", "HEAD"]).output().map_err(|e| e.to_string())?;
     let stat = Command::new("git").current_dir(&dir).args(["diff", "--cached", "--numstat", "HEAD"]).output().map_err(|e| e.to_string())?;
+    let (_, prefix) = repo_prefix(root)?;
     let mut changes = vec![];
     for line in String::from_utf8_lossy(&stat.stdout).lines() {
         let parts: Vec<&str> = line.split('\t').collect();
         if parts.len() < 3 { continue; }
         let binary = parts[0] == "-";
-        changes.push(Change { path: parts[2].into(), status: "modified".into(), add: parts[0].parse().unwrap_or(0), del: parts[1].parse().unwrap_or(0), binary });
+        // Paths are shown relative to the paper; anything the agent touched outside it keeps its repository path.
+        let path = parts[2].strip_prefix(prefix.as_str()).map(|p| p.to_string()).unwrap_or_else(|| format!("../{}", parts[2]));
+        changes.push(Change { path, status: "modified".into(), add: parts[0].parse().unwrap_or(0), del: parts[1].parse().unwrap_or(0), binary });
     }
     Ok(WorktreeDiff { patch: String::from_utf8_lossy(&patch.stdout).to_string(), changes })
 }
@@ -256,6 +276,9 @@ pub fn filter_patch(patch: &str, picks: &[Pick]) -> String {
 /// With `paths`, only those files are applied and committed; the rest is discarded with the worktree.
 pub fn worktree_accept(root: &Path, run_id: &str, message: &str, picks: Option<Vec<Pick>>) -> Result<String, String> {
     let dir = worktree_dir(root, run_id);
+    let (workdir, prefix) = repo_prefix(root)?;
+    // Picks arrive relative to the paper; the patch speaks in repository paths.
+    let picks = picks.map(|ps| ps.into_iter().map(|p| Pick { path: if let Some(r) = p.path.strip_prefix("../") { r.to_string() } else { format!("{}{}", prefix, p.path) }, hunks: p.hunks }).collect::<Vec<_>>());
     let full = Command::new("git").current_dir(&dir).args(["diff", "--cached", "--binary", "HEAD"]).output().map_err(|e| e.to_string())?;
     let full = String::from_utf8_lossy(&full.stdout).to_string();
     let (patch, selected): (String, Vec<String>) = match &picks {
@@ -266,14 +289,15 @@ pub fn worktree_accept(root: &Path, run_id: &str, message: &str, picks: Option<V
         }
     };
     if !patch.trim().is_empty() {
-        let mut child = Command::new("git").current_dir(root).args(["apply", "--3way", "--index", "-"]).stdin(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn().map_err(|e| e.to_string())?;
+        // Apply from the repository root: git apply run in a subdirectory silently drops paths outside it.
+        let mut child = Command::new("git").current_dir(&workdir).args(["apply", "--3way", "--index", "-"]).stdin(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn().map_err(|e| e.to_string())?;
         use std::io::Write;
         child.stdin.take().unwrap().write_all(patch.as_bytes()).map_err(|e| e.to_string())?;
         let out = child.wait_with_output().map_err(|e| e.to_string())?;
         if !out.status.success() { return Err(format!("Could not apply the agent's changes: {}", String::from_utf8_lossy(&out.stderr))); }
     }
     let mut selected = selected;
-    if root.join(".dabir/memory/runs.md").exists() && !selected.is_empty() { selected.push(".dabir/memory/runs.md".into()); }
+    if root.join(".dabir/memory/runs.md").exists() && !selected.is_empty() { selected.push(format!("{}.dabir/memory/runs.md", prefix)); }
     let id = commit(root, message, if selected.is_empty() { None } else { Some(selected) })?;
     worktree_remove(root, run_id)?;
     Ok(id)

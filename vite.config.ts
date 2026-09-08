@@ -26,7 +26,8 @@ export default defineConfig(() => ({
       : undefined,
     watch: {
       // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      // Agent worktrees and compile output live under .dabir; a change there must never reload the app.
+      ignored: ["**/src-tauri/**", "**/.dabir/**", "**/examples/**", "**/Dabir Sessions/**"],
     },
   },
 }));
