@@ -6,10 +6,11 @@ import { Inspector } from "./components/Inspector";
 import { ShortcutSheet } from "./components/ShortcutSheet";
 import { CloneSheet } from "./components/CloneSheet";
 import { ShareSheet, type LiveState } from "./components/ShareSheet";
+import { NewPaperSheet } from "./components/NewPaperSheet";
 import { addComment as yAddComment, connect as yConnect, decodeRange, disconnect as yDisconnect, encodeRange, peers as yPeers, randomRoom, removeComment as yRemoveComment, resolveComment as yResolveComment, setCurrentFile, textFor, type Comment, type Peer, type Session } from "./lib/collab";
 import type { CommentRange } from "./components/SourceEditor";
 import {
-  checkForUpdates, compile as runCompile, compileCancel, gitClone, gitPull, gitPush, gitRemoteAdd, gitRemoteUrl, isMac, onCompileProgress, relayStart, relayStop, gitCommit, gitInit, gitStatus, importOverleaf, native, onMenu, onWindowFocus,
+  bibImportFile, checkForUpdates, newPaper, zoteroImport, compile as runCompile, compileCancel, gitClone, gitPull, gitPush, gitRemoteAdd, gitRemoteUrl, isMac, onCompileProgress, relayStart, relayStop, gitCommit, gitInit, gitStatus, importOverleaf, native, onMenu, onWindowFocus,
   openProject, pickFolder, readText, setWindowTitle, synctexForward, synctexInverse, writeText,
   type CompileResult, type GitStatus, type PdfPos, type Project,
 } from "./lib/backend";
@@ -46,7 +47,7 @@ export default function App() {
   const [focused, setFocused] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  const [sheet, setSheet] = useState<"shortcuts" | "clone" | "share" | null>(null);
+  const [sheet, setSheet] = useState<"shortcuts" | "clone" | "share" | "new" | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [live, setLive] = useState<LiveState>(null);
   const [liveBusy, setLiveBusy] = useState<string | null>(null);
@@ -113,6 +114,16 @@ export default function App() {
   const importFromOverleaf = useCallback(async () => {
     try { const folder = await importOverleaf(); if (folder) await openFolder(folder); } catch (e) { setError(String(e)); }
   }, [openFolder]);
+
+  const createPaper = useCallback(async (name: string, template: string) => {
+    const parent = await pickFolder("Choose where to create the paper");
+    if (!parent) return;
+    const dest = await newPaper(parent, name, template);
+    await openFolder(dest);
+    setNote("New paper created with Git and memory set up.");
+  }, [openFolder]);
+  const importZotero = useCallback(async () => { if (!project) return; setLiveBusy("zotero"); try { setNote(await zoteroImport(project.root)); await reloadProject(); } finally { setLiveBusy(null); } }, [project, reloadProject]);
+  const importBib = useCallback(async () => { if (!project) return; const r = await bibImportFile(project.root); if (r) { setNote(r); await reloadProject(); } }, [project, reloadProject]);
 
   const cloneRepo = useCallback(async (url: string) => {
     const parent = await pickFolder("Choose where to clone");
@@ -276,6 +287,7 @@ export default function App() {
   const command = useCallback((id: string) => {
     switch (id) {
       case "open": open(); break;
+      case "new": setSheet("new"); break;
       case "import-overleaf": importFromOverleaf(); break;
       case "clone": setSheet("clone"); break;
       case "share": setSheet("share"); break;
@@ -365,7 +377,7 @@ export default function App() {
       <Document project={project} file={file} source={source} bib={bib} mode={mode} jumpLine={jumpLine} jumpStamp={jumpStamp}
         compileState={compileState} progress={progress} showLog={showLog} onToggleLog={() => setShowLog((v) => !v)} findRequest={findRequest}
         error={error ?? note} onDismissError={() => { setError(null); setNote(null); }} pdfTarget={pdfTarget}
-        onOpen={open} onImport={importFromOverleaf} onClone={() => setSheet("clone")} onOutline={setOutline}
+        onOpen={open} onImport={importFromOverleaf} onClone={() => setSheet("clone")} onNew={() => setSheet("new")} onOutline={setOutline}
         onSourceChange={onSourceChange} onSave={save} onCursorLine={setCursorLine} onSelectFile={selectFile} onJump={jumpTo} onPdfClick={onPdfClick}
         compileOnSave={compileOnSave} onToggleCompileOnSave={toggleCompileOnSave}
         agentReady={agentReady} onJumpFile={jumpToFile} onFix={fixWithAgent}
@@ -379,8 +391,10 @@ export default function App() {
       {sheet === "clone" && <CloneSheet onClose={() => setSheet(null)} onClone={cloneRepo} />}
       {sheet === "share" && project && (
         <ShareSheet projectName={project.name} live={live} overleafUrl={overleafUrl} busy={liveBusy} onClose={() => setSheet(null)}
-          onStart={startSession} onJoin={joinSession} onStop={stopSession} onSetOverleaf={setOverleaf} onPull={pullOverleaf} onPush={pushOverleaf} />
+          onStart={startSession} onJoin={joinSession} onStop={stopSession} onSetOverleaf={setOverleaf} onPull={pullOverleaf} onPush={pushOverleaf}
+          onZotero={importZotero} onBibFile={importBib} />
       )}
+      {sheet === "new" && <NewPaperSheet onClose={() => setSheet(null)} onCreate={createPaper} />}
     </div>
   );
 }
