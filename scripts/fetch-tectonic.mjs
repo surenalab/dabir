@@ -2,7 +2,7 @@
 // up as an external binary (sidecar) at bundle time. Runs on macOS, Linux and Windows with only Node
 // and the system `tar` (bsdtar on Windows 10+ and macOS reads zip files too).
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -33,7 +33,7 @@ writeFileSync(archive, Buffer.from(await res.arrayBuffer()));
 const tar = process.platform === "win32" ? join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe") : "tar";
 execFileSync(tar, ["-xf", asset], { cwd: tmp, stdio: "inherit" });
 mkdirSync(join("src-tauri", "binaries"), { recursive: true });
-renameSync(join(tmp, `tectonic${win ? ".exe" : ""}`), out);
+copyFileSync(join(tmp, `tectonic${win ? ".exe" : ""}`), out); // copy, not rename: the temp dir may sit on another drive
 if (!win) chmodSync(out, 0o755);
 rmSync(tmp, { recursive: true, force: true });
 console.log(`tectonic sidecar ready: ${out}`);
