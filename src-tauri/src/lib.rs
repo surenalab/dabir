@@ -996,6 +996,15 @@ mod tests {
     }
 
     #[test]
+    fn cursor_tool_call_names() {
+        let line = r#"{"type":"tool_call","subtype":"started","tool_call":{"readToolCall":{"args":{"path":"/p/main.tex"}},"hookAdditionalContexts":[],"toolCallId":"x","startedAtMs":"1"}}"#;
+        let evs = agents::parse_line_for_test("cursor", line);
+        assert_eq!(evs.len(), 1);
+        assert_eq!(evs[0].2.as_deref(), Some("Read"));
+        assert_eq!(evs[0].1, "/p/main.tex");
+    }
+
+    #[test]
     fn merges_bib_without_duplicates() {
         let dir = std::env::temp_dir().join(format!("dabir-bib-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir); fs::create_dir_all(&dir).unwrap();

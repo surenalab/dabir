@@ -230,7 +230,12 @@ pub fn worktree_diff(root: &Path, run_id: &str) -> Result<WorktreeDiff, String> 
         let path = parts[2].strip_prefix(prefix.as_str()).map(|p| p.to_string()).unwrap_or_else(|| format!("../{}", parts[2]));
         changes.push(Change { path, status: "modified".into(), add: parts[0].parse().unwrap_or(0), del: parts[1].parse().unwrap_or(0), binary });
     }
-    Ok(WorktreeDiff { patch: String::from_utf8_lossy(&patch.stdout).to_string(), changes })
+    // The patch text is what the review renders, so its headers must speak paper-relative too.
+    let mut text = String::from_utf8_lossy(&patch.stdout).to_string();
+    if !prefix.is_empty() {
+        for (from, to) in [(format!(" a/{}", prefix), " a/".to_string()), (format!(" b/{}", prefix), " b/".to_string())] { text = text.replace(&from, &to); }
+    }
+    Ok(WorktreeDiff { patch: text, changes })
 }
 
 #[derive(serde::Deserialize, Clone, Debug)]
