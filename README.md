@@ -26,7 +26,7 @@ Settings (⌘,) hold every switch: system spelling, LanguageTool grammar on dema
 
 ## Working together without a server
 
-Share (⇧⌘S) offers two ways: peer to peer over the internet, where the text travels directly between coauthors over WebRTC and a free public signalling server only introduces peers, or same-network, where Dabir hosts a small relay on your machine (Tailscale extends that across the internet at no cost). Comments are anchored to the text, survive concurrent edits, are saved in `.dabir/comments.json` when you work alone, and appear as numbered pins on the compiled PDF; Option-click a spot on the PDF to comment there.
+Share (⇧⌘S) offers three ways, none of which cost anything: direct, where machines connect straight to each other over WebRTC after you swap two short codes with each coauthor once; same-network, where Dabir hosts a small relay on your machine (Tailscale extends that across the internet for free); and a signalling server you deploy in one command to Cloudflare's free tier from `relay/signaling-worker.js`, for a fixed address that introduces peers without ever seeing the text. Comments are anchored to the text, survive concurrent edits, are saved in `.dabir/comments.json` when you work alone, and appear as numbered pins on the compiled PDF; Option-click a spot on the PDF to comment there.
 
 ## Agents, briefly
 

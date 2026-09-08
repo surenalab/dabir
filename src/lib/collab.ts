@@ -4,15 +4,13 @@
 import * as Y from "yjs";
 import { WebsocketProvider } from "y-websocket";
 import { WebrtcProvider } from "y-webrtc";
+import { ManualProvider } from "./manual";
 import type { Awareness } from "y-protocols/awareness";
 
 export interface Peer { clientId: number; name: string; color: string; file?: string; me: boolean }
 export interface Comment { id: string; author: string; color: string; text: string; file: string; anchor: string; head: string; at: number; resolved: boolean }
 
-export type Transport = "relay" | "p2p";
-
-/** Free public signalling servers used only to find peers; the document travels peer to peer over WebRTC. */
-export const PUBLIC_SIGNALING = ["wss://signaling.yjs.dev", "wss://y-webrtc-signaling-eu.herokuapp.com", "wss://y-webrtc-signaling-us.herokuapp.com"];
+export type Transport = "relay" | "p2p" | "direct";
 
 export interface Session {
   url: string;
@@ -20,7 +18,7 @@ export interface Session {
   host: boolean;
   transport: Transport;
   doc: Y.Doc;
-  provider: WebsocketProvider | WebrtcProvider;
+  provider: WebsocketProvider | WebrtcProvider | ManualProvider;
   awareness: Awareness;
   texts: Map<string, Y.Text>;
   comments: Y.Array<Comment>;
@@ -46,8 +44,8 @@ export function randomRoom(prefix: string): string {
 
 export function connect(url: string, room: string, name: string, host: boolean, transport: Transport = "relay", password?: string): Session {
   const doc = new Y.Doc();
-  const provider = transport === "p2p"
-    ? new WebrtcProvider(room, doc, { signaling: url ? [url] : PUBLIC_SIGNALING, password: password || undefined, maxConns: 12 })
+  const provider = transport === "direct" ? new ManualProvider(doc)
+    : transport === "p2p" ? new WebrtcProvider(room, doc, { signaling: [url], password: password || undefined, maxConns: 12 })
     : new WebsocketProvider(url, room, doc, { connect: true });
   const awareness = provider.awareness;
   awareness.setLocalStateField("user", { name, color: colorFor(name) });
@@ -60,6 +58,7 @@ export function whenSynced(s: Session, timeoutMs: number): Promise<void> {
     if (s.host) { resolve(); return; }
     const t = setTimeout(() => reject(new Error("Nobody answered. Check the link, and that the host still has the session open.")), timeoutMs);
     if (s.transport === "relay") (s.provider as WebsocketProvider).once("sync", () => { clearTimeout(t); resolve(); });
+    else if (s.transport === "direct") (s.provider as ManualProvider).once("synced", () => { clearTimeout(t); resolve(); });
     else (s.provider as WebrtcProvider).once("synced", () => { clearTimeout(t); resolve(); });
   });
 }
@@ -123,6 +122,7 @@ export function decodeRange(doc: Y.Doc, c: Comment): { from: number; to: number 
 
 /** A share link that Dabir understands and that also reads fine in a chat message. */
 export function shareLink(url: string, room: string, transport: Transport = "relay", password?: string): string {
+  if (transport === "direct") return "";
   const q = transport === "p2p" ? `p2p=1&room=${encodeURIComponent(room)}${password ? `&key=${encodeURIComponent(password)}` : ""}${url ? `&signal=${encodeURIComponent(url)}` : ""}` : `relay=${encodeURIComponent(url)}&room=${encodeURIComponent(room)}`;
   return `dabir://join?${q}`;
 }

@@ -12,6 +12,7 @@ import { useSettings, updateSettings } from "./lib/settings";
 import { checkGrammar, type GrammarMatch } from "./lib/grammar";
 import { collectLabels } from "./lib/completions";
 import type { PdfPin } from "./components/PdfView";
+import type { ManualProvider } from "./lib/manual";
 import { addComment as yAddComment, connect as yConnect, decodeRange, disconnect as yDisconnect, encodeRange, peers as yPeers, randomRoom, removeComment as yRemoveComment, resolveComment as yResolveComment, setCurrentFile, textFor, whenSynced, type Comment, type Peer, type Session, type Transport } from "./lib/collab";
 import type { CommentRange } from "./components/SourceEditor";
 import {
@@ -58,6 +59,7 @@ export default function App() {
   const [localComments, setLocalComments] = useState<Comment[]>([]);
   const [pins, setPins] = useState<PdfPin[]>([]);
   const addCommentRef = useRef<(text: string, at?: { from: number; to: number }) => void>(() => {});
+  const [directPeers, setDirectPeers] = useState(0);
   const [session, setSession] = useState<Session | null>(null);
   const [live, setLive] = useState<LiveState>(null);
   const [liveBusy, setLiveBusy] = useState<string | null>(null);
@@ -215,6 +217,7 @@ export default function App() {
 
   const attachSession = useCallback((sess: Session) => {
     setSession(sess);
+    (window as unknown as { __session?: Session }).__session = sess; // for automated tests
     const refresh = () => { setPeers(yPeers(sess)); };
     sess.awareness.on("change", refresh);
     const onComments = () => setComments(sess.comments.toArray());
@@ -229,7 +232,8 @@ export default function App() {
     try {
       const room = randomRoom(project.name);
       const password = transport === "p2p" ? Math.random().toString(36).slice(2, 12) : undefined;
-      const info = transport === "relay" ? await relayStart(1234) : { url: "", lanUrl: "" };
+      if (transport === "p2p" && !settings.signalingUrl) throw new Error("Set a signalling server in Settings first, or use the direct mode.");
+      const info = transport === "relay" ? await relayStart(1234) : { url: transport === "p2p" ? settings.signalingUrl : "", lanUrl: "" };
       const sess = yConnect(info.url, room, name, true, transport, password);
       // The host seeds the shared text with the open file once the relay confirms an empty doc.
       const seed = () => {
@@ -237,11 +241,33 @@ export default function App() {
         setCurrentFile(sess, rel(file));
       };
       if (transport === "relay") (sess.provider as { once: (e: string, f: () => void) => void }).once("sync", seed); else seed();
+      if (transport === "direct") (sess.provider as ManualProvider).on("peers", () => setDirectPeers((sess.provider as ManualProvider).peerCount));
       attachSession(sess);
       setLive({ url: info.url, lanUrl: info.lanUrl, room, host: true, transport, password });
-      setNote("Live session started. Share the link from the Share sheet.");
+      setNote(transport === "direct" ? "Direct session ready. Make an invite code for each coauthor." : "Live session started. Share the link from the Share sheet.");
     } finally { setLiveBusy(null); }
-  }, [project, file, source, rel, attachSession]);
+  }, [project, file, source, rel, attachSession, settings.signalingUrl]);
+
+  // Direct mode as a guest: answer an invite, then wait for the host to connect.
+  const answerDirect = useCallback(async (name: string, invite: string): Promise<string> => {
+    if (!project) throw new Error("Open a paper first.");
+    const sess = session?.transport === "direct" ? session : yConnect("", "direct", name, false, "direct");
+    const prov = sess.provider as ManualProvider;
+    const code = await prov.answerInvite(invite);
+    if (sess !== session) {
+      prov.on("peers", () => setDirectPeers(prov.peerCount));
+      prov.once("synced", () => { setCurrentFile(sess, rel(file)); setNote("Connected to the host."); });
+      attachSession(sess);
+      setLive({ url: "", lanUrl: "", room: "direct", host: false, transport: "direct" });
+    }
+    return code;
+  }, [project, session, file, rel, attachSession]);
+  const directApi = session?.transport === "direct" ? {
+    invite: () => (session.provider as ManualProvider).createInvite(),
+    accept: (answer: string) => (session.provider as ManualProvider).acceptAnswer(answer),
+    answer: answerDirect,
+    peers: directPeers,
+  } : { invite: async () => { throw new Error("Start a direct session first."); }, accept: async () => {}, answer: answerDirect, peers: 0 };
 
   const joinSession = useCallback(async (name: string, url: string, room: string, transport: Transport, password?: string) => {
     if (!project) return;
@@ -484,7 +510,7 @@ export default function App() {
       {sheet === "share" && project && (
         <ShareSheet projectName={project.name} live={live} overleafUrl={overleafUrl} busy={liveBusy} onClose={() => setSheet(null)}
           onStart={startSession} onJoin={joinSession} onStop={stopSession} onSetOverleaf={setOverleaf} onPull={pullOverleaf} onPush={pushOverleaf}
-          onZotero={importZotero} onBibFile={importBib} />
+          onZotero={importZotero} onBibFile={importBib} signalingUrl={settings.signalingUrl} direct={directApi} />
       )}
       {sheet === "new" && <NewPaperSheet onClose={() => setSheet(null)} onCreate={createPaper} />}
       {sheet === "settings" && <SettingsSheet onClose={() => setSheet(null)} />}

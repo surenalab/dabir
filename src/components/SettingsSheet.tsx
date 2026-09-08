@@ -52,6 +52,13 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
         </section>
 
         <section className="share-section">
+          <h3>Live sessions</h3>
+          <Row label="Signalling server" hint="Optional. Only for the “signalling server” mode in Share; the direct and same-network modes need nothing. relay/signaling-worker.js deploys one to Cloudflare's free tier.">
+            <input className="sheet-input compact" value={s.signalingUrl} onChange={(e) => updateSettings({ signalingUrl: e.target.value.trim() })} placeholder="wss://dabir-signal.you.workers.dev" aria-label="Signalling server URL" />
+          </Row>
+        </section>
+
+        <section className="share-section">
           <h3>Completion</h3>
           <Row label="LaTeX commands and snippets" hint="Environments, commands and snippets from the LaTeX language package.">
             <Toggle on={s.autocomplete} onChange={(v) => updateSettings({ autocomplete: v })} label="Command completion" />
