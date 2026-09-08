@@ -1,7 +1,7 @@
-import { useEffect, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { EditorState, Compartment, StateEffect, StateField } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, dropCursor, rectangularSelection, crosshairCursor, Decoration, hoverTooltip, type DecorationSet } from "@codemirror/view";
-import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
+import { defaultKeymap, history, historyKeymap, indentWithTab, undo, redo } from "@codemirror/commands";
 import { bracketMatching, syntaxHighlighting, HighlightStyle, indentOnInput } from "@codemirror/language";
 import { search, searchKeymap, openSearchPanel, highlightSelectionMatches } from "@codemirror/search";
 import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap, startCompletion, completionStatus, currentCompletions, type CompletionSource } from "@codemirror/autocomplete";
@@ -124,7 +124,18 @@ interface Props {
 
 const sourceOnly = () => [lineNumbers(), highlightActiveLineGutter(), highlightActiveLine(), syntaxHighlighting(highlight)];
 
-export function SourceEditor({ value, visual, settings, completions, collab, comments, grammar, marks, onSelection, jumpOffset, onChange, onSave, onCursorLine, jumpLine, jumpStamp, findRequest }: Props) {
+export interface EditorApi {
+  wrap: (pre: string, post: string) => void;      // wrap the selection, or insert and place the cursor inside
+  block: (pre: string, post: string) => void;     // insert on its own lines
+  list: (env: "itemize" | "enumerate") => void;
+  heading: (kind: string) => void;                // section | subsection | subsubsection | paragraph | plain
+  complete: (pre: string, post: string) => void;  // insert and open completion inside
+  undo: () => void;
+  redo: () => void;
+  focus: () => void;
+}
+
+export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({ value, visual, settings, completions, collab, comments, grammar, marks, onSelection, jumpOffset, onChange, onSave, onCursorLine, jumpLine, jumpStamp, findRequest }, ref) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const modeComp = useRef(new Compartment());
@@ -235,5 +246,53 @@ export function SourceEditor({ value, visual, settings, completions, collab, com
 
   useEffect(() => { if (findRequest && view.current) openSearchPanel(view.current); }, [findRequest]);
 
+  useImperativeHandle(ref, () => ({
+    wrap(pre, post) {
+      const v = view.current; if (!v) return;
+      const { from, to } = v.state.selection.main;
+      const sel = v.state.doc.sliceString(from, to);
+      v.dispatch({ changes: { from, to, insert: pre + sel + post }, selection: sel ? { anchor: from + pre.length, head: from + pre.length + sel.length } : { anchor: from + pre.length } });
+      v.focus();
+    },
+    block(pre, post) {
+      const v = view.current; if (!v) return;
+      const { from, to } = v.state.selection.main;
+      const line = v.state.doc.lineAt(from);
+      const sel = v.state.doc.sliceString(from, to);
+      const lead = line.from === from ? "" : "\n";
+      const text = `${lead}${pre}${sel}${post}\n`;
+      v.dispatch({ changes: { from, to, insert: text }, selection: { anchor: from + lead.length + pre.length } });
+      v.focus();
+    },
+    list(env) {
+      const v = view.current; if (!v) return;
+      const { from, to } = v.state.selection.main;
+      const sel = v.state.doc.sliceString(from, to);
+      const items = sel ? sel.split("\n").filter((l) => l.trim()).map((l) => `  \\item ${l.trim()}`).join("\n") : "  \\item ";
+      const text = `\\begin{${env}}\n${items}\n\\end{${env}}\n`;
+      v.dispatch({ changes: { from, to, insert: text }, selection: { anchor: from + `\\begin{${env}}\n  \\item `.length } });
+      v.focus();
+    },
+    heading(kind) {
+      const v = view.current; if (!v) return;
+      const line = v.state.doc.lineAt(v.state.selection.main.from);
+      const m = /^(\s*)\\(section|subsection|subsubsection|paragraph)\*?\{(.*)\}\s*$/.exec(line.text);
+      const body = m ? m[3] : line.text.trim();
+      const text = kind === "plain" ? body : `\\${kind}{${body}}`;
+      v.dispatch({ changes: { from: line.from, to: line.to, insert: text }, selection: { anchor: line.from + (kind === "plain" ? body.length : text.length - 1) } });
+      v.focus();
+    },
+    complete(pre, post) {
+      const v = view.current; if (!v) return;
+      const { from, to } = v.state.selection.main;
+      v.dispatch({ changes: { from, to, insert: pre + post }, selection: { anchor: from + pre.length } });
+      v.focus();
+      startCompletion(v);
+    },
+    undo() { if (view.current) { undo(view.current); view.current.focus(); } },
+    redo() { if (view.current) { redo(view.current); view.current.focus(); } },
+    focus() { view.current?.focus(); },
+  }), []);
+
   return <div className={`editor ${visual ? "visual" : ""}`} ref={host} />;
-}
+});
