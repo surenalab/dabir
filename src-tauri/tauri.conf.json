@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build && sh scripts/fetch-tectonic.sh && npm run relay:build",
+    "beforeBuildCommand": "npm run build && sh scripts/fetch-tectonic.sh",
     "frontendDist": "../dist"
   },
   "app": {
@@ -52,9 +52,6 @@
           "libgtk-3-0"
         ]
       }
-    },
-    "resources": {
-      "../relay/dist/relay.cjs": "relay/relay.cjs"
     }
   },
   "plugins": {

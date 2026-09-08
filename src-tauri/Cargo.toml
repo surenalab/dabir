@@ -32,6 +32,11 @@ uuid = { version = "1", features = ["v4"] }
 toml = "0.8"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "macros"] }
+axum = { version = "0.8", features = ["ws"] }
+yrs-axum = "0.8"
+futures-util = "0.3"
+yrs = "0.18"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

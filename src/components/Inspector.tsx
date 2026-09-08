@@ -79,13 +79,14 @@ interface Props {
   onJumpComment: (c: Comment) => void;
   onShare: () => void;
   project: Project | null;
+  gitRepo: boolean;
   askFocus: number;
   onChanged: () => void;         // git status or files changed
   onOpenFile: (path: string) => void;
   onNote: (text: string) => void;
 }
 
-export function Inspector({ project, askFocus, onChanged, onOpenFile, onNote, live, peers, comments, currentFile, hasSelection, onAddComment, onResolveComment, onRemoveComment, onJumpComment, onShare }: Props) {
+export function Inspector({ project, gitRepo, askFocus, onChanged, onOpenFile, onNote, live, peers, comments, currentFile, hasSelection, onAddComment, onResolveComment, onRemoveComment, onJumpComment, onShare }: Props) {
   const [commentDraft, setCommentDraft] = useState("");
   const [tab, setTab] = useState<Tab>("agent");
   const [providers, setProviders] = useState<Provider[]>([]);
@@ -258,7 +259,7 @@ export function Inspector({ project, askFocus, onChanged, onOpenFile, onNote, li
             <p className="composer-note" role="status">{run.text} <button className="btn" style={{ height: 22, marginLeft: 6 }} onClick={() => setRun({ phase: "idle" })}>OK</button></p>
           )}
           {run.phase === "idle" && project && !finishedRun && (
-            <p className="composer-note">Runs happen on a Git worktree on their own branch. You review the diff, then accept, reject, or open a pull request.{project.hasGit ? "" : " This folder needs a Git repository first."}</p>
+            <p className="composer-note">Runs happen on a Git worktree on their own branch. You review the diff, then accept, reject, or open a pull request.{gitRepo ? "" : " This folder needs a Git repository first."}</p>
           )}
         </div>
       )}

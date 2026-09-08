@@ -7,6 +7,7 @@
 mod agents;
 mod git;
 mod memory;
+mod relay;
 mod synctex;
 
 use serde::Serialize;
@@ -401,8 +402,6 @@ fn git_pull(root: String, remote: String) -> Result<String, String> { git::pull(
 #[tauri::command]
 fn git_push(root: String, remote: String) -> Result<String, String> { git::push(Path::new(&root), &remote) }
 
-static RELAY_PID: std::sync::Mutex<Option<u32>> = std::sync::Mutex::new(None);
-
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct RelayInfo { url: String, lan_url: String, pid: u32 }
@@ -414,40 +413,15 @@ fn lan_ip() -> Option<String> {
     s.local_addr().ok().map(|a| a.ip().to_string()).filter(|ip| ip != "0.0.0.0")
 }
 
-fn find_node() -> Option<PathBuf> {
-    let home = std::env::var("HOME").unwrap_or_default();
-    let mut dirs: Vec<PathBuf> = vec!["/opt/homebrew/bin".into(), "/opt/homebrew/opt/node@22/bin".into(), "/usr/local/bin".into(), format!("{}/.volta/bin", home).into(), format!("{}/.local/bin", home).into()];
-    if let Some(p) = std::env::var_os("PATH") { dirs.extend(std::env::split_paths(&p)); }
-    if let Ok(nvm) = fs::read_dir(format!("{}/.nvm/versions/node", home)) { for e in nvm.flatten() { dirs.push(e.path().join("bin")); } }
-    dirs.into_iter().map(|d| d.join("node")).find(|p| p.is_file())
-}
-
-/// Start the bundled y-websocket relay on this machine. Returns the local and LAN addresses.
+/// Start the built-in relay on this machine. Returns the local and LAN addresses.
 #[tauri::command]
-fn relay_start(app: AppHandle, port: u16) -> Result<RelayInfo, String> {
-    if let Some(pid) = *RELAY_PID.lock().unwrap() {
-        return Ok(RelayInfo { url: format!("ws://127.0.0.1:{}", port), lan_url: format!("ws://{}:{}", lan_ip().unwrap_or("127.0.0.1".into()), port), pid });
-    }
-    let node = find_node().ok_or("Node.js is needed to host a live session (the relay is a small Node program). Install it from nodejs.org or with Homebrew, or run the relay on a server and join it instead.")?;
-    let script = app.path().resolve("relay/relay.cjs", tauri::path::BaseDirectory::Resource).ok().filter(|p| p.exists())
-        .or_else(|| { let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../relay/dist/relay.cjs"); if dev.exists() { Some(dev) } else { None } })
-        .ok_or("The relay script is missing from this build.")?;
-    let child = Command::new(node).arg(&script).args(["--port", &port.to_string(), "--host", "0.0.0.0"])
-        .stdout(std::process::Stdio::null()).stderr(std::process::Stdio::piped()).spawn().map_err(|e| format!("Could not start the relay: {}", e))?;
-    let pid = child.id();
-    *RELAY_PID.lock().unwrap() = Some(pid);
-    // Reap in the background and forget the pid when it exits.
-    std::thread::spawn(move || { let mut child = child; let _ = child.wait(); if let Ok(mut g) = RELAY_PID.lock() { if *g == Some(pid) { *g = None; } } });
-    std::thread::sleep(std::time::Duration::from_millis(400));
-    if RELAY_PID.lock().unwrap().is_none() { return Err(format!("The relay exited immediately. Is port {} already in use?", port)); }
-    Ok(RelayInfo { url: format!("ws://127.0.0.1:{}", port), lan_url: format!("ws://{}:{}", lan_ip().unwrap_or("127.0.0.1".into()), port), pid })
+fn relay_start(port: u16) -> Result<RelayInfo, String> {
+    relay::start(port)?;
+    Ok(RelayInfo { url: format!("ws://127.0.0.1:{}", port), lan_url: format!("ws://{}:{}", lan_ip().unwrap_or("127.0.0.1".into()), port), pid: std::process::id() })
 }
 
 #[tauri::command]
-fn relay_stop() -> bool {
-    let pid = RELAY_PID.lock().unwrap().take();
-    match pid { Some(pid) => { let _ = Command::new("kill").arg(pid.to_string()).output(); true } None => false }
-}
+fn relay_stop() -> bool { relay::stop() }
 
 // ---------------------------------------------------------------- agents
 
@@ -718,6 +692,25 @@ mod tests {
         assert!(second_hunk.contains("+q") && !second_hunk.contains("+y") && second_hunk.contains("+++ b/a.tex"));
         let none = git::filter_patch(patch, &[git::Pick { path: "a.tex".into(), hunks: Some(vec![]) }]);
         assert!(none.trim().is_empty());
+    }
+
+    /// Native relay round trip: two y-websocket clients through the in-process server.
+    #[test]
+    fn relay_syncs_two_clients() {
+        if which("node").is_none() { eprintln!("node not found; skipping"); return; }
+        relay::start(1240).unwrap();
+        let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+        let out = Command::new("node").current_dir(&repo).args(["relay/test-client.mjs", "ws://127.0.0.1:1240", "test-room"]).output().unwrap();
+        let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+        relay::stop();
+        eprintln!("relay client output: {}", text.trim());
+        assert!(text.contains("SYNC_OK"), "relay sync failed: {}", text);
+    }
+
+    fn which(bin: &str) -> Option<PathBuf> {
+        let mut dirs: Vec<PathBuf> = vec!["/opt/homebrew/bin".into(), "/opt/homebrew/opt/node@22/bin".into(), "/usr/local/bin".into()];
+        if let Some(p) = std::env::var_os("PATH") { dirs.extend(std::env::split_paths(&p)); }
+        dirs.into_iter().map(|d| d.join(bin)).find(|p| p.is_file())
     }
 
     #[test]
