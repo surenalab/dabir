@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dabir</title>
+<meta name="description" content="Dabir is a local-first desktop editor for scientific papers: LaTeX, the code behind the figures, Git, live coauthors and AI agents in one window. Free and open source, from Surenalab.">
+<meta property="og:title" content="Dabir">
+<meta property="og:description" content="Write the paper where the code is. LaTeX, Git, coauthors and agents in one window.">
+<link rel="icon" href="../icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Mono:ital,wght@0,400;1,400&display=swap">
+<style>
+  :root {
+    --paper: #fbfaf7; --paper-2: #f3f1ec; --raised: #ffffff; --line: #ddd9d0; --line-strong: #c9c4b8;
+    --ink: #1d1f24; --ink-2: #3f424a; --ink-3: #676a74; --ink-4: #7a7c84;
+    --accent: #a8322d; --accent-ink: #ffffff; --accent-wash: #f6e6e4;
+    --lajvard: #22396b; --saffron: #e0a62e; --ok: #2f6b3a; --diff-add: #e8f2e9; --diff-del: #f9e4e6;
+    --doc: "STIX Two Text", "Latin Modern Roman", "Times New Roman", Georgia, serif;
+    --ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+    --mono: "IBM Plex Mono", "SF Mono", Menlo, Consolas, monospace;
+    --shadow: 0 1px 2px rgba(29,31,36,.06), 0 12px 32px -12px rgba(29,31,36,.18);
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --paper: #1a1b1e; --paper-2: #202125; --raised: #26272c; --line: #34363c; --line-strong: #474a52;
+    --ink: #ebe9e2; --ink-2: #c9c7c0; --ink-3: #a3a5ac; --ink-4: #8a8c94;
+    --accent: #e06a63; --accent-ink: #1a1b1e; --accent-wash: #3a2624;
+    --lajvard: #8fa6d9; --saffron: #e9bd5a; --ok: #7dc48a; --diff-add: #1f2f22; --diff-del: #3a2226;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 12px 32px -12px rgba(0,0,0,.6);
+  } }
+  :root[data-theme="dark"] {
+    --paper: #1a1b1e; --paper-2: #202125; --raised: #26272c; --line: #34363c; --line-strong: #474a52;
+    --ink: #ebe9e2; --ink-2: #c9c7c0; --ink-3: #a3a5ac; --ink-4: #8a8c94;
+    --accent: #e06a63; --accent-ink: #1a1b1e; --accent-wash: #3a2624;
+    --lajvard: #8fa6d9; --saffron: #e9bd5a; --ok: #7dc48a; --diff-add: #1f2f22; --diff-del: #3a2226;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 12px 32px -12px rgba(0,0,0,.6);
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--paper); }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--doc); font-size: 18px; line-height: 1.6; -webkit-font-smoothing: antialiased; }
+  ::selection { background: var(--accent-wash); color: var(--ink); }
+  a { color: inherit; text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: .18em; text-decoration-thickness: 1px; }
+  a:hover { text-decoration-color: var(--accent); }
+  :focus-visible { outline: 3px solid var(--lajvard); outline-offset: 2px; border-radius: 2px; }
+  .page { max-width: 72ch; margin: 0 auto; padding: 0 24px 96px; }
+
+  header.top { display: flex; align-items: center; justify-content: space-between; padding: 28px 0 0; font-family: var(--ui); font-size: 14px; }
+  .brand { display: inline-flex; align-items: center; gap: 12px; text-decoration: none; }
+  .brand svg { width: 36px; height: 36px; display: block; }
+  .brand b { font-family: var(--doc); font-weight: 600; font-size: 20px; letter-spacing: .01em; }
+  .brand span { color: var(--ink-3); }
+  nav { display: flex; gap: 22px; }
+  nav a { text-decoration: none; color: var(--ink-2); white-space: nowrap; }
+  nav a:hover { color: var(--ink); }
+  @media (max-width: 480px) { .brand span { display: none; } nav { gap: 14px; } header.top { gap: 12px; } }
+
+  .hero { padding: 88px 0 40px; }
+  .hero h1 { font-size: clamp(38px, 6vw, 58px); line-height: 1.08; font-weight: 400; letter-spacing: -.012em; margin: 0 0 22px; text-wrap: balance; max-width: 18ch; }
+  .hero h1 em { font-style: italic; color: var(--lajvard); }
+  .hero p { font-size: 20px; color: var(--ink-2); margin: 0; max-width: 56ch; text-wrap: pretty; }
+  .nuqta { display: inline-block; width: .42em; height: .42em; background: var(--saffron); transform: rotate(45deg); margin-left: .18em; vertical-align: .02em; }
+
+  .downloads { margin: 36px 0 0; font-family: var(--ui); }
+  .dl-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; height: 42px; padding: 0 16px; border-radius: 9px; border: 1px solid var(--line-strong); background: var(--raised); color: var(--ink); font: 500 14.5px var(--ui); text-decoration: none; transition: border-color .15s ease-out, transform .15s ease-out; }
+  .btn:hover { border-color: var(--ink-3); transform: translateY(-1px); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .btn.primary:hover { filter: brightness(.94); }
+  .btn svg { width: 16px; height: 16px; }
+  .dl-note { margin: 12px 0 0; font-size: 13px; color: var(--ink-3); }
+  .dl-note code { font-family: var(--mono); font-size: 12.5px; overflow-wrap: anywhere; }
+  p, li, h1, h2 { overflow-wrap: break-word; }
+
+  section { padding: 56px 0 0; }
+  h2 { font-size: 26px; font-weight: 600; line-height: 1.25; margin: 0 0 14px; letter-spacing: -.005em; text-wrap: balance; }
+  section p { margin: 0 0 16px; color: var(--ink-2); text-wrap: pretty; }
+  section p strong { color: var(--ink); font-weight: 600; }
+  hr.rule { border: 0; height: 1px; background: var(--line); margin: 64px 0 0; }
+
+  /* the review moment, rendered as the app renders it */
+  .review { margin: 28px 0 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--raised); overflow: hidden; font-family: var(--ui); }
+  .review header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); font-size: 13px; color: var(--ink-3); }
+  .review header b { color: var(--ink); font-weight: 600; }
+  .review .file { padding: 10px 16px 6px; font: 12.5px var(--mono); color: var(--ink-3); display: flex; justify-content: space-between; }
+  .review .file span { color: var(--ok); }
+  .review pre { margin: 0; padding: 0 0 12px; font: 13px/1.6 var(--mono); overflow-x: auto; }
+  .review pre .l { display: block; padding: 0 16px 0 16px; white-space: pre-wrap; }
+  .review pre .add { background: var(--diff-add); }
+  .review pre .del { background: var(--diff-del); }
+  .review pre .ctx { color: var(--ink-3); }
+  .review footer { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 12px 16px; border-top: 1px solid var(--line); background: var(--paper-2); }
+  .review footer .msg { flex: 1 1 220px; height: 34px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--raised); color: var(--ink); font: 13.5px var(--ui); display: flex; align-items: center; }
+  .review footer .btn { height: 34px; padding: 0 12px; font-size: 13.5px; }
+  .caption { font-family: var(--ui); font-size: 13px; color: var(--ink-3); margin: 0 0 0; }
+
+  ul.plain { list-style: none; margin: 0; padding: 0; }
+  ul.plain li { display: grid; grid-template-columns: 9.5em 1fr; gap: 16px; padding: 12px 0; border-top: 1px solid var(--line); color: var(--ink-2); }
+  ul.plain li:last-child { border-bottom: 1px solid var(--line); }
+  ul.plain li b { color: var(--ink); font-weight: 600; font-family: var(--ui); font-size: 15px; padding-top: 3px; }
+  ul.plain li span { text-wrap: pretty; }
+  @media (max-width: 560px) { ul.plain li { grid-template-columns: 1fr; gap: 4px; } }
+
+  .agents { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 0; font-family: var(--ui); font-size: 14px; }
+  .agents span { padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px; color: var(--ink-2); background: var(--paper-2); }
+
+  footer.site { margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--line); font-family: var(--ui); font-size: 13.5px; color: var(--ink-3); display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; }
+  footer.site a { color: var(--ink-2); text-decoration: none; }
+  footer.site a:hover { color: var(--ink); }
+  @media (prefers-reduced-motion: reduce) { .btn { transition: none; } .btn:hover { transform: none; } }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="top">
+    <a class="brand" href="./" aria-label="Dabir">
+      <svg viewBox="0 0 1024 1024" aria-hidden="true"><rect width="1024" height="1024" rx="228" fill="#22396B"/><g transform="translate(1024 0) scale(-1 1) translate(512 512) scale(1.22) translate(-586 -470)"><path fill="#F4F1E8" d="M688 236 C728 232 768 262 760 302 C752 336 722 360 696 388 C654 434 616 486 588 540 C568 580 574 616 618 634 C672 656 742 640 806 604 C766 662 684 700 598 686 C512 672 464 606 484 530 C512 428 590 328 668 250 C674 244 680 238 688 236 Z"/></g><path fill="#E0A62E" d="M672 676 L734 730 L672 784 L610 730 Z"/></svg>
+      <b>Dabir</b><span>by Surenalab</span>
+    </a>
+    <nav aria-label="Site"><a href="#download">Download</a><a href="https://github.com/surenalab/dabir">Source</a><a href="../">Surenalab</a></nav>
+  </header>
+
+  <section class="hero" aria-labelledby="h1">
+    <h1 id="h1">Write the paper <em>where the code is</em><span class="nuqta" aria-hidden="true"></span></h1>
+    <p>Dabir is a desktop editor for scientific papers. Your LaTeX, the scripts behind the figures, the Git history, your coauthors and an AI agent share one window on your own machine. Nothing is uploaded. It is free and open source.</p>
+    <div class="downloads" id="download">
+      <div class="dl-row" id="dl">
+        <a class="btn primary" href="https://github.com/surenalab/dabir/releases/latest" data-os="mac"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>Download for macOS</a>
+        <a class="btn" href="https://github.com/surenalab/dabir/releases/latest" data-os="win">Windows</a>
+        <a class="btn" href="https://github.com/surenalab/dabir/releases/latest" data-os="linux">Linux</a>
+      </div>
+      <p class="dl-note" id="dlnote">Apple Silicon and Intel Macs, Windows 10 and later, Linux AppImage and deb. Or build it yourself: <code>git clone https://github.com/surenalab/dabir</code></p>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <section aria-labelledby="h-review">
+    <h2 id="h-review">The agent is a coauthor you review, not a chatbot you paste from</h2>
+    <p>Ask for a change in plain words: rerun the sweep with a finer grid, add the new baseline to Table 2, fix the compile error on line 1090. The agent works on a Git worktree of its own, with the compile log and your scripts, using whichever subscription you already have. Nothing touches your checkout until you have read the diff, hunk by hunk.</p>
+    <div class="review" role="figure" aria-label="A review of an agent's change">
+      <header><span><b>What changed</b> · Claude Code · 14 s</span><span>Untick a hunk to leave it out</span></header>
+      <div class="file">main.tex <span>+1 −1</span></div>
+      <pre><span class="l ctx">@@ -13,3 +13,3 @@</span><span class="l ctx"> anchoring, a single scalar correction that keeps the guided trajectory</span><span class="l del">-accelerated MRI it holds a 1.8 dB PSNR margin over three baselines</span><span class="l add">+accelerated MRI it holds a 1.8 dB PSNR margin over three strong baselines</span><span class="l ctx"> across noise levels up to $\sigma = 0.3$, with no extra network</span></pre>
+      <footer><div class="msg">Qualify the baselines in the abstract</div><span class="btn primary">Accept and Commit</span><span class="btn">Reject</span></footer>
+    </div>
+    <p class="caption">The review moment, as it appears in the app. Figures show as images and tables as tables, so you judge the result, not the markup.</p>
+    <div class="agents" aria-label="Agents that work with Dabir"><span>Claude Code</span><span>Codex</span><span>Cursor</span><span>Grok</span><span>OpenCode</span></div>
+  </section>
+
+  <section aria-labelledby="h-write">
+    <h2 id="h-write">One buffer, three views</h2>
+    <p><strong>Visual</strong> reads like the compiled paper: equations, figures, tables and citations render in place, and whatever sits under your cursor shows its source. <strong>Source</strong> is the LaTeX with completion, spelling, grammar on demand, and predictive text learned from the paper itself. <strong>Split</strong> puts the source beside the PDF, which follows your cursor; double-click the PDF to land on the line.</p>
+    <p>Compile with the bundled engine, no TeX installation required. Errors and warnings become a list that jumps to the line, and each one can be handed to the agent with the instruction to fix the cause, not silence the message.</p>
+  </section>
+
+  <section aria-labelledby="h-together">
+    <h2 id="h-together">Coauthors without a server</h2>
+    <p>Start a live session and a coauthor receives a mirror of the whole paper, figures and bibliography included, then edits with you in real time with their cursor in their colour. Machines connect directly, or through a small relay Dabir runs on yours; there is no service of ours in the middle and nothing to pay for. Comments anchor to the text, carry replies, and show as pins on the PDF. When the session ends, it becomes a commit.</p>
+    <p>Already on Overleaf? Import the zip, or pull and push through Overleaf's Git bridge and keep both.</p>
+  </section>
+
+  <section aria-labelledby="h-memory">
+    <h2 id="h-memory">Memory that lives in the repository</h2>
+    <p>A <code>.dabir</code> folder next to the paper holds a brief of what the paper is, one-fact notes the agents leave for each other, the skills they follow, and a provenance graph from script to figure to table. It is committed with the paper, so every coauthor's agent, whichever vendor, starts from the same knowledge, and a stale figure is flagged before a reviewer sees it.</p>
+  </section>
+
+  <section aria-labelledby="h-facts">
+    <h2 id="h-facts">Plain facts</h2>
+    <ul class="plain">
+      <li><b>Licence</b><span>MIT. The source, the plan and the design notes are public.</span></li>
+      <li><b>Privacy</b><span>Local first. Your paper stays on disk. Grammar checking is off until you name a server, because text would leave the machine.</span></li>
+      <li><b>Platforms</b><span>macOS, Windows and Linux, one codebase, native menus on each.</span></li>
+      <li><b>Cost</b><span>Free. The agents run on the subscriptions you already have.</span></li>
+      <li><b>Name</b><span>Dabir, دبیر, is Persian for scribe. The mark is its first letter, written with a reed, and the calligrapher's dot.</span></li>
+    </ul>
+  </section>
+
+  <footer class="site">
+    <span>Made by <a href="https://mohammadsadeghsalehi.github.io">Mohammad Sadegh Salehi</a> at <a href="../">Surenalab</a>.</span>
+    <span><a href="https://github.com/surenalab/dabir">GitHub</a> · <a href="https://github.com/surenalab/dabir/issues">Issues</a> · <a href="mailto:hello@surenalab.com">hello@surenalab.com</a></span>
+  </footer>
+</div>
+<script>
+  // Point each button at the right file of the latest release once the repository is public.
+  (async () => {
+    try {
+      const r = await fetch("https://api.github.com/repos/surenalab/dabir/releases/latest", { headers: { Accept: "application/vnd.github+json" } });
+      if (!r.ok) return;
+      const rel = await r.json();
+      const find = (re) => rel.assets.find((a) => re.test(a.name))?.browser_download_url;
+      const arm = /Apple/.test(navigator.userAgent) && (navigator.userAgentData?.platform === "macOS" || /Mac/.test(navigator.platform)) ? find(/aarch64\.dmg$/) : null;
+      const map = { mac: arm ?? find(/x64\.dmg$/) ?? find(/aarch64\.dmg$/), win: find(/setup\.exe$/), linux: find(/\.AppImage$/) };
+      for (const a of document.querySelectorAll("#dl a[data-os]")) { const u = map[a.dataset.os]; if (u) a.href = u; }
+      const v = rel.tag_name?.replace(/^v/, "");
+      if (v) document.getElementById("dlnote").insertAdjacentText("afterbegin", `Version ${v}. `);
+    } catch { /* the buttons still lead to the releases page */ }
+  })();
+</script>
+</body>
+</html>

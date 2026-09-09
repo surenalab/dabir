@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Surenalab</title>
+<meta name="description" content="Surenalab makes tools for people who do research: Dabir, a local-first editor for scientific papers with Git, coauthors and AI agents in one window.">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+  :root { --paper: #fbfaf7; --paper-2: #f3f1ec; --line: #ddd9d0; --ink: #1d1f24; --ink-2: #3f424a; --ink-3: #676a74; --lajvard: #22396b; --saffron: #e0a62e; --accent: #a8322d;
+    --doc: "STIX Two Text", "Latin Modern Roman", "Times New Roman", Georgia, serif; --ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif; color-scheme: light dark; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --paper: #1a1b1e; --paper-2: #202125; --line: #34363c; --ink: #ebe9e2; --ink-2: #c9c7c0; --ink-3: #a3a5ac; --lajvard: #8fa6d9; --saffron: #e9bd5a; --accent: #e06a63; } }
+  :root[data-theme="dark"] { --paper: #1a1b1e; --paper-2: #202125; --line: #34363c; --ink: #ebe9e2; --ink-2: #c9c7c0; --ink-3: #a3a5ac; --lajvard: #8fa6d9; --saffron: #e9bd5a; --accent: #e06a63; }
+  * { box-sizing: border-box; }
+  html { background: var(--paper); }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--doc); font-size: 18px; line-height: 1.6; -webkit-font-smoothing: antialiased; }
+  ::selection { background: var(--paper-2); }
+  a { color: inherit; text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: .18em; text-decoration-thickness: 1px; }
+  a:hover { text-decoration-color: var(--accent); }
+  :focus-visible { outline: 3px solid var(--lajvard); outline-offset: 2px; }
+  .page { max-width: 64ch; margin: 0 auto; padding: 0 24px 96px; }
+  header { padding: 28px 0 0; font-family: var(--ui); font-size: 14px; display: flex; justify-content: space-between; align-items: baseline; }
+  .word { font-family: var(--doc); font-size: 22px; font-weight: 600; letter-spacing: .01em; text-decoration: none; }
+  .word i { display: inline-block; width: .34em; height: .34em; background: var(--saffron); transform: rotate(45deg); margin-left: .2em; vertical-align: .05em; }
+  header a.gh { text-decoration: none; color: var(--ink-2); }
+  h1 { font-size: clamp(34px, 5.5vw, 50px); line-height: 1.1; font-weight: 400; letter-spacing: -.012em; margin: 96px 0 20px; max-width: 20ch; text-wrap: balance; }
+  h1 em { font-style: italic; color: var(--lajvard); }
+  p { color: var(--ink-2); margin: 0 0 16px; text-wrap: pretty; overflow-wrap: break-word; }
+  .product { margin: 56px 0 0; padding: 24px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 64px 1fr; gap: 20px; align-items: start; }
+  .product svg { width: 64px; height: 64px; display: block; border-radius: 15px; }
+  .product h2 { margin: 0 0 6px; font-size: 24px; font-weight: 600; }
+  .product p { margin: 0 0 10px; }
+  .product a.go { font-family: var(--ui); font-size: 14.5px; color: var(--ink); text-decoration: none; }
+  .product a.go:hover { color: var(--accent); }
+  .about { margin-top: 48px; }
+  footer { margin-top: 72px; padding-top: 20px; border-top: 1px solid var(--line); font-family: var(--ui); font-size: 13.5px; color: var(--ink-3); }
+  footer a { color: var(--ink-2); text-decoration: none; }
+  footer a:hover { color: var(--ink); }
+  @media (max-width: 480px) { .product { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="page">
+  <header><a class="word" href="./">Surenalab<i aria-hidden="true"></i></a><a class="gh" href="https://github.com/surenalab">GitHub</a></header>
+  <h1>Tools for people who <em>do research</em>, made by one of them</h1>
+  <p>Surenalab is the studio of Mohammad Sadegh Salehi, a machine learning researcher. It builds small, careful software for the parts of research that the big tools leave to chance: writing the paper, keeping the code and the figures honest, and working with coauthors and AI agents without giving your work to a server.</p>
+  <div class="product">
+    <svg viewBox="0 0 1024 1024" aria-hidden="true"><rect width="1024" height="1024" rx="228" fill="#22396B"/><g transform="translate(1024 0) scale(-1 1) translate(512 512) scale(1.22) translate(-586 -470)"><path fill="#F4F1E8" d="M688 236 C728 232 768 262 760 302 C752 336 722 360 696 388 C654 434 616 486 588 540 C568 580 574 616 618 634 C672 656 742 640 806 604 C766 662 684 700 598 686 C512 672 464 606 484 530 C512 428 590 328 668 250 C674 244 680 238 688 236 Z"/></g><path fill="#E0A62E" d="M672 676 L734 730 L672 784 L610 730 Z"/></svg>
+    <div>
+      <h2>Dabir</h2>
+      <p>A local-first desktop editor for scientific papers. LaTeX, the code behind the figures, Git, live coauthors and an AI agent you review, in one window on your own machine. Free and open source, for macOS, Windows and Linux.</p>
+      <a class="go" href="dabir/">Open Dabir</a>
+    </div>
+  </div>
+  <div class="about">
+    <p>The name is Surena, the Parthian general, with a lab attached. Everything here is published under the MIT licence, and the repositories carry the full history of how it was made.</p>
+  </div>
+  <footer><a href="https://mohammadsadeghsalehi.github.io">Mohammad Sadegh Salehi</a> · <a href="mailto:hello@surenalab.com">hello@surenalab.com</a> · <a href="https://github.com/surenalab">github.com/surenalab</a></footer>
+</div>
+</body>
+</html>

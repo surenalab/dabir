@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Dabir mark, flat: the nastaʿlīq dāl of دبیر written with a reed, and the calligrapher's
+       rhombic nuqta in saffron, the letter in lajvard. Two flat colours on paper, no gradients. For the README, the website
+       and anywhere the dimensional app icon would be wrong. -->
+  <rect width="1024" height="1024" rx="228" fill="#FBFAF7"/>
+  <g transform="translate(1024 0) scale(-1 1) translate(512 512) scale(1.22) translate(-586 -470)">
+    <path fill="#22396B" d="M688 236 C728 232 768 262 760 302 C752 336 722 360 696 388 C654 434 616 486 588 540 C568 580 574 616 618 634 C672 656 742 640 806 604 C766 662 684 700 598 686 C512 672 464 606 484 530 C512 428 590 328 668 250 C674 244 680 238 688 236 Z"/>
+  </g>
+  <path fill="#E0A62E" d="M672 676 L734 730 L672 784 L610 730 Z"/>
+</svg>
