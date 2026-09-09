@@ -23,7 +23,7 @@ export interface CommitInfo { id: string; summary: string; author: string; when:
 export interface GitStatus { isRepo: boolean; branch: string | null; changes: Change[]; recent: CommitInfo[]; remote: string | null }
 
 export interface Provider { id: string; label: string; hint: string; bin: string; installed: boolean; path: string | null }
-export interface AgentEvent { runId: string; kind: "text" | "tool" | "log" | "done" | "error"; text: string; tool: string | null; ok: boolean | null }
+export interface AgentEvent { runId: string; kind: "text" | "tool" | "log" | "thinking" | "done" | "error"; text: string; tool: string | null; ok: boolean | null }
 export interface WorktreeDiff { patch: string; changes: Change[] }
 
 export interface Fact { name: string; description: string; body: string; path: string }
@@ -242,6 +242,15 @@ export async function contextPack(root: string, query: string): Promise<string> 
 }
 export async function compileCancel(): Promise<boolean> { return native ? invoke<boolean>("compile_cancel") : true; }
 export async function agentReject(root: string, runId: string): Promise<void> { if (native) await invoke("agent_reject", { root, runId }); }
+/** Accept without committing: the changes land in the checkout and a snapshot is taken. */
+export async function agentApply(root: string, runId: string, picks: Pick[] | undefined, prompt: string): Promise<string[]> {
+  if (!native) { await wait(300); return ["main.tex"]; }
+  return invoke<string[]>("agent_apply", { root, runId, picks: picks ?? null, prompt });
+}
+export interface Checkpoint { id: string; message: string; at: number }
+export async function checkpoint(root: string, message: string): Promise<string | null> { return native ? invoke<string | null>("checkpoint", { root, message }) : null; }
+export async function checkpoints(root: string): Promise<Checkpoint[]> { return native ? invoke<Checkpoint[]>("checkpoints", { root }) : []; }
+export async function checkpointRestore(root: string, id: string): Promise<void> { if (native) await invoke("checkpoint_restore", { root, id }); }
 export async function agentPullRequest(root: string, runId: string, message: string): Promise<string> {
   if (!native) { await wait(400); return "https://github.com/vantreight/score-anchor/pull/12"; }
   return invoke<string>("agent_pull_request", { root, runId, message });

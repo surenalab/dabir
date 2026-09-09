@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowUp, Check, Loader2, Paperclip, RefreshCw, Square, X } from "lucide-react";
+import { ArrowUp, Check, Loader2, Paperclip, RefreshCw, Square, X, FileText, Pencil, Terminal, Search, Wrench, Brain, FileDiff } from "lucide-react";
 import {
-  agentAccept, agentCancel, agentDiff, agentProviders, agentPullRequest, agentReject, agentRun, memoryRead, memorySetup,
+  agentAccept, agentApply, agentCancel, agentDiff, agentProviders, agentPullRequest, agentReject, agentRun, memoryRead, memorySetup,
   onAgentEvent, provenanceRerun, type Artefact, type Memory, type Pick, type Project, type Provider, type WorktreeDiff,
 } from "../lib/backend";
 import { Segmented } from "./Segmented";
@@ -9,11 +9,55 @@ import type { Comment, Peer } from "../lib/collab";
 
 type Tab = "agent" | "memory" | "people";
 
-interface Step { kind: "text" | "tool" | "log"; text: string; tool?: string | null; at: number }
+interface Step { kind: "text" | "tool" | "log" | "thinking"; text: string; tool?: string | null; at: number }
+
+/** Which verb and icon a tool row gets, from the vendor's tool name. */
+function toolFace(name: string | null | undefined, detail: string): { verb: string; icon: React.ReactNode; kind: string } {
+  const n = (name ?? "").toLowerCase();
+  if (/read|view|cat|open/.test(n)) return { verb: "Read", icon: <FileText />, kind: "read" };
+  if (/edit|write|create|replace|patch|apply|multi/.test(n)) return { verb: "Edited", icon: <Pencil />, kind: "edit" };
+  if (/bash|shell|command|exec|terminal|run/.test(n)) return { verb: /tectonic|latexmk|pdflatex|xelatex|typst/.test(detail) ? "Compiled" : "Ran", icon: <Terminal />, kind: "run" };
+  if (/grep|glob|search|find|ls|list/.test(n)) return { verb: "Searched", icon: <Search />, kind: "search" };
+  return { verb: name ? name.replace(/ToolCall$/, "") : "Used a tool", icon: <Wrench />, kind: "tool" };
+}
+
+function fmtElapsed(ms: number): string { const s = Math.max(0, Math.round(ms / 1000)); return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${s % 60} s`; }
+
+/** The agent's train of thought and work, as a transcript: thinking folded, prose in full, tools as compact rows. */
+function Transcript({ steps, running, started }: { steps: Step[]; running: boolean; started: number }) {
+  const [, tick] = useState(0);
+  useEffect(() => { if (!running) return; const t = setInterval(() => tick((n) => n + 1), 1000); return () => clearInterval(t); }, [running]);
+  const shown = steps.filter((s) => s.kind !== "log");
+  // group consecutive tool steps so a burst of reads is one block
+  const blocks: { kind: string; steps: Step[] }[] = [];
+  for (const st of shown) { const last = blocks[blocks.length - 1]; if (last && last.kind === st.kind && (st.kind === "tool" || st.kind === "thinking")) last.steps.push(st); else blocks.push({ kind: st.kind, steps: [st] }); }
+  const lastBlock = blocks[blocks.length - 1];
+  return (
+    <div className="transcript" role="log" aria-live="polite">
+      {blocks.map((b, i) => {
+        const isLast = b === lastBlock;
+        if (b.kind === "thinking") {
+          const text = b.steps.map((x) => x.text).join("");
+          if (running && isLast) return <div key={i} className="think live"><Brain aria-hidden /><span>{text.slice(-220)}</span></div>;
+          return <details key={i} className="think"><summary><Brain aria-hidden />Thought for {fmtElapsed((b.steps[b.steps.length - 1].at - b.steps[0].at) || 1000)}</summary><p>{text}</p></details>;
+        }
+        if (b.kind === "text") return <div key={i} className="say">{b.steps.map((x, j) => <p key={j}>{x.text}</p>)}</div>;
+        return (
+          <div key={i} className="tools">
+            {b.steps.map((x, j) => { const f = toolFace(x.tool, x.text); return (
+              <div key={j} className={`tool ${f.kind}`} title={x.text}>{f.icon}<span className="verb">{f.verb}</span><code>{x.text}</code><span className="at">+{fmtElapsed(x.at - started)}</span></div>
+            ); })}
+          </div>
+        );
+      })}
+      {running && <div className="tool working"><Loader2 aria-label="Working" /><span className="verb">{shown.length ? "Working" : "Starting"}</span><span className="at">{fmtElapsed(Date.now() - started)}</span></div>}
+    </div>
+  );
+}
 type Run =
   | { phase: "idle" }
   | { phase: "running"; runId: string; prompt: string; steps: Step[]; provider: string; started: number }
-  | { phase: "review"; runId: string; prompt: string; steps: Step[]; provider: string; ok: boolean; summary: string; diff: WorktreeDiff | null; error?: string }
+  | { phase: "review"; runId: string; prompt: string; steps: Step[]; provider: string; ok: boolean; summary: string; diff: WorktreeDiff | null; error?: string; started: number; finished: number }
   | { phase: "done"; text: string };
 
 interface Hunk { header: string; lines: string[] }
@@ -123,11 +167,15 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
       let diff: WorktreeDiff | null = null, error: string | undefined;
       if (project) { try { diff = await agentDiff(project.root, r.runId); } catch (err) { error = String(err); } }
       const summary = e.text || r.steps.filter((s) => s.kind === "text").map((s) => s.text).join("\n");
-      setRun({ phase: "review", runId: r.runId, prompt: r.prompt, steps: r.steps, provider: r.provider, ok: e.ok ?? true, summary, diff, error });
+      setRun({ phase: "review", runId: r.runId, prompt: r.prompt, steps: r.steps, provider: r.provider, ok: e.ok ?? true, summary, diff, error, started: r.started, finished: Date.now() });
       setMessage(r.prompt.length > 72 ? r.prompt.slice(0, 69) + "…" : r.prompt);
       setExcluded(new Set());
     } else if (e.kind === "error") {
-      setRun({ phase: "review", runId: r.runId, prompt: r.prompt, steps: r.steps, provider: r.provider, ok: false, summary: e.text, diff: null });
+      setRun({ phase: "review", runId: r.runId, prompt: r.prompt, steps: r.steps, provider: r.provider, ok: false, summary: e.text, diff: null, started: r.started, finished: Date.now() });
+    } else if (e.kind === "thinking") {
+      const last = r.steps[r.steps.length - 1];
+      if (last && last.kind === "thinking" && Date.now() - last.at < 4000) setRun({ ...r, steps: [...r.steps.slice(0, -1), { ...last, text: last.text + e.text, at: Date.now() }] });
+      else setRun({ ...r, steps: [...r.steps, { kind: "thinking", text: e.text, at: Date.now() }] });
     } else {
       setRun({ ...r, steps: [...r.steps, { kind: e.kind as Step["kind"], text: e.text, tool: e.tool, at: Date.now() }] });
     }
@@ -148,10 +196,8 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
 
   const cancel = async () => { if (run.phase === "running") { await agentCancel(run.runId); } };
 
-  const accept = async () => {
-    if (run.phase !== "review" || !project) return;
-    setBusy(true);
-    const files = splitPatch(run.diff?.patch ?? "");
+  const selection = (): { picks: Pick[]; partial: boolean } => {
+    const files = splitPatch(run.phase === "review" ? run.diff?.patch ?? "" : "");
     const picks: Pick[] = [];
     let partial = false;
     for (const f of files) {
@@ -160,7 +206,22 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
       if (hunks.length === f.hunks.length) picks.push({ path: f.name, hunks: null });
       else { partial = true; if (hunks.length) picks.push({ path: f.name, hunks }); }
     }
-    if (picks.length === 0) { onNote("Nothing selected to accept."); setBusy(false); return; }
+    return { picks, partial };
+  };
+  // Accept: the changes land in the checkout and a snapshot is taken; you commit when the paper is ready.
+  const apply = async () => {
+    if (run.phase !== "review" || !project) return;
+    const { picks, partial } = selection();
+    if (picks.length === 0) { onNote("Nothing selected to accept."); return; }
+    setBusy(true);
+    try { const files = await agentApply(project.root, run.runId, partial ? picks : undefined, run.prompt); setRun({ phase: "done", text: `Applied to ${files.length} file${files.length === 1 ? "" : "s"} and saved${partial ? " (only the selected changes)" : ""}. A snapshot was taken; commit whenever you like.` }); onChanged(); refreshMemory(); }
+    catch (e) { onNote(String(e)); } finally { setBusy(false); }
+  };
+  const accept = async () => {
+    if (run.phase !== "review" || !project) return;
+    const { picks, partial } = selection();
+    if (picks.length === 0) { onNote("Nothing selected to accept."); return; }
+    setBusy(true);
     try { const id = await agentAccept(project.root, run.runId, message.trim() || run.prompt, partial ? picks : undefined, run.provider, run.prompt); setRun({ phase: "done", text: `Committed ${id} to your checkout${partial ? " (only the selected changes; the rest was discarded)" : ""}.` }); onChanged(); refreshMemory(); }
     catch (e) { onNote(String(e)); } finally { setBusy(false); }
   };
@@ -221,17 +282,7 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
           {(run.phase === "running" || run.phase === "review") && (
             <div className="run">
               <div className="prompt"><b>You asked {providers.find((p) => p.id === run.provider)?.label ?? run.provider}</b>{run.prompt}</div>
-              <div className="steps" role="status" aria-live="polite">
-                {run.steps.filter((s) => s.kind !== "log").map((s, i) => (
-                  <div key={i} className={`step ${s.kind === "text" ? "text" : "done"}`}>
-                    {s.kind === "tool" ? <Check aria-label="Done" /> : <span />}
-                    <span>{s.kind === "tool" ? <>{(s.tool ?? "tool").toLowerCase()} <code>{s.text}</code></> : s.text}</span>
-                    <span className="t"></span>
-                  </div>
-                ))}
-                {run.phase === "running" && <div className="step running"><Loader2 aria-label="Running" /><span>{run.steps.length ? "working" : `starting ${providers.find((p) => p.id === run.provider)?.label ?? ""}`}</span><span className="t"></span></div>}
-                {run.phase === "review" && !run.ok && <div className="step failed"><X aria-label="Failed" /><span>{run.summary || "The agent reported an error."}</span><span className="t"></span></div>}
-              </div>
+              <Transcript steps={run.steps} running={run.phase === "running"} started={run.started} />
               {run.phase === "running" && <div className="actions"><button className="btn" onClick={cancel}><Square /> Stop</button></div>}
               {run.steps.some((s) => s.kind === "log") && (
                 <details className="log-details"><summary>{run.steps.filter((s) => s.kind === "log").length} log lines</summary>
@@ -240,6 +291,18 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
 
               {run.phase === "review" && (
                 <>
+                  <div className={`result ${run.ok ? "ok" : "failed"}`}>
+                    {run.ok ? <Check aria-hidden /> : <X aria-hidden />}
+                    <div>
+                      <b>{run.ok ? "Finished" : "Stopped with an error"}</b>
+                      <span>
+                        {fmtElapsed(run.finished - run.started)}
+                        {run.diff && run.diff.changes.length > 0 && <> · {run.diff.changes.length} file{run.diff.changes.length === 1 ? "" : "s"} · <em className="add">+{run.diff.changes.reduce((a, c) => a + c.add, 0)}</em> <em className="del">−{run.diff.changes.reduce((a, c) => a + c.del, 0)}</em></>}
+                        {run.steps.some((x) => x.kind === "tool" && /tectonic|latexmk|pdflatex|xelatex|typst/.test(x.text)) && <> · compiled</>}
+                      </span>
+                      {!run.ok && run.summary && <p>{run.summary}</p>}
+                    </div>
+                  </div>
                   {run.error && <p className="composer-note" role="alert">{run.error}</p>}
                   {run.diff && run.diff.changes.length > 0 ? (
                     <div className="evidence">
@@ -251,13 +314,18 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
                     <p className="composer-note">The agent made no file changes.</p>
                   )}
                   <div className="commit">
-                    <input value={message} onChange={(e) => setMessage(e.target.value)} aria-label="Commit message" placeholder="Commit message" />
-                    <span className="target">Accept applies the changes to your checkout and commits. Nothing is pushed.</span>
                     <div className="actions">
-                      <button className="btn primary" disabled={busy || !run.diff || run.diff.changes.length === 0 || !message.trim()} onClick={accept}>{excluded.size ? "Accept Selected and Commit" : "Accept and Commit"}</button>
+                      <button className="btn primary" disabled={busy || !run.diff || run.diff.changes.length === 0} onClick={apply} title="The changes land in your files and are saved. A snapshot is taken. Commit whenever the paper is ready."><FileDiff /> {excluded.size ? "Accept Selected" : "Accept"}</button>
                       <button className="btn danger" disabled={busy} onClick={reject}>{run.diff && run.diff.changes.length ? "Reject" : "Dismiss"}</button>
-                      <button className="btn wide" disabled={busy || !run.diff || run.diff.changes.length === 0 || !message.trim()} onClick={pr} title="Commit on the run's branch, push it, and open a pull request with gh">Open Pull Request…</button>
                     </div>
+                    <details className="commit-now">
+                      <summary>Commit or open a pull request now</summary>
+                      <input value={message} onChange={(e) => setMessage(e.target.value)} aria-label="Commit message" placeholder="Commit message" />
+                      <div className="actions">
+                        <button className="btn" disabled={busy || !run.diff || run.diff.changes.length === 0 || !message.trim()} onClick={accept}>{excluded.size ? "Accept Selected and Commit" : "Accept and Commit"}</button>
+                        <button className="btn wide" disabled={busy || !run.diff || run.diff.changes.length === 0 || !message.trim()} onClick={pr} title="Commit on the run's branch, push it, and open a pull request with gh">Open Pull Request…</button>
+                      </div>
+                    </details>
                   </div>
                 </>
               )}

@@ -17,7 +17,7 @@ import type { ManualProvider } from "./lib/manual";
 import { addComment as yAddComment, connect as yConnect, decodeRange, disconnect as yDisconnect, encodeRange, peers as yPeers, randomRoom, removeComment as yRemoveComment, resolveComment as yResolveComment, setCurrentFile, textFor, whenSynced, type Comment, type Peer, type Session, type Transport, replyComment as yReplyComment, userName, colorFor, markHost, hostPresent, publishProject, republishChanged, awaitSnapshot, sharedTexts, persist } from "./lib/collab";
 import type { CommentRange } from "./components/SourceEditor";
 import {
-  bibImportFile, checkForUpdates, projectSnapshot, sessionMaterialize, newPaper, zoteroImport, compile as runCompile, compileCancel, gitClone, gitPull, gitPush, gitRemoteAdd, gitRemoteUrl, isMac, onCompileProgress, relayStart, relayStop, gitCommit, gitInit, gitStatus, importOverleaf, native, onMenu, onWindowFocus,
+  bibImportFile, checkForUpdates, projectSnapshot, sessionMaterialize, checkpoint, checkpoints, checkpointRestore, type Checkpoint, newPaper, zoteroImport, compile as runCompile, compileCancel, gitClone, gitPull, gitPush, gitRemoteAdd, gitRemoteUrl, isMac, onCompileProgress, relayStart, relayStop, gitCommit, gitInit, gitStatus, importOverleaf, native, onMenu, onWindowFocus,
   openProject, pickFolder, readText, setWindowTitle, synctexForward, synctexInverse, writeText,
   type CompileResult, type GitStatus, type PdfPos, type Project,
 } from "./lib/backend";
@@ -36,6 +36,9 @@ export default function App() {
   const [file, setFile] = useState<string | null>(null);
   const [source, setSource] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
+  const [saveState, setSaveState] = useState<"saved" | "saving" | "unsaved" | null>(null);
+  const [versions, setVersions] = useState<Checkpoint[]>([]);
+  const autosaveTimer = useRef<number | null>(null);
   const [mode, setMode] = useState<ViewMode>("visual");
   const [navOpen, setNavOpen] = useState(true);
   const [inspectorOpen, setInspectorOpen] = useState(true);
@@ -585,23 +588,56 @@ export default function App() {
     return () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
   }, [dragging]);
 
-  const onSourceChange = useCallback((text: string) => { setSource(text); setDirty(true); }, []);
+  const onSourceChange = useCallback((text: string) => {
+    setSource(text); setDirty(true);
+    if (!settings.autosave) return;
+    setSaveState("unsaved");
+    if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+    autosaveTimer.current = window.setTimeout(async () => {
+      setSaveState("saving");
+      try { await saveRef.current(); setSaveState("saved"); } catch { setSaveState("unsaved"); }
+    }, 900);
+  }, [settings.autosave]);
+  const saveRef = useRef<() => Promise<void>>(async () => {});
+  useEffect(() => { saveRef.current = save; }, [save]);
+
+  // Snapshots: every five minutes while something is uncommitted, so the paper has a version history without commits.
+  const refreshVersions = useCallback((root: string) => { checkpoints(root).then(setVersions).catch(() => setVersions([])); }, []);
+  useEffect(() => { if (project) refreshVersions(project.root); else setVersions([]); }, [project, refreshVersions]);
+  useEffect(() => {
+    if (!project || !settings.autosave || !git?.isRepo) return;
+    const t = window.setInterval(async () => {
+      try { const id = await checkpoint(project.root, "Autosave"); if (id) refreshVersions(project.root); } catch { /* not a repo yet */ }
+    }, 5 * 60 * 1000);
+    return () => clearInterval(t);
+  }, [project, settings.autosave, git?.isRepo, refreshVersions]);
+  const restoreVersion = useCallback(async (id: string) => {
+    if (!project) return;
+    try {
+      if (dirty) await save();
+      await checkpointRestore(project.root, id);
+      await reloadProject();
+      if (file) { const t = await readText(file); setSource(t); setDirty(false); }
+      refreshVersions(project.root);
+      setNote(`Restored snapshot ${id}. The state before restoring was kept as a snapshot too.`);
+    } catch (e) { setError(String(e)); }
+  }, [project, dirty, save, reloadProject, file, refreshVersions]);
   const jumpToFile = useCallback(async (relFile: string | null, line: number) => {
     if (project && relFile) { const abs = `${project.root}/${relFile}`; if (abs !== file) await selectFile(abs); }
     setMode("source"); setJumpLine(line); setJumpStamp(Date.now());
   }, [project, file, selectFile]);
   const fixWithAgent = useCallback((prompt: string) => { if (!inspectorOpen) toggleInspector(); setPrefill({ text: prompt, stamp: Date.now() }); }, [inspectorOpen, toggleInspector]);
   const jumpTo = useCallback((line: number, inSource?: boolean) => { if (inSource) setMode("source"); setJumpLine(line); setJumpStamp(Date.now()); }, []);
-  const onChanged = useCallback(() => { refreshGit(); reloadProject(); if (file) readText(file).then((t) => { if (!dirty) setSource(t); }).catch(() => {}); }, [refreshGit, reloadProject, file, dirty]);
+  const onChanged = useCallback(() => { refreshGit(); reloadProject(); if (project) refreshVersions(project.root); if (file) readText(file).then((t) => { if (!dirty) setSource(t); }).catch(() => {}); }, [refreshGit, reloadProject, file, dirty, project, refreshVersions]);
 
   const cls = ["app", native ? "native" : "", isMac ? "mac" : "", navOpen ? "" : "nav-hidden", inspectorOpen ? "" : "inspector-hidden", animating ? "animating" : "", focused ? "" : "inactive"].join(" ").trim();
 
   return (
     <div className={cls} style={{ "--nav-w": `${navW}px`, "--inspector-w": `${inspW}px` } as React.CSSProperties}>
-      <Toolbar project={project} file={file} dirty={dirty} mode={mode} navOpen={navOpen} inspectorOpen={inspectorOpen}
+      <Toolbar project={project} file={file} dirty={dirty} saveLabel={settings.autosave ? (saveState === "saving" ? "Saving…" : saveState === "unsaved" ? "Unsaved" : saveState === "saved" ? "Saved" : null) : null} mode={mode} navOpen={navOpen} inspectorOpen={inspectorOpen}
         compiling={compileState.status === "running"} onMode={setMode} onToggleNav={toggleNav} onToggleInspector={toggleInspector} onOpen={open} onCompile={compile} onCancelCompile={() => compileCancel()}
         onShare={() => setSheet("share")} live={!!live} />
-      <Navigator project={project} current={file} outline={outline} git={git} commitFocus={commitFocus} busy={gitBusy} draftMessage={commitDraft}
+      <Navigator project={project} current={file} outline={outline} git={git} commitFocus={commitFocus} busy={gitBusy} draftMessage={commitDraft} versions={versions} onRestore={restoreVersion}
         onSelect={selectFile} onJump={(l) => jumpTo(l)} onInitGit={initGit} onCommit={commitAll} />
       <Document project={project} file={file} source={source} bib={bib} mode={mode} jumpLine={jumpLine} jumpStamp={jumpStamp}
         compileState={compileState} progress={progress} showLog={showLog} onToggleLog={() => setShowLog((v) => !v)} findRequest={findRequest}

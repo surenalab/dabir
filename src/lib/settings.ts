@@ -13,6 +13,7 @@ export interface Settings {
   lineWrap: boolean;
   revealOnClick: boolean;       // visual view: click a widget to reveal its source
   compileOnSave: boolean;
+  autosave: boolean;            // write the file a moment after you stop typing; snapshots every few minutes
   signalingUrl: string;         // for the "signalling server" live mode; empty means none configured
 }
 
@@ -29,6 +30,7 @@ export const DEFAULTS: Settings = {
   lineWrap: true,
   revealOnClick: true,
   compileOnSave: false,
+  autosave: true,
   signalingUrl: "",
 };
 
