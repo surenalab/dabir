@@ -1,6 +1,6 @@
 [package]
 name = "dabir"
-version = "0.1.0"
+version = "0.1.1"
 description = "Dabir: a local-first workspace for scientific writing"
 authors = ["Sadegh Salehi"]
 edition = "2021"
