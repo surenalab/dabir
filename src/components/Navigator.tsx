@@ -48,9 +48,12 @@ interface Props {
   onInitGit: () => void;
   onCommit: (message: string) => Promise<void>;
   draftMessage?: string;
+  versions?: { id: string; message: string; at: number }[];
+  onRestore?: (id: string) => void;
 }
 
-export function Navigator({ project, current, outline, git, commitFocus, busy, onSelect, onJump, onInitGit, onCommit, draftMessage }: Props) {
+export function Navigator({ project, current, outline, git, commitFocus, busy, onSelect, onJump, onInitGit, onCommit, draftMessage, versions, onRestore }: Props) {
+  const [showVersions, setShowVersions] = useState(false);
   const ref = useRef<HTMLElement>(null);
   const commitInput = useRef<HTMLInputElement>(null);
   const [message, setMessage] = useState("");
@@ -137,6 +140,23 @@ export function Navigator({ project, current, outline, git, commitFocus, busy, o
                 <span className="id">{c.id}</span><span className="summary">{c.summary}</span><span className="when">{ago(c.when)}</span>
               </div>
             ))}
+          </div>
+        )}
+        {versions && versions.length > 0 && (
+          <div className="versions">
+            <button className="versions-toggle" onClick={() => setShowVersions((v) => !v)} aria-expanded={showVersions} title="Snapshots taken by autosave and after agent changes. Restoring is itself snapshotted, so it can be undone.">
+              Versions <span className="count">{versions.length}</span>
+            </button>
+            {showVersions && (
+              <div className="version-list">
+                {versions.slice(0, 12).map((v) => (
+                  <div className="commit-row version" key={v.id} title={`${v.id} · ${new Date(v.at * 1000).toLocaleString()}`}>
+                    <span className="id">{v.id}</span><span className="summary">{v.message}</span><span className="when">{ago(v.at * 1000)}</span>
+                    <button className="restore" onClick={() => onRestore?.(v.id)} disabled={busy}>Restore</button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </section>

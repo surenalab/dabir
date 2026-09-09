@@ -728,6 +728,23 @@ fn agent_accept(root: String, run_id: String, message: String, picks: Option<Vec
 #[tauri::command]
 fn agent_reject(root: String, run_id: String) -> Result<(), String> { git::worktree_remove(Path::new(&root), &run_id) }
 
+/// Accept without a commit: the changes land in the checkout (autosaved, snapshotted), the user commits when they like.
+#[tauri::command]
+fn agent_apply(root: String, run_id: String, picks: Option<Vec<git::Pick>>, prompt: Option<String>) -> Result<Vec<String>, String> {
+    let root_p = PathBuf::from(&root);
+    let applied = git::worktree_apply(&root_p, &run_id, picks)?;
+    let label = prompt.map(|p| p.chars().take(72).collect::<String>()).unwrap_or_else(|| "agent change".into());
+    let _ = git::checkpoint(&root_p, &format!("Agent: {}", label));
+    Ok(applied)
+}
+
+#[tauri::command]
+fn checkpoint(root: String, message: String) -> Result<Option<String>, String> { git::checkpoint(Path::new(&root), &message) }
+#[tauri::command]
+fn checkpoints(root: String) -> Result<Vec<git::Checkpoint>, String> { git::checkpoints(Path::new(&root), 60) }
+#[tauri::command]
+fn checkpoint_restore(root: String, id: String) -> Result<(), String> { git::checkpoint_restore(Path::new(&root), &id) }
+
 #[tauri::command]
 fn agent_pull_request(root: String, run_id: String, message: String) -> Result<String, String> { git::worktree_pull_request(Path::new(&root), &run_id, &message) }
 
@@ -885,7 +902,7 @@ pub fn run() {
             templates_list, new_paper, bib_import_file, zotero_import,
             synctex_forward, synctex_inverse,
             git_status, git_init, git_commit, git_clone, git_remote_add, git_remote_url, git_pull, git_push, relay_start, relay_stop,
-            project_snapshot, session_materialize,
+            project_snapshot, session_materialize, agent_apply, checkpoint, checkpoints, checkpoint_restore,
             agent_providers, agent_run, agent_cancel, agent_diff, agent_accept, agent_reject, agent_pull_request,
             memory_read, memory_setup, provenance_rerun, context_pack
         ])
@@ -1002,6 +1019,29 @@ mod tests {
         assert_eq!(evs.len(), 1);
         assert_eq!(evs[0].2.as_deref(), Some("Read"));
         assert_eq!(evs[0].1, "/p/main.tex");
+    }
+
+    #[test]
+    fn checkpoints_do_not_touch_branch_or_index() {
+        let dir = std::env::temp_dir().join(format!("dabir-ckpt-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("main.tex"), "one\n").unwrap();
+        git::init(&dir).unwrap();
+        git::commit(&dir, "init", None).unwrap();
+        assert!(git::checkpoint(&dir, "nothing changed").unwrap().is_none());
+        fs::write(dir.join("main.tex"), "two\n").unwrap();
+        let id = git::checkpoint(&dir, "Autosave").unwrap().unwrap();
+        assert_eq!(id.len(), 7);
+        assert!(git::checkpoint(&dir, "again").unwrap().is_none(), "no duplicate for an unchanged tree");
+        let st = git::status(&dir).unwrap();
+        assert!(st.changes.iter().any(|c| c.path == "main.tex"), "working tree still shows the edit as uncommitted: {:?}", st.changes);
+        let list = git::checkpoints(&dir, 10).unwrap();
+        assert_eq!(list.len(), 1); assert_eq!(list[0].message, "Autosave");
+        fs::write(dir.join("main.tex"), "three\n").unwrap();
+        git::checkpoint_restore(&dir, &id).unwrap();
+        assert_eq!(fs::read_to_string(dir.join("main.tex")).unwrap(), "two\n");
+        assert_eq!(git::checkpoints(&dir, 10).unwrap().len(), 2, "restoring first snapshots the state it replaces");
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
