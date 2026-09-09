@@ -123,6 +123,7 @@ interface Props {
   onRemoveComment: (id: string) => void;
   onJumpComment: (c: Comment) => void;
   onShare: () => void;
+  autoRun?: string | null;
   project: Project | null;
   gitRepo: boolean;
   askFocus: number;
@@ -133,7 +134,7 @@ interface Props {
   onNote: (text: string) => void;
 }
 
-export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady, onChanged, onOpenFile, onNote, live, peers, comments, currentFile, hasSelection, onAddComment, onResolveComment, onReplyComment, onRemoveComment, onJumpComment, onShare }: Props) {
+export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady, onChanged, onOpenFile, onNote, live, peers, comments, currentFile, hasSelection, onAddComment, onResolveComment, onReplyComment, onRemoveComment, onJumpComment, onShare, autoRun }: Props) {
   const [commentDraft, setCommentDraft] = useState("");
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [replyDraft, setReplyDraft] = useState("");
@@ -193,6 +194,14 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
       setDraft("");
     } catch (e) { onNote(String(e)); }
   };
+
+  // Preview-only: start a run automatically so screenshots can show the transcript.
+  const autoRan = useRef(false);
+  useEffect(() => {
+    if (!autoRun || autoRan.current || !project || !providers.length || run.phase !== "idle") return;
+    autoRan.current = true; setTab("agent");
+    (async () => { try { const started = await agentRun(project.root, provider, autoRun); setRun({ phase: "running", runId: started.runId, prompt: autoRun, steps: [], provider, started: Date.now() }); } catch { /* preview only */ } })();
+  }, [autoRun, project, providers, provider, run.phase]);
 
   const cancel = async () => { if (run.phase === "running") { await agentCancel(run.runId); } };
 
