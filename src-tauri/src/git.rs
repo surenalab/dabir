@@ -278,9 +278,15 @@ pub fn filter_patch(patch: &str, picks: &[Pick]) -> String {
     out
 }
 
-/// Apply the worktree's changes to the user's checkout and commit them there.
-/// With `paths`, only those files are applied and committed; the rest is discarded with the worktree.
-pub fn worktree_accept(root: &Path, run_id: &str, message: &str, picks: Option<Vec<Pick>>) -> Result<String, String> {
+/// Apply the worktree's changes to the user's checkout without committing, then drop the worktree.
+/// Returns the repository-relative paths that were applied. Pair with `checkpoint` for a record.
+pub fn worktree_apply(root: &Path, run_id: &str, picks: Option<Vec<Pick>>) -> Result<Vec<String>, String> {
+    let selected = apply_selection(root, run_id, picks)?;
+    worktree_remove(root, run_id)?;
+    Ok(selected)
+}
+
+fn apply_selection(root: &Path, run_id: &str, picks: Option<Vec<Pick>>) -> Result<Vec<String>, String> {
     let dir = worktree_dir(root, run_id);
     let (workdir, prefix) = repo_prefix(root)?;
     // Picks arrive relative to the paper; the patch speaks in repository paths.
@@ -304,9 +310,82 @@ pub fn worktree_accept(root: &Path, run_id: &str, message: &str, picks: Option<V
     }
     let mut selected = selected;
     if root.join(".dabir/memory/runs.md").exists() && !selected.is_empty() { selected.push(format!("{}.dabir/memory/runs.md", prefix)); }
+    Ok(selected)
+}
+
+/// Apply the worktree's changes to the user's checkout and commit them there.
+/// With `picks`, only those files and hunks are applied and committed; the rest is discarded with the worktree.
+pub fn worktree_accept(root: &Path, run_id: &str, message: &str, picks: Option<Vec<Pick>>) -> Result<String, String> {
+    let selected = apply_selection(root, run_id, picks)?;
     let id = commit(root, message, if selected.is_empty() { None } else { Some(selected) })?;
     worktree_remove(root, run_id)?;
     Ok(id)
+}
+
+// ---------------------------------------------------------------- checkpoints
+//
+// Word-style version history without asking for commits: a snapshot of the paper's working tree is
+// written as a commit on `refs/dabir/checkpoints`, chained to the previous snapshot, leaving the user's
+// branch, index and history untouched. Nothing is created when nothing changed.
+
+const CHECKPOINT_REF: &str = "refs/dabir/checkpoints";
+
+#[derive(Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct Checkpoint { pub id: String, pub message: String, pub at: i64 }
+
+fn checkpoint_tree(repo: &Repository, prefix: &str) -> Result<git2::Oid, String> {
+    let mut index = repo.index().map_err(|e| e.to_string())?;
+    let spec = if prefix.is_empty() { "*".to_string() } else { format!("{}*", prefix) };
+    let mut skip = |path: &Path, _spec: &[u8]| -> i32 { let s = path.to_string_lossy(); if s.contains(".dabir/worktrees") || s.contains(".dabir/build") || s.contains(".dabir/index") { 1 } else { 0 } };
+    index.add_all([spec.as_str()].iter(), git2::IndexAddOption::DEFAULT, Some(&mut skip)).map_err(|e| e.to_string())?;
+    index.update_all([spec.as_str()].iter(), None).map_err(|e| e.to_string())?;
+    let tree = index.write_tree_to(repo).map_err(|e| e.to_string())?;
+    // Forget the in-memory staging so the user's own index file is left exactly as it was.
+    index.read(true).map_err(|e| e.to_string())?;
+    Ok(tree)
+}
+
+/// Snapshot the working tree. Returns the short id, or None when nothing changed since the last snapshot.
+pub fn checkpoint(root: &Path, message: &str) -> Result<Option<String>, String> {
+    let repo = Repository::discover(root).map_err(|e| e.to_string())?;
+    let (_, prefix) = repo_prefix(root)?;
+    let tree_id = checkpoint_tree(&repo, &prefix)?;
+    let parent = repo.find_reference(CHECKPOINT_REF).ok().and_then(|r| r.peel_to_commit().ok());
+    if let Some(p) = &parent { if p.tree_id() == tree_id { return Ok(None); } }
+    else if let Some(head) = repo.head().ok().and_then(|h| h.peel_to_commit().ok()) { if head.tree_id() == tree_id { return Ok(None); } }
+    let tree = repo.find_tree(tree_id).map_err(|e| e.to_string())?;
+    let s = sig(&repo)?;
+    let parents: Vec<&git2::Commit> = parent.iter().collect();
+    let oid = repo.commit(Some(CHECKPOINT_REF), &s, &s, message, &tree, &parents).map_err(|e| e.to_string())?;
+    Ok(Some(oid.to_string()[..7].to_string()))
+}
+
+/// The most recent snapshots, newest first.
+pub fn checkpoints(root: &Path, limit: usize) -> Result<Vec<Checkpoint>, String> {
+    let repo = Repository::discover(root).map_err(|e| e.to_string())?;
+    let Some(head) = repo.find_reference(CHECKPOINT_REF).ok().and_then(|r| r.peel_to_commit().ok()) else { return Ok(vec![]) };
+    let mut out = vec![];
+    let mut cur = Some(head);
+    while let Some(c) = cur { if out.len() >= limit { break; }
+        out.push(Checkpoint { id: c.id().to_string()[..7].to_string(), message: c.message().unwrap_or("").trim().to_string(), at: c.time().seconds() });
+        cur = c.parent(0).ok();
+    }
+    Ok(out)
+}
+
+/// Put the paper's files back as they were in a snapshot. The current state is snapshotted first, so
+/// restoring is itself reversible. The user's branch and index are not moved.
+pub fn checkpoint_restore(root: &Path, id: &str) -> Result<(), String> {
+    checkpoint(root, &format!("Before restoring {}", id))?;
+    let repo = Repository::discover(root).map_err(|e| e.to_string())?;
+    let (_, prefix) = repo_prefix(root)?;
+    let obj = repo.revparse_single(id).map_err(|_| format!("No snapshot {}", id))?;
+    let tree = obj.peel_to_tree().map_err(|e| e.to_string())?;
+    let mut cb = git2::build::CheckoutBuilder::new();
+    cb.force().update_index(false).remove_untracked(false);
+    if !prefix.is_empty() { cb.path(format!("{}*", prefix)); }
+    repo.checkout_tree(tree.as_object(), Some(&mut cb)).map_err(|e| e.to_string())
 }
 
 pub fn worktree_remove(root: &Path, run_id: &str) -> Result<(), String> {

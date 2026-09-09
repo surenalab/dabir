@@ -85,7 +85,10 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
           <Row label="Click a widget to reveal its source" hint="In the visual view. Off means widgets reveal only when the cursor is placed inside them with the keyboard.">
             <Toggle on={s.revealOnClick} onChange={(v) => updateSettings({ revealOnClick: v })} label="Reveal on click" />
           </Row>
-          <Row label="Compile on save">
+          <Row label="Autosave" hint="Writes the file about a second after you stop typing, like Word. A snapshot of the whole paper is taken every five minutes and after each accepted agent change; Versions in the sidebar restores any of them. Your Git history is untouched until you commit.">
+            <Toggle on={s.autosave} onChange={(v) => updateSettings({ autosave: v })} label="Autosave" />
+          </Row>
+          <Row label={s.autosave ? "Compile after changes settle" : "Compile on save"}>
             <Toggle on={s.compileOnSave} onChange={(v) => updateSettings({ compileOnSave: v })} label="Compile on save" />
           </Row>
         </section>

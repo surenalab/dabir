@@ -119,10 +119,15 @@ fn parse_line(id: &str, line: &str) -> Vec<(String, String, Option<String>, Opti
     match id {
         "claude" | "cursor" | "grok" => {
             match v["type"].as_str() {
+                Some("thinking") => {
+                    // Cursor streams reasoning as deltas; show it as a quiet running line.
+                    if v["subtype"] == "delta" { if let Some(t) = v["text"].as_str() { if !t.trim().is_empty() { out.push(("thinking".into(), t.into(), None, None)); } } }
+                }
                 Some("assistant") => {
                     if let Some(items) = v["message"]["content"].as_array() {
                         for it in items {
                             match it["type"].as_str() {
+                                Some("thinking") => { if let Some(t) = it["thinking"].as_str() { if !t.trim().is_empty() { out.push(("thinking".into(), t.into(), None, None)); } } }
                                 Some("text") => out.push(("text".into(), it["text"].as_str().unwrap_or("").into(), None, None)),
                                 Some("tool_use") => {
                                     let name = it["name"].as_str().unwrap_or("tool").to_string();
@@ -176,6 +181,7 @@ fn parse_line(id: &str, line: &str) -> Vec<(String, String, Option<String>, Opti
                     let item = &v["item"];
                     match item["type"].as_str() {
                         Some("agent_message") if v["type"] == "item.completed" => out.push(("text".into(), item["text"].as_str().unwrap_or("").into(), None, None)),
+                        Some("reasoning") if v["type"] == "item.completed" => out.push(("thinking".into(), item["text"].as_str().unwrap_or("").into(), None, None)),
                         Some("command_execution") if v["type"] == "item.started" => out.push(("tool".into(), short(&item["command"]), Some("Bash".into()), None)),
                         Some("file_change") if v["type"] == "item.completed" => {
                             let files = item["changes"].as_array().map(|a| a.iter().map(|c| c["path"].as_str().unwrap_or("").to_string()).collect::<Vec<_>>().join(", ")).unwrap_or_default();

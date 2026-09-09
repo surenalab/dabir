@@ -8,6 +8,7 @@ interface Props {
   project: Project | null;
   file: string | null;
   dirty: boolean;
+  saveLabel?: string | null;
   mode: ViewMode;
   navOpen: boolean;
   inspectorOpen: boolean;
@@ -22,7 +23,7 @@ interface Props {
   live: boolean;
 }
 
-export function Toolbar({ project, file, dirty, mode, navOpen, inspectorOpen, compiling, onMode, onToggleNav, onToggleInspector, onCompile, onCancelCompile, onShare, live }: Props) {
+export function Toolbar({ project, file, dirty, saveLabel, mode, navOpen, inspectorOpen, compiling, onMode, onToggleNav, onToggleInspector, onCompile, onCancelCompile, onShare, live }: Props) {
   const rel = file && project ? file.replace(project.root + "/", "") : null;
   const canCompile = !!project?.mainTex && !compiling;
   return (
@@ -35,7 +36,7 @@ export function Toolbar({ project, file, dirty, mode, navOpen, inspectorOpen, co
       <div className="center" data-tauri-drag-region>
         <div className="doc-title" data-tauri-drag-region>
           <span className="name">{project ? project.name : "No paper open"}</span>
-          {project && <span className="path">{rel ?? "No file selected"}{dirty && <span className="dirty"> · edited</span>}</span>}
+          {project && <span className="path">{rel ?? "No file selected"}{saveLabel ? <span className="dirty"> · {saveLabel}</span> : dirty ? <span className="dirty"> · edited</span> : null}</span>}
         </div>
       </div>
       <div className="trailing">
