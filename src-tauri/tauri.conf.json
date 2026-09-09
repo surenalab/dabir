@@ -61,7 +61,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDVBODJEOUQ5QzM4MzM4QkYKUldTL09JUEQyZG1DV28xTXJEc3JuUDIwMGY2amhQbUd2V3pRNmp5N21SNXJaRllJOFN2UnRTMVUK",
       "endpoints": [
-        "https://github.com/MohammadSadeghSalehi/dabir/releases/latest/download/latest.json"
+        "https://github.com/surenalab/dabir/releases/latest/download/latest.json"
       ]
     }
   }
