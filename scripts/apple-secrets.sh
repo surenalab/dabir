@@ -24,9 +24,20 @@ TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 printf 'Choose a password to protect the exported certificate (used only as a GitHub secret): '
 stty -echo; read -r P12PASS; stty echo; echo
 # Keychain Access asks for permission to export; the .p12 lives only in the temp dir for a moment.
-security export -t identities -f pkcs12 -k ~/Library/Keychains/login.keychain-db -P "$P12PASS" -o "$TMP/cert.p12" 2>/dev/null \
-  || { echo "Export failed. Export the certificate manually from Keychain Access (right-click › Export) as a .p12 and set DABIR_P12=/path/to/cert.p12"; exit 1; }
-P12="${DABIR_P12:-$TMP/cert.p12}"
+if [ -n "${DABIR_P12:-}" ]; then
+  P12="$DABIR_P12"
+else
+  security export -t identities -f pkcs12 -P "$P12PASS" -o "$TMP/cert.p12" 2>/dev/null \
+    || security export -t identities -f pkcs12 -k ~/Library/Keychains/login.keychain-db -P "$P12PASS" -o "$TMP/cert.p12" 2>/dev/null \
+    || {
+      echo "Automatic export failed (macOS often refuses it for a key created by Keychain Access)."
+      echo "Export by hand: open Keychain Access, choose the login keychain and the My Certificates category,"
+      echo "right-click 'Developer ID Application: ...' and choose Export, save as ~/Desktop/dabir.p12 with this same password,"
+      echo "then run:  DABIR_P12=~/Desktop/dabir.p12 sh scripts/apple-secrets.sh   and delete the file afterwards."
+      exit 1
+    }
+  P12="$TMP/cert.p12"
+fi
 
 printf 'Apple ID email: '; read -r APPLE_ID
 printf 'App-specific password: '; stty -echo; read -r APPLE_PASSWORD; stty echo; echo
