@@ -78,7 +78,7 @@ At run time Dabir prepends a preamble of about ten lines: the identity sentence,
 
 ## Site and identity
 
-`site/` is a static site for Cloudflare Pages: the Surenalab studio page at the root and the product page at `/dabir/`, both in the paper-and-ink world with the lajvard mark, no build step. In Cloudflare Pages, create a project from the repository with build command empty and output directory `site`, then attach `surenalab.com`. The download buttons ask the GitHub API for the latest release once the repository is public and fall back to the releases page. The bundle identifier is `com.surenalab.dabir`. Holding identity: `dev@surenalab.com` owns the Apple Developer account and the `surenalab` GitHub organisation; `hello@surenalab.com` is support.
+The website lives in its own repository, github.com/surenalab/surenalab.com: the studio page at the root and the product page at `/dabir/`, paper-and-ink world with the lajvard mark, static, no build step, with security headers, short redirects (`/dabir/download`), a sitemap and a 404. Cloudflare Pages deploys it from that repository with build command empty and output directory `/`. The download buttons ask the GitHub API for the latest release once the repository is public and fall back to the releases page. The bundle identifier is `com.surenalab.dabir`. Holding identity: `dev@surenalab.com` owns the Apple Developer account and the `surenalab` GitHub organisation; `hello@surenalab.com` is support.
 
 ## Why no server is needed for live sessions
 
