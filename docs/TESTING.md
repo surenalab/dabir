@@ -1,7 +1,7 @@
 # Testing Dabir on Windows and Linux
 
 The release workflow builds four installers from a tag. Until the repository is public they sit on a
-draft release at github.com/MohammadSadeghSalehi/dabir/releases; download the one for your machine.
+draft release at github.com/surenalab/dabir/releases; download the one for your machine.
 
 | Machine | File | Notes |
 |---|---|---|

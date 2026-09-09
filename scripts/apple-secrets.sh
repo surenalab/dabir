@@ -8,7 +8,7 @@
 #   2. An app-specific password for your Apple ID (account.apple.com › Sign-In and Security › App-Specific Passwords).
 #   3. Your Team ID (developer.apple.com/account › Membership details).
 set -eu
-REPO="${DABIR_REPO:-MohammadSadeghSalehi/dabir}"
+REPO="${DABIR_REPO:-surenalab/dabir}"
 command -v gh >/dev/null || { echo "gh (GitHub CLI) is required"; exit 1; }
 
 IDENTITY="$(security find-identity -v -p codesigning | sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p' | head -1)"
