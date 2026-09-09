@@ -2,6 +2,19 @@
 
 The full plan with the design brief and architecture is rendered at [docs/plan.html](docs/plan.html) and published at https://claude.ai/code/artifact/5c6592e1-1c27-46a5-8ff2-728e977bed72. This file is the working summary: what is done, what is next, and the decisions that were made along the way.
 
+## State and next steps (2026-09-10)
+
+**Built and verified on macOS:** editing (visual, source, split, formatting bar, completion, prediction, spelling, grammar on demand), compile with traceable problems and agent fixes, SyncTeX both ways, PDF tools, Git, agent runs on worktrees with hunk review for five vendors, repository memory and skills, live sessions over three transports with full-tree mirrors, comments with threads and PDF pins, templates, Typst, Zotero, updater, release workflow. v0.1.1 draft release has Windows and Linux installers; macOS DMGs wait on notarisation.
+
+**Next, in order:**
+1. Owner resets `APPLE_ID` and `APPLE_PASSWORD`; re-run tag v0.1.1 for signed, notarised DMGs.
+2. Owner tests the Windows installer and the Linux AppImage against docs/TESTING.md; fix what breaks (expect font fallbacks, menu chords, path handling).
+3. Two-machine live session: host on the Mac, joiner on Windows, mirror flow and direct mode.
+4. Benchmark: `bench/` with twenty real LaTeX repair and revision tasks, a runner reusing the live agent test, published pass rates per vendor. This is the artifact that matters for the owner's goal.
+5. Track changes for coauthors who will not use Git (suggesting mode on the Yjs document, per-author colour, accept per change, persisted in `.dabir`).
+6. Remote cursors in Visual view; offline LaTeX-aware spell dictionary; Typst visual layer; local retrieval index.
+7. Public launch: MIT LICENSE and CONTRIBUTING.md in place, repository public, draft release published, site product page restored, launch post.
+
 ## Thesis
 
 The paper is a Git repo that also holds the experiment code. The agent is a coauthor that can rerun a figure and edit the manuscript in one reviewed change. Collaboration rides on GitHub first and live editing second. The visual editor has to be the best-looking LaTeX surface that exists.
