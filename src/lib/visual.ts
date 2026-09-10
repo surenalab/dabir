@@ -6,6 +6,7 @@ import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemir
 import { RangeSetBuilder, StateField, type Range, type EditorState } from "@codemirror/state";
 import katex from "katex";
 import type { BibEntry } from "./latex";
+import { changesField, safeColor, type ChangeKind } from "./changes";
 
 export interface VisualContext {
   revealOnClick: boolean;
@@ -21,6 +22,28 @@ export function setVisualContext(c: VisualContext) { ctx = c; }
 
 // ---------------------------------------------------------------- widgets
 
+/** A pending suggestion that overlaps a widget's source. The widget cannot show the marked text itself,
+ *  so it carries the author's colour and a label; clicking reveals the source with the marks. */
+export interface SuggBadge { kind: ChangeKind | "mixed"; color: string; author: string; count: number }
+const sameSugg = (a: SuggBadge | null, b: SuggBadge | null) => (a === b) || (!!a && !!b && a.kind === b.kind && a.color === b.color && a.author === b.author && a.count === b.count);
+
+abstract class VzWidget extends WidgetType {
+  sugg: SuggBadge | null = null;
+  abstract render(): HTMLElement;
+  toDOM() {
+    const el = this.render();
+    const s = this.sugg;
+    if (s) {
+      el.classList.add("vz-sugg", s.kind);
+      el.style.setProperty("--sugg-color", safeColor(s.color));
+      const what = s.kind === "insert" ? "an insertion" : s.kind === "delete" ? "a deletion" : `${s.count} changes`;
+      el.dataset.sugg = `${s.author} suggests ${what}`;
+      el.title = `${s.author} suggests ${what} here. Click to review the source.`;
+    }
+    return el;
+  }
+}
+
 const katexCache = new Map<string, string>();
 function renderMath(tex: string, display: boolean): string {
   const key = (display ? "D" : "I") + tex;
@@ -32,10 +55,10 @@ function renderMath(tex: string, display: boolean): string {
   return html;
 }
 
-class MathWidget extends WidgetType {
+class MathWidget extends VzWidget {
   constructor(readonly tex: string, readonly display: boolean, readonly tag: string, readonly from: number) { super(); }
-  eq(o: MathWidget) { return o.tex === this.tex && o.display === this.display && o.tag === this.tag; }
-  toDOM() {
+  eq(o: MathWidget) { return sameSugg(this.sugg, o.sugg) && o.tex === this.tex && o.display === this.display && o.tag === this.tag; }
+  render() {
     const el = document.createElement(this.display ? "div" : "span");
     el.className = this.display ? "vz-eq" : "vz-math";
     el.dataset.from = String(this.from);
@@ -47,10 +70,10 @@ class MathWidget extends WidgetType {
 }
 
 /** A folded run of preamble lines. Click to open it. */
-class FoldWidget extends WidgetType {
+class FoldWidget extends VzWidget {
   constructor(readonly lines: number, readonly first: string, readonly from: number) { super(); }
-  eq(o: FoldWidget) { return o.lines === this.lines && o.first === this.first; }
-  toDOM() {
+  eq(o: FoldWidget) { return sameSugg(this.sugg, o.sugg) && o.lines === this.lines && o.first === this.first; }
+  render() {
     const el = document.createElement("div");
     el.className = "vz-fold";
     el.dataset.from = String(this.from);
@@ -74,10 +97,10 @@ class PreviewWidget extends WidgetType {
   ignoreEvent() { return true; }
 }
 
-class ChipWidget extends WidgetType {
+class ChipWidget extends VzWidget {
   constructor(readonly kind: "cite" | "ref" | "input" | "note" | "link", readonly label: string, readonly title: string, readonly from: number, readonly target?: string) { super(); }
-  eq(o: ChipWidget) { return o.kind === this.kind && o.label === this.label && o.title === this.title; }
-  toDOM() {
+  eq(o: ChipWidget) { return sameSugg(this.sugg, o.sugg) && o.kind === this.kind && o.label === this.label && o.title === this.title; }
+  render() {
     const el = document.createElement("span");
     el.className = `vz-chip vz-${this.kind}`;
     el.textContent = this.label;
@@ -91,17 +114,17 @@ class ChipWidget extends WidgetType {
   ignoreEvent() { return false; }
 }
 
-class TextWidget extends WidgetType {
+class TextWidget extends VzWidget {
   constructor(readonly text: string, readonly from: number) { super(); }
-  eq(o: TextWidget) { return o.text === this.text; }
-  toDOM() { const el = document.createElement("span"); el.textContent = this.text; el.dataset.from = String(this.from); return el; }
+  eq(o: TextWidget) { return sameSugg(this.sugg, o.sugg) && o.text === this.text; }
+  render() { const el = document.createElement("span"); el.textContent = this.text; el.dataset.from = String(this.from); return el; }
   ignoreEvent() { return false; }
 }
 
-class TableWidget extends WidgetType {
+class TableWidget extends VzWidget {
   constructor(readonly inner: string, readonly number: number, readonly from: number) { super(); }
-  eq(o: TableWidget) { return o.inner === this.inner && o.number === this.number; }
-  toDOM() {
+  eq(o: TableWidget) { return sameSugg(this.sugg, o.sugg) && o.inner === this.inner && o.number === this.number; }
+  render() {
     const el = document.createElement("figure");
     el.className = "vz-figure vz-tablefig";
     el.dataset.from = String(this.from);
@@ -144,10 +167,10 @@ class TableWidget extends WidgetType {
 
 const imageCache = new Map<string, Promise<string | null>>();
 
-class FigureWidget extends WidgetType {
+class FigureWidget extends VzWidget {
   constructor(readonly file: string | null, readonly caption: string, readonly number: number, readonly from: number) { super(); }
-  eq(o: FigureWidget) { return o.file === this.file && o.caption === this.caption && o.number === this.number; }
-  toDOM() {
+  eq(o: FigureWidget) { return sameSugg(this.sugg, o.sugg) && o.file === this.file && o.caption === this.caption && o.number === this.number; }
+  render() {
     const el = document.createElement("figure");
     el.className = "vz-figure";
     el.dataset.from = String(this.from);
@@ -233,6 +256,16 @@ export function buildDecorations(state: EditorState): DecorationSet {
   const text = doc.toString();
   const ranges: Range<Decoration>[] = [];
   const push = (from: number, to: number, d: Decoration) => { if (to >= from) ranges.push(d.range(from, to)); };
+  // Suggestions whose text a widget would hide: the widget wears the badge instead.
+  const suggs = state.field(changesField, false)?.items ?? [];
+  const badge = <T extends VzWidget>(w: T, from: number, to: number): T => {
+    const hits = suggs.filter((c) => c.from < to && c.to > from);
+    if (hits.length) {
+      const kinds = new Set(hits.map((c) => c.kind));
+      w.sugg = { kind: kinds.size === 1 ? hits[0].kind : "mixed", color: hits[0].color, author: hits.every((c) => c.author === hits[0].author) ? hits[0].author : `${hits[0].author} and others`, count: hits.length };
+    }
+    return w;
+  };
 
   // Preamble: everything before \begin{document}
   const beginDoc = text.indexOf("\\begin{document}");
@@ -249,7 +282,7 @@ export function buildDecorations(state: EditorState): DecorationSet {
         let x = doc.lineAt(r0.from);
         while (x.from <= r0.to) { push(x.from, x.from, line("vz-preamble")); if (x.to >= doc.length) break; x = doc.lineAt(x.to + 1); }
       } else {
-        push(r0.from, r0.to, Decoration.replace({ widget: new FoldWidget(r0.lines, doc.lineAt(r0.from).text.trim(), r0.from), block: true }));
+        push(r0.from, r0.to, Decoration.replace({ widget: badge(new FoldWidget(r0.lines, doc.lineAt(r0.from).text.trim(), r0.from), r0.from, r0.to), block: true }));
       }
       run = null;
     };
@@ -291,13 +324,13 @@ export function buildDecorations(state: EditorState): DecorationSet {
     if (isMath) {
       const tex = mathBody(env, inner);
       const tag = env.endsWith("*") ? "" : `(${eqCount})`;
-      push(from, to, Decoration.replace({ widget: new MathWidget(tex, true, tag, from), block: true }));
+      push(from, to, Decoration.replace({ widget: badge(new MathWidget(tex, true, tag, from), from, to), block: true }));
     } else if (isFig) {
       const file = /\\includegraphics(?:\[[^\]]*\])?\{([^}]*)\}/.exec(inner)?.[1] ?? null;
       const caption = /\\caption\{((?:[^{}]|\{[^{}]*\})*)\}/.exec(inner)?.[1] ?? "";
-      push(from, to, Decoration.replace({ widget: new FigureWidget(file, caption, figCount, from), block: true }));
+      push(from, to, Decoration.replace({ widget: badge(new FigureWidget(file, caption, figCount, from), from, to), block: true }));
     } else if (isTab) {
-      push(from, to, Decoration.replace({ widget: new TableWidget(inner, tabCount, from), block: true }));
+      push(from, to, Decoration.replace({ widget: badge(new TableWidget(inner, tabCount, from), from, to), block: true }));
     }
   }
   const inBlocked = (pos: number) => blocked.some(([a, b]) => pos >= a && pos < b);
@@ -356,7 +389,7 @@ export function buildDecorations(state: EditorState): DecorationSet {
     while ((mm = im.exec(s))) {
       const from = l.from + mm.index, to = from + mm[0].length;
       if (selectionTouches(state, from, to)) continue;
-      push(from, to, Decoration.replace({ widget: new MathWidget(mm[1], false, "", from) }));
+      push(from, to, Decoration.replace({ widget: badge(new MathWidget(mm[1], false, "", from), from, to) }));
     }
     // Citations and refs
     const cr = /\\(cite[tp]?\*?|ref|eqref|autoref|cref|Cref)\{([^}]*)\}/g;
@@ -364,8 +397,8 @@ export function buildDecorations(state: EditorState): DecorationSet {
       const from = l.from + mm.index, to = from + mm[0].length;
       if (selectionTouches(state, from, to)) continue;
       const keys = mm[2].split(",").map((k) => k.trim());
-      if (mm[1].startsWith("cite")) push(from, to, Decoration.replace({ widget: new ChipWidget("cite", keys.map(citeLabel).join("; "), keys.map((k) => ctx.bib[k]?.title ?? k).join("\n"), from) }));
-      else push(from, to, Decoration.replace({ widget: new ChipWidget("ref", keys[0].replace(/^(fig|eq|sec|tab):/, ""), mm[0], from) }));
+      if (mm[1].startsWith("cite")) push(from, to, Decoration.replace({ widget: badge(new ChipWidget("cite", keys.map(citeLabel).join("; "), keys.map((k) => ctx.bib[k]?.title ?? k).join("\n"), from), from, to) }));
+      else push(from, to, Decoration.replace({ widget: badge(new ChipWidget("ref", keys[0].replace(/^(fig|eq|sec|tab):/, ""), mm[0], from), from, to) }));
     }
     // \input / \include
     const inp = /\\(?:input|include)\{([^}]*)\}/g;
@@ -373,21 +406,21 @@ export function buildDecorations(state: EditorState): DecorationSet {
       const from = l.from + mm.index, to = from + mm[0].length;
       if (selectionTouches(state, from, to)) continue;
       const rel = mm[1].endsWith(".tex") ? mm[1] : `${mm[1]}.tex`;
-      push(from, to, Decoration.replace({ widget: new ChipWidget("input", `Included: ${rel}`, "Click to open", from, rel) }));
+      push(from, to, Decoration.replace({ widget: badge(new ChipWidget("input", `Included: ${rel}`, "Click to open", from, rel), from, to) }));
     }
     // Footnotes become a marker that shows the note on hover
     const fn = /\\footnote\{((?:[^{}]|\{[^{}]*\})*)\}/g;
     while ((mm = fn.exec(s))) {
       const from = l.from + mm.index, to = from + mm[0].length;
       if (selectionTouches(state, from, to)) continue;
-      push(from, to, Decoration.replace({ widget: new ChipWidget("note", "†", mm[1], from) }));
+      push(from, to, Decoration.replace({ widget: badge(new ChipWidget("note", "†", mm[1], from), from, to) }));
     }
     // Links
     const url = /\\(?:href\{([^}]*)\}\{([^}]*)\}|url\{([^}]*)\})/g;
     while ((mm = url.exec(s))) {
       const from = l.from + mm.index, to = from + mm[0].length;
       if (selectionTouches(state, from, to)) continue;
-      push(from, to, Decoration.replace({ widget: new ChipWidget("link", mm[2] ?? mm[3] ?? "", mm[1] ?? mm[3] ?? "", from) }));
+      push(from, to, Decoration.replace({ widget: badge(new ChipWidget("link", mm[2] ?? mm[3] ?? "", mm[1] ?? mm[3] ?? "", from), from, to) }));
     }
     // Emphasis: hide the markup, style the content
     const em = /\\(emph|textit|textbf|texttt|textsc|textsuperscript|textsubscript)\{([^{}]*)\}/g;
@@ -443,6 +476,7 @@ const visualField = StateField.define<DecorationSet>({
   create: (state) => buildDecorations(state),
   update: (deco, tr) => {
     if (tr.docChanged) return buildDecorations(tr.state);
+    if (tr.startState.field(changesField, false)?.items !== tr.state.field(changesField, false)?.items) return buildDecorations(tr.state);
     if (!tr.selection) return deco;
     // Skip a full rebuild when the caret stays on the same line(s); widgets only reveal on line intersection.
     const a = tr.startState.selection.main, b = tr.state.selection.main;

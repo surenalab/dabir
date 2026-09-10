@@ -506,6 +506,19 @@ button { background: none; border: 0; padding: 0; cursor: default; }
 .vz-figure figcaption { font-size: .88em; margin-top: .7em; color: var(--ink-2); }
 .vz-figure figcaption b { color: var(--ink); font-weight: 600; }
 
+/* A widget whose source holds a pending suggestion: inline widgets wear the mark itself;
+   block widgets get a faint wash, a hairline in the author's colour and a one-line label with the author's dot. */
+.vz-sugg { --sugg-color: var(--warn); }
+.vz-math.vz-sugg, .vz-chip.vz-sugg { background: color-mix(in srgb, var(--sugg-color) 12%, transparent); text-decoration-color: var(--sugg-color); text-decoration-thickness: 1.5px; text-underline-offset: 3px; }
+.vz-math.vz-sugg.insert, .vz-chip.vz-sugg.insert, .vz-math.vz-sugg.mixed, .vz-chip.vz-sugg.mixed { text-decoration-line: underline; }
+.vz-math.vz-sugg.delete, .vz-chip.vz-sugg.delete { text-decoration-line: line-through; }
+.vz-eq.vz-sugg, .vz-figure.vz-sugg, .vz-fold.vz-sugg { background: color-mix(in srgb, var(--sugg-color) 6%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--sugg-color) 45%, transparent); border-radius: var(--radius-md); }
+.vz-eq.vz-sugg::before, .vz-figure.vz-sugg::before, .vz-fold.vz-sugg::before { content: attr(data-sugg); display: block; padding-left: 14px; margin-bottom: .35em; font-family: var(--font-ui); font-size: var(--text-xs); color: var(--ink-3); background: radial-gradient(circle at 4px 55%, var(--sugg-color) 3.5px, transparent 4.2px) no-repeat; }
+.vz-eq.vz-sugg { padding-top: 1.6em; }
+.vz-eq.vz-sugg::before { position: absolute; top: .3em; left: 1.5em; margin: 0; }
+.vz-fold.vz-sugg { flex-wrap: wrap; }
+.vz-fold.vz-sugg::before { flex-basis: 100%; margin: 0; }
+
 /* PDF pages and SyncTeX marker */
 .pdf-page { position: relative; box-shadow: var(--shadow-raised); background: #fff; cursor: crosshair; }
 .pdf-page canvas { display: block; }
