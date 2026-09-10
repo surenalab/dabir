@@ -6,6 +6,7 @@ import { WebsocketProvider } from "y-websocket";
 import { WebrtcProvider } from "y-webrtc";
 import { ManualProvider } from "./manual";
 import type { Awareness } from "y-protocols/awareness";
+import type { Change } from "./changes";
 
 export interface Peer { clientId: number; name: string; color: string; file?: string; me: boolean }
 export interface Reply { author: string; color: string; text: string; at: number }
@@ -23,6 +24,7 @@ export interface Session {
   awareness: Awareness;
   texts: Map<string, Y.Text>;
   comments: Y.Array<Comment>;
+  changes: Y.Array<Change>;
 }
 
 const COLORS = ["#a8322d", "#2f6b3a", "#1f5fa8", "#8a6414", "#6b3fa0", "#0e7c7b"];
@@ -50,7 +52,7 @@ export function connect(url: string, room: string, name: string, host: boolean, 
     : new WebsocketProvider(url, room, doc, { connect: true });
   const awareness = provider.awareness;
   awareness.setLocalStateField("user", { name, color: colorFor(name) });
-  return { url, room, host, transport, doc, provider, awareness, texts: new Map(), comments: doc.getArray<Comment>("comments") };
+  return { url, room, host, transport, doc, provider, awareness, texts: new Map(), comments: doc.getArray<Comment>("comments"), changes: doc.getArray<Change>("changes") };
 }
 
 /** Resolves when the provider has exchanged state with someone (or, for a host, right away). */
@@ -119,7 +121,18 @@ export function encodeRange(text: Y.Text, from: number, to: number): { anchor: s
   return { anchor: enc(from), head: enc(to) };
 }
 
-export function decodeRange(doc: Y.Doc, c: Comment): { from: number; to: number } | null {
+/** Replace every suggestion recorded for one file with the editor's current set. */
+export function setFileChanges(s: Session, file: string, next: Change[]) {
+  const current = s.changes.toArray();
+  const same = current.filter((c) => c.file === file);
+  if (same.length === next.length && same.every((c, i) => c.id === next[i].id && c.anchor === next[i].anchor && c.head === next[i].head && c.kind === next[i].kind)) return;
+  s.doc.transact(() => {
+    for (let i = s.changes.length - 1; i >= 0; i--) if (s.changes.get(i).file === file) s.changes.delete(i, 1);
+    if (next.length) s.changes.push(next);
+  });
+}
+
+export function decodeRange(doc: Y.Doc, c: { anchor: string; head: string }): { from: number; to: number } | null {
   try {
     const a = Y.createAbsolutePositionFromRelativePosition(Y.createRelativePositionFromJSON(JSON.parse(c.anchor)), doc);
     const h = Y.createAbsolutePositionFromRelativePosition(Y.createRelativePositionFromJSON(JSON.parse(c.head)), doc);

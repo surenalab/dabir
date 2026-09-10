@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Toolbar, type ViewMode } from "./components/Toolbar";
 import { Navigator } from "./components/Navigator";
 import { Document } from "./components/Document";
@@ -14,8 +14,9 @@ import { checkGrammar, type GrammarMatch } from "./lib/grammar";
 import { collectLabels } from "./lib/completions";
 import type { PdfPin, PdfZoom } from "./components/PdfView";
 import type { ManualProvider } from "./lib/manual";
-import { addComment as yAddComment, connect as yConnect, decodeRange, disconnect as yDisconnect, encodeRange, peers as yPeers, randomRoom, removeComment as yRemoveComment, resolveComment as yResolveComment, setCurrentFile, textFor, whenSynced, type Comment, type Peer, type Session, type Transport, replyComment as yReplyComment, userName, colorFor, markHost, hostPresent, publishProject, republishChanged, awaitSnapshot, sharedTexts, persist } from "./lib/collab";
+import { addComment as yAddComment, connect as yConnect, decodeRange, disconnect as yDisconnect, encodeRange, peers as yPeers, randomRoom, removeComment as yRemoveComment, resolveComment as yResolveComment, setCurrentFile, textFor, whenSynced, type Comment, type Peer, type Session, type Transport, replyComment as yReplyComment, userName, colorFor, markHost, hostPresent, publishProject, republishChanged, awaitSnapshot, sharedTexts, persist, setFileChanges } from "./lib/collab";
 import type { CommentRange } from "./components/SourceEditor";
+import type { Change, ChangeRange } from "./lib/changes";
 import {
   bibImportFile, checkForUpdates, projectSnapshot, sessionMaterialize, checkpoint, checkpoints, checkpointRestore, type Checkpoint, newPaper, zoteroImport, compile as runCompile, compileCancel, gitClone, gitPull, gitPush, gitRemoteAdd, gitRemoteUrl, isMac, onCompileProgress, relayStart, relayStop, gitCommit, gitInit, gitStatus, importOverleaf, native, onMenu, onWindowFocus,
   openProject, pickFolder, readText, setWindowTitle, synctexForward, synctexInverse, writeText,
@@ -61,6 +62,8 @@ export default function App() {
   const settings = useSettings();
   const [grammar, setGrammar] = useState<GrammarMatch[]>([]);
   const [localComments, setLocalComments] = useState<Comment[]>([]);
+  const [localChanges, setLocalChanges] = useState<Change[]>([]);
+  const [sessChanges, setSessChanges] = useState<Change[]>([]);
   const [pins, setPins] = useState<PdfPin[]>([]);
   const [pdfZoom, setPdfZoom] = useState<PdfZoom>("fit");
   const [pdfFindRequest, setPdfFindRequest] = useState(0);
@@ -126,6 +129,7 @@ export default function App() {
     refreshGit(p);
     gitRemoteUrl(p.root, "overleaf").then(setOverleafUrl).catch(() => setOverleafUrl(null));
     readText(`${p.root}/.dabir/comments.json`).then((t) => setLocalComments(t ? JSON.parse(t) : [])).catch(() => setLocalComments([]));
+    readText(`${p.root}/.dabir/changes.json`).then((t) => setLocalChanges(t ? JSON.parse(t) : [])).catch(() => setLocalChanges([]));
     if (p.mainTex) await selectFile(p.mainTex); else { setFile(null); setSource(null); }
   }, [selectFile, loadBib, refreshGit]);
 
@@ -271,7 +275,9 @@ export default function App() {
     sess.awareness.on("change", refresh);
     const onComments = () => setComments(sess.comments.toArray());
     sess.comments.observe(onComments);
-    refresh(); onComments();
+    const onChanges = () => setSessChanges(sess.changes.toArray());
+    sess.changes.observe(onChanges);
+    refresh(); onComments(); onChanges();
     (sess.provider as unknown as { on: (e: string, f: (x: { status?: string; connected?: boolean }) => void) => void }).on("status", (e) => { if (e.status === "disconnected" || e.connected === false) setNote("Live session: connection lost, retrying…"); });
   }, []);
 
@@ -345,7 +351,7 @@ export default function App() {
     const names = peers.filter((p) => !p.me).map((p) => p.name);
     if (session) yDisconnect(session);
     unpersist.current?.(); unpersist.current = null;
-    setSession(null); setPeers([]); setComments([]); setLive(null); setHostAway(false);
+    setSession(null); setPeers([]); setComments([]); setSessChanges([]); setLive(null); setHostAway(false);
     (window as unknown as { __session?: Session }).__session = undefined;
     if (live?.host && live.transport === "relay") await relayStop();
     // The host's checkout is the record of the session: suggest the commit.
@@ -414,7 +420,7 @@ export default function App() {
     setLocalComments(next);
     if (project) writeText(`${project.root}/.dabir/comments.json`, JSON.stringify(next, null, 2)).catch((e) => setError(String(e)));
   }, [project]);
-  const localRange = useCallback((c: Comment): { from: number; to: number } | null => {
+  const localRange = useCallback((c: { anchor: string; head: string }): { from: number; to: number } | null => {
     if (source == null) return null;
     try {
       const { from, quote } = JSON.parse(c.anchor) as { from: number; quote: string };
@@ -427,7 +433,43 @@ export default function App() {
       return from <= source.length ? { from, to: Math.min(source.length, from + len) } : null;
     } catch { return null; }
   }, [source]);
-  const rangeOf = useCallback((c: Comment) => (session ? decodeRange(session.doc, c) : localRange(c)), [session, localRange]);
+  const rangeOf = useCallback((c: { anchor: string; head: string }) => (session ? decodeRange(session.doc, c) : localRange(c)), [session, localRange]);
+
+  // Track changes. The editor's marks are the truth while a file is open; they are stored like comments:
+  // .dabir/changes.json when working alone, the shared "changes" array in a session.
+  const me = useMemo(() => { const name = userName() || "me"; return { name, color: colorFor(name) }; }, [sheet]); // eslint-disable-line react-hooks/exhaustive-deps -- the Share sheet is where the name is set
+  const allChanges: Change[] = session ? sessChanges : localChanges;
+  const changeRanges: ChangeRange[] = useMemo(() => (file ? allChanges.filter((c) => c.file === rel(file)) : []).map((c) => {
+    const r = rangeOf(c);
+    return r && r.to > r.from ? { id: c.id, author: c.author, color: c.color, kind: c.kind, from: r.from, to: r.to, at: c.at } : null;
+  }).filter((x): x is ChangeRange => !!x), [file, allChanges, rel, rangeOf]);
+  const changesWrite = useRef<{ timer: number; json: string; root: string } | null>(null);
+  const onEditorChanges = useCallback((ranges: ChangeRange[], doc: string, marksChanged: boolean) => {
+    if (!file || !project) return;
+    const f = rel(file)!;
+    if (session) {
+      if (!marksChanged) return; // relative positions follow the text on their own
+      queueMicrotask(() => { const t = textFor(session, f); setFileChanges(session, f, ranges.map((r) => ({ id: r.id, author: r.author, color: r.color, kind: r.kind, file: f, at: r.at, ...encodeRange(t, r.from, r.to) }))); });
+      return;
+    }
+    setLocalChanges((prev) => {
+      const next = [...prev.filter((c) => c.file !== f), ...ranges.map((r) => ({ id: r.id, author: r.author, color: r.color, kind: r.kind, file: f, at: r.at, anchor: JSON.stringify({ from: r.from, quote: doc.slice(r.from, r.to) }), head: String(r.to - r.from) }))];
+      // Positions shift on every keystroke; write the sidecar once typing settles.
+      const json = JSON.stringify(next, null, 2);
+      if (changesWrite.current) clearTimeout(changesWrite.current.timer);
+      const root = project.root;
+      changesWrite.current = { json, root, timer: window.setTimeout(() => { writeText(`${root}/.dabir/changes.json`, json).catch((e) => setError(String(e))); changesWrite.current = null; }, marksChanged ? 0 : 800) };
+      return next;
+    });
+  }, [file, project, rel, session]);
+  const resolveChange = useCallback((ids: string[] | null, accept: boolean) => { editorRef.current?.resolveChanges(ids, accept); }, []);
+  const toggleSuggesting = useCallback(() => {
+    const on = !settings.suggesting;
+    updateSettings({ suggesting: on });
+    setNote(on ? `Suggesting as ${me.name}. Your edits are marked in your colour until a coauthor accepts them; set your name in Share if it is not right.` : null);
+  }, [settings.suggesting, me]);
+  const jumpToChange = useCallback((id: string) => { const r = changeRanges.find((c) => c.id === id); if (r) { setMode("source"); setJumpOffset({ pos: r.from, stamp: Date.now() }); } }, [changeRanges]);
+  const changeItems = useMemo(() => changeRanges.map((r) => ({ ...r, excerpt: (source ?? "").slice(r.from, Math.min(r.to, r.from + 80)).replace(/\s+/g, " ") })), [changeRanges, source]);
 
   const commentRanges: CommentRange[] = (file ? allComments.filter((c) => c.file === rel(file)) : []).map((c) => {
     const r = rangeOf(c);
@@ -674,12 +716,14 @@ export default function App() {
         compileOnSave={compileOnSave} onToggleCompileOnSave={toggleCompileOnSave}
         agentReady={agentReady} onJumpFile={jumpToFile} onFix={fixWithAgent}
         collab={collab} comments={commentRanges} onSelection={(from, to) => setSelection({ from, to })} jumpOffset={jumpOffset}
+        changes={changeRanges} author={me} onChanges={onEditorChanges} onToggleSuggesting={toggleSuggesting}
         settings={settings} grammar={grammar} pins={pins} pdfZoom={pdfZoom} onPdfZoom={setPdfZoom} onOpenSettings={() => setSheet("settings")}
         onPdfComment={onPdfComment} pdfFindRequest={pdfFindRequest} editorRef={editorRef} onFind={() => command("find")} onCommentSelection={() => { if (!inspectorOpen) toggleInspector(); setAskFocus(0); setNote("Type the comment in the People tab; it attaches to your selection."); }} hasSelection={selection.to > selection.from}
         splitRatio={splitRatio} onSplitRatio={setSplitRatio} onPin={(id) => { const c = allComments.find((x) => x.id === id); if (c) jumpToComment(c); }}
         completions={{ bib: () => bib, labels: () => (source ? collectLabels(source) : []), files: () => project?.tree ?? [] }} />
       <Inspector project={project} gitRepo={!!git?.isRepo} askFocus={askFocus} prefill={prefill} onProviderReady={setAgentReady} onChanged={onChanged} onOpenFile={selectFile} onNote={setNote} autoRun={autoRun}
         live={!!live} peers={peers} comments={allComments} currentFile={rel(file)} hasSelection={selection.to > selection.from}
+        changes={changeItems} suggesting={settings.suggesting} onToggleSuggesting={toggleSuggesting} onResolveChanges={resolveChange} onJumpChange={jumpToChange}
         onAddComment={(t) => addCommentAtSelection(t)} onResolveComment={resolveAnyComment} onReplyComment={replyAnyComment} onRemoveComment={removeAnyComment} onJumpComment={jumpToComment} onShare={() => setSheet("share")} />
       <div className={`divider nav ${dragging === "nav" ? "dragging" : ""}`} onPointerDown={() => setDragging("nav")} role="separator" aria-orientation="vertical" aria-label="Resize sidebar" />
       <div className={`divider inspector ${dragging === "inspector" ? "dragging" : ""}`} onPointerDown={() => setDragging("inspector")} role="separator" aria-orientation="vertical" aria-label="Resize inspector" />

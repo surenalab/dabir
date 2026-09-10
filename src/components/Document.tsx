@@ -14,6 +14,7 @@ import type { PdfPin, PdfZoom } from "./PdfView";
 import type { Settings } from "../lib/settings";
 import type { GrammarMatch } from "../lib/grammar";
 import type { CompletionSources } from "../lib/completions";
+import type { ChangeRange } from "../lib/changes";
 
 const PdfView = lazy(() => import("./PdfView").then((m) => ({ default: m.PdfView })));
 
@@ -91,6 +92,10 @@ interface Props {
   onFix: (prompt: string) => void;
   collab: { text: Y.Text; awareness: Awareness } | null;
   comments: CommentRange[];
+  changes: ChangeRange[];
+  author: { name: string; color: string };
+  onChanges: (ranges: ChangeRange[], doc: string, marksChanged: boolean) => void;
+  onToggleSuggesting: () => void;
   onSelection: (from: number, to: number) => void;
   jumpOffset: { pos: number; stamp: number } | null;
   settings: Settings;
@@ -176,6 +181,7 @@ export function Document(p: Props) {
     <SourceEditor ref={p.editorRef} value={source} visual={mode === "visual" && /\.tex$/i.test(p.file ?? "")} onChange={p.onSourceChange} onSave={p.onSave}
       onCursorLine={p.onCursorLine} jumpLine={p.jumpLine} jumpStamp={p.jumpStamp} findRequest={p.findRequest}
       collab={p.collab} comments={p.comments} onSelection={p.onSelection} jumpOffset={p.jumpOffset} marks={editorMarks}
+      changes={p.changes} suggesting={p.settings.suggesting} author={p.author} onChanges={p.onChanges}
       settings={p.settings} grammar={p.grammar} completions={p.completions} />
   ) : source != null ? <div className="doc-empty"><div className="card"><p>This file type is not editable in Dabir yet.</p></div></div> : null;
   const pdf = showPdf ? (
@@ -191,7 +197,7 @@ export function Document(p: Props) {
       <Problems problems={grouped} mainFile={mainRel} agentReady={p.agentReady}
         onJump={(file, line) => p.onJumpFile(file, line)} onFix={p.onFix} />
 
-      {showEditor && isTex && <FormatBar api={p.editorRef.current} onFind={p.onFind} onComment={p.onCommentSelection} canComment={p.hasSelection} />}
+      {showEditor && isTex && <FormatBar api={p.editorRef.current} onFind={p.onFind} onComment={p.onCommentSelection} canComment={p.hasSelection} suggesting={p.settings.suggesting} onToggleSuggesting={p.onToggleSuggesting} pending={p.changes.length} />}
       <div className={`panes ${mode === "split" ? "split" : ""}`} ref={splitRef} style={mode === "split" ? { "--split": `${Math.round(p.splitRatio * 100)}%` } as React.CSSProperties : undefined}>
         <div className="scroll" hidden={!showEditor}>{editor}</div>
         {mode === "split" && <div className={`vdivider ${dragging ? "dragging" : ""}`} onPointerDown={() => setDragging(true)} role="separator" aria-orientation="vertical" aria-label="Resize editor and PDF" />}

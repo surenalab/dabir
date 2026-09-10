@@ -1,15 +1,17 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { Bold, Italic, Code2, List, ListOrdered, Sigma, Image, Table2, Quote, Link2, MessageSquare, Undo2, Redo2, Search, Hash, Heading1, Heading2, Heading3, Pilcrow, MoreHorizontal, Type, AlignLeft } from "lucide-react";
+import { Bold, Italic, Code2, List, ListOrdered, Sigma, Image, Table2, Quote, Link2, MessageSquare, Undo2, Redo2, Search, Hash, Heading1, Heading2, Heading3, Pilcrow, MoreHorizontal, Type, AlignLeft, PenLine } from "lucide-react";
 import type { EditorApi } from "./SourceEditor";
 
-interface Item { id: string; label: string; icon: ReactNode; run: () => void; key?: string; disabled?: boolean }
+interface Item { id: string; label: string; icon: ReactNode; run: () => void; key?: string; disabled?: boolean; on?: boolean }
 interface Group { id: string; drop: number; items: Item[] } // higher `drop` leaves the bar first when space runs out
 
 const STYLES: [string, string, ReactNode][] = [["section", "Section", <Heading1 />], ["subsection", "Subsection", <Heading2 />], ["subsubsection", "Subsubsection", <Heading3 />], ["paragraph", "Run-in heading", <Type />], ["plain", "Plain paragraph", <AlignLeft />]];
 
+interface Props { api: EditorApi | null; onFind: () => void; onComment: () => void; canComment: boolean; suggesting: boolean; onToggleSuggesting: () => void; pending: number }
+
 /** Word-style formatting bar. Every action edits the LaTeX source through the editor API.
  *  When the window is squeezed, whole groups move into a More menu instead of clipping or scrolling. */
-export function FormatBar({ api, onFind, onComment, canComment }: { api: EditorApi | null; onFind: () => void; onComment: () => void; canComment: boolean }) {
+export function FormatBar({ api, onFind, onComment, canComment, suggesting, onToggleSuggesting, pending }: Props) {
   const off = !api;
   const groups: Group[] = [
     { id: "history", drop: 0, items: [
@@ -42,6 +44,7 @@ export function FormatBar({ api, onFind, onComment, canComment }: { api: EditorA
     { id: "tools", drop: 6, items: [
       { id: "find", label: "Find", icon: <Search />, run: onFind, key: "⌘F" },
       { id: "comment", label: "Comment on the selection", icon: <MessageSquare />, run: onComment, disabled: !canComment },
+      { id: "suggest", label: suggesting ? "Suggesting changes (on)" : "Suggest changes", icon: <PenLine />, run: onToggleSuggesting, on: suggesting },
     ] },
   ];
 
@@ -78,7 +81,7 @@ export function FormatBar({ api, onFind, onComment, canComment }: { api: EditorA
   }, [open]);
 
   const button = (it: Item) => (
-    <button key={it.id} className="fb" onClick={it.run} disabled={off || it.disabled} title={it.key ? `${it.label} (${it.key})` : it.label} aria-label={it.label}>{it.icon}</button>
+    <button key={it.id} className={`fb ${it.on ? "on" : ""}`} onClick={it.run} disabled={off || it.disabled} title={it.key ? `${it.label} (${it.key})` : it.label} aria-label={it.label} aria-pressed={it.on == null ? undefined : it.on}>{it.icon}</button>
   );
   const visible = groups.filter((g) => !hidden.includes(g.id));
   const overflow = groups.filter((g) => hidden.includes(g.id));
@@ -115,7 +118,13 @@ export function FormatBar({ api, onFind, onComment, canComment }: { api: EditorA
         </div>
       )}
       <span className="fb-spacer" />
-      <span className="fb-hint" title="Headings, math, figures and citations render in place in the Visual view; the source stays plain LaTeX.">Writes LaTeX</span>
+      {suggesting ? (
+        <span className="fb-hint suggesting" role="status" title="Your edits are recorded as suggestions in your colour. A coauthor accepts or rejects them from the People tab or by hovering the text.">Suggesting{pending ? ` · ${pending} pending` : ""}</span>
+      ) : pending ? (
+        <span className="fb-hint" role="status" title="Suggested changes waiting for review in the People tab.">{pending} suggestion{pending === 1 ? "" : "s"} pending</span>
+      ) : (
+        <span className="fb-hint" title="Headings, math, figures and citations render in place in the Visual view; the source stays plain LaTeX.">Writes LaTeX</span>
+      )}
     </div>
   );
 }

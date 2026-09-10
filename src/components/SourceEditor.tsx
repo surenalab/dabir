@@ -15,6 +15,7 @@ import { projectCompletions, type CompletionSources } from "../lib/completions";
 import type { GrammarMatch } from "../lib/grammar";
 import type { Settings } from "../lib/settings";
 import { prediction } from "../lib/predict";
+import { trackChanges, suggestConfig, setChanges, changesIn, resolveChanges, type ChangeRange } from "../lib/changes";
 
 const highlight = HighlightStyle.define([
   { tag: [tags.keyword, tags.controlKeyword, tags.function(tags.variableName), tags.macroName], class: "tok-cmd" },
@@ -111,6 +112,10 @@ interface Props {
   completions: CompletionSources;
   collab: { text: Y.Text; awareness: Awareness } | null;
   comments: CommentRange[];
+  changes: ChangeRange[];
+  suggesting: boolean;
+  author: { name: string; color: string };
+  onChanges: (ranges: ChangeRange[], doc: string, marksChanged: boolean) => void;
   grammar: GrammarMatch[];
   marks: LineMark[];
   onSelection: (from: number, to: number) => void;
@@ -134,15 +139,19 @@ export interface EditorApi {
   undo: () => void;
   redo: () => void;
   focus: () => void;
+  resolveChanges: (ids: string[] | null, accept: boolean) => void;  // accept or reject suggestions; null means all
 }
 
-export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({ value, visual, settings, completions, collab, comments, grammar, marks, onSelection, jumpOffset, onChange, onSave, onCursorLine, jumpLine, jumpStamp, findRequest }, ref) {
+export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({ value, visual, settings, completions, collab, comments, changes, suggesting, author, onChanges, grammar, marks, onSelection, jumpOffset, onChange, onSave, onCursorLine, jumpLine, jumpStamp, findRequest }, ref) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const modeComp = useRef(new Compartment());
   const collabComp = useRef(new Compartment());
   const prefsComp = useRef(new Compartment());
   const completeComp = useRef(new Compartment());
+  const suggestComp = useRef(new Compartment());
+  const onChangesRef = useRef(onChanges); onChangesRef.current = onChanges;
+  const changesSeen = useRef({ version: 0, marks: 0 });
   const onChangeRef = useRef(onChange); onChangeRef.current = onChange;
   const onSaveRef = useRef(onSave); onSaveRef.current = onSave;
   const onCursorRef = useRef(onCursorLine); onCursorRef.current = onCursorLine;
@@ -177,6 +186,8 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
         prefsComp.current.of(prefs(settings)),
         modeComp.current.of(visual ? visualExtensions() : sourceOnly()),
         collabComp.current.of([]),
+        suggestComp.current.of(suggestConfig.of({ on: suggesting, author })),
+        trackChanges(),
         commentField, markField, grammarField, grammarHover,
         keymap.of([
           { key: "Mod-s", run: () => { onSaveRef.current(); return true; } },
@@ -187,6 +198,14 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
           if (u.selectionSet || u.docChanged) {
             onCursorRef.current(u.state.doc.lineAt(u.state.selection.main.head).number);
             onSelRef.current(u.state.selection.main.from, u.state.selection.main.to);
+          }
+          if (!loading.current) {
+            const c = changesIn(u.state);
+            if (c.version !== changesSeen.current.version) {
+              const marksChanged = c.marks !== changesSeen.current.marks;
+              changesSeen.current = { version: c.version, marks: c.marks };
+              if (c.items.length || marksChanged) onChangesRef.current(c.items, u.state.doc.toString(), marksChanged);
+            }
           }
         }),
       ],
@@ -219,6 +238,7 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
   }, [collab]);
 
   useEffect(() => { view.current?.dispatch({ effects: setComments.of(comments) }); }, [comments]);
+  useEffect(() => { view.current?.dispatch({ effects: suggestComp.current.reconfigure(suggestConfig.of({ on: suggesting, author })) }); }, [suggesting, author]);
   useEffect(() => { view.current?.dispatch({ effects: setMarks.of(marks) }); }, [marks, value]);
   useEffect(() => { view.current?.dispatch({ effects: setGrammar.of(grammar) }); }, [grammar]);
 
@@ -237,6 +257,12 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
     const current = v.state.doc.toString();
     if (current !== value) { loading.current = true; v.dispatch({ changes: { from: 0, to: current.length, insert: value }, selection: { anchor: 0 } }); loading.current = false; v.scrollDOM.scrollTop = 0; }
   }, [value, collab]);
+  // After the document is current, so ranges resolved against the new text land on the new text.
+  useEffect(() => {
+    const v = view.current; if (!v) return;
+    const len = v.state.doc.length;
+    v.dispatch({ effects: setChanges.of(changes.filter((c) => c.to <= len)) });
+  }, [changes]);
 
   useEffect(() => {
     const v = view.current;
@@ -253,7 +279,7 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
       const v = view.current; if (!v) return;
       const { from, to } = v.state.selection.main;
       const sel = v.state.doc.sliceString(from, to);
-      v.dispatch({ changes: { from, to, insert: pre + sel + post }, selection: sel ? { anchor: from + pre.length, head: from + pre.length + sel.length } : { anchor: from + pre.length } });
+      v.dispatch({ changes: { from, to, insert: pre + sel + post }, selection: sel ? { anchor: from + pre.length, head: from + pre.length + sel.length } : { anchor: from + pre.length }, userEvent: "input.format" });
       v.focus();
     },
     block(pre, post) {
@@ -263,7 +289,7 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
       const sel = v.state.doc.sliceString(from, to);
       const lead = line.from === from ? "" : "\n";
       const text = `${lead}${pre}${sel}${post}\n`;
-      v.dispatch({ changes: { from, to, insert: text }, selection: { anchor: from + lead.length + pre.length } });
+      v.dispatch({ changes: { from, to, insert: text }, selection: { anchor: from + lead.length + pre.length }, userEvent: "input.format" });
       v.focus();
     },
     list(env) {
@@ -272,7 +298,7 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
       const sel = v.state.doc.sliceString(from, to);
       const items = sel ? sel.split("\n").filter((l) => l.trim()).map((l) => `  \\item ${l.trim()}`).join("\n") : "  \\item ";
       const text = `\\begin{${env}}\n${items}\n\\end{${env}}\n`;
-      v.dispatch({ changes: { from, to, insert: text }, selection: { anchor: from + `\\begin{${env}}\n  \\item `.length } });
+      v.dispatch({ changes: { from, to, insert: text }, selection: { anchor: from + `\\begin{${env}}\n  \\item `.length }, userEvent: "input.format" });
       v.focus();
     },
     heading(kind) {
@@ -281,19 +307,20 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
       const m = /^(\s*)\\(section|subsection|subsubsection|paragraph)\*?\{(.*)\}\s*$/.exec(line.text);
       const body = m ? m[3] : line.text.trim();
       const text = kind === "plain" ? body : `\\${kind}{${body}}`;
-      v.dispatch({ changes: { from: line.from, to: line.to, insert: text }, selection: { anchor: line.from + (kind === "plain" ? body.length : text.length - 1) } });
+      v.dispatch({ changes: { from: line.from, to: line.to, insert: text }, selection: { anchor: line.from + (kind === "plain" ? body.length : text.length - 1) }, userEvent: "input.format" });
       v.focus();
     },
     complete(pre, post) {
       const v = view.current; if (!v) return;
       const { from, to } = v.state.selection.main;
-      v.dispatch({ changes: { from, to, insert: pre + post }, selection: { anchor: from + pre.length } });
+      v.dispatch({ changes: { from, to, insert: pre + post }, selection: { anchor: from + pre.length }, userEvent: "input.format" });
       v.focus();
       startCompletion(v);
     },
     undo() { if (view.current) { undo(view.current); view.current.focus(); } },
     redo() { if (view.current) { redo(view.current); view.current.focus(); } },
     focus() { view.current?.focus(); },
+    resolveChanges(ids, accept) { if (view.current) resolveChanges(view.current, ids, accept); },
   }), []);
 
   return <div className={`editor ${visual ? "visual" : ""}`} ref={host} />;
