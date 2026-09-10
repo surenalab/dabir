@@ -108,7 +108,7 @@ function Transcript({ steps, running, started, root }: { steps: Step[]; running:
 interface Turn { prompt: string; summary: string; steps: Step[] }
 type Run =
   | { phase: "idle" }
-  | { phase: "running"; runId: string; worktree: string; prompt: string; steps: Step[]; provider: string; steer?: string; started: number; turns?: Turn[] }
+  | { phase: "running"; runId: string; worktree: string; prompt: string; steps: Step[]; provider: string; steer?: string; started: number; turns?: Turn[]; pending?: WorktreeDiff }
   | { phase: "review"; runId: string; worktree: string; prompt: string; steps: Step[]; provider: string; steer?: string; ok: boolean; summary: string; diff: WorktreeDiff | null; error?: string; started: number; finished: number; turns?: Turn[] }
   | { phase: "done"; text: string };
 /** Every request of a run, oldest first, for the memory log and the History step. */
@@ -305,6 +305,7 @@ export interface ReviewHandle {
   patch: string;
   changes: WorktreeDiff["changes"];
   busy: boolean;
+  working: boolean;          // a follow-up is changing this version right now
   accept: () => void;
   reject: () => void;
 }
@@ -392,7 +393,8 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
       const follow = run.phase === "review" && run.diff && run.diff.changes.length > 0 ? run : null;
       const started = await agentRun(project.root, follow ? follow.provider : provider, prompt, model, effort, follow ? { runId: follow.runId, prompt: follow.prompt, reply: follow.summary } : null);
       const turns: Turn[] | undefined = follow ? [...(follow.turns ?? []), { prompt: follow.prompt, summary: follow.summary, steps: follow.steps }] : undefined;
-      setRun({ phase: "running", runId: started.runId, worktree: started.worktree, prompt, steps: [], provider: follow ? follow.provider : provider, steer: steerLabel || undefined, started: Date.now(), turns });
+      // The earlier turn's changes stay on screen while the follow-up works on them.
+      setRun({ phase: "running", runId: started.runId, worktree: started.worktree, prompt, steps: [], provider: follow ? follow.provider : provider, steer: steerLabel || undefined, started: Date.now(), turns, pending: follow?.diff ?? undefined });
       setDraft("");
     } catch (e) { onNote(String(e)); }
   };
@@ -451,14 +453,18 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
 
   // The document mirrors the review: it shows the agent's version and its Accept / Reject call back here.
   const actions = useRef({ apply, reject }); actions.current = { apply, reject };
+  const reviewDiff = run.phase === "review" ? run.diff : run.phase === "running" ? run.pending ?? null : null;
+  const reviewRun = run.phase === "review" || run.phase === "running" ? run : null;
   useEffect(() => {
-    if (run.phase !== "review" || !run.diff || run.diff.changes.length === 0) { onReview(null); return; }
+    if (!reviewRun || !reviewDiff || reviewDiff.changes.length === 0) { onReview(null); return; }
+    const working = reviewRun.phase === "running";
     onReview({
-      runId: run.runId, provider: run.provider, label: providers.find((p) => p.id === run.provider)?.label ?? run.provider,
-      worktree: run.worktree, patch: run.diff.patch, changes: run.diff.changes, busy,
+      runId: reviewRun.runId, provider: reviewRun.provider, label: providers.find((p) => p.id === reviewRun.provider)?.label ?? reviewRun.provider,
+      worktree: reviewRun.worktree, patch: reviewDiff.patch, changes: reviewDiff.changes, busy: busy || working, working,
       accept: () => actions.current.apply(), reject: () => actions.current.reject(),
     });
-  }, [run, busy, providers, onReview]);
+    // Steps arriving during a run must not republish the handle (the document would re-read the file each time).
+  }, [reviewRun?.phase, reviewRun?.runId, reviewRun?.provider, reviewRun?.worktree, reviewDiff, busy, providers, onReview]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const setup = async () => {
     if (!project) return;

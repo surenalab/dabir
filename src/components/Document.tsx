@@ -130,6 +130,7 @@ export interface DocReview {
   showing: boolean;         // the editor shows the agent's version
   canShow: boolean;         // false in a live session, where the shared text is the only text
   busy: boolean;
+  working: boolean;         // a follow-up request is still changing this version
   onToggle: () => void;
   onOpenFile: (rel: string) => void;
   onAccept: () => void;
@@ -244,7 +245,9 @@ export function Document(p: Props) {
         <div className={`banner review ${previewing ? "showing" : ""}`} role="status">
           <Sparkles aria-hidden />
           <span className="what">
-            {rv.text != null ? (
+            {rv.working ? (
+              <>{rv.label} is working on its version{rv.text != null && previewing ? "; you are reading it as it stood" : ""}.</>
+            ) : rv.text != null ? (
               <>{rv.label} changed this file{rv.files.length > 1 ? ` and ${rv.files.length - 1} other${rv.files.length > 2 ? "s" : ""}` : ""}.{previewing ? " You are reading its version; ⌘B compiles it." : rv.canShow ? " Showing your version." : ""}</>
             ) : (
               <>{rv.label} changed {rv.files.slice(0, 3).map((f, i) => <span key={f}>{i ? ", " : ""}<button className="link" onClick={() => rv.onOpenFile(f)}>{f}</button></span>)}{rv.files.length > 3 ? ` and ${rv.files.length - 3} more` : ""}, not this file.</>
