@@ -4,6 +4,7 @@ const ROWS: [string, string[]][] = [
   ["New Paper…", ["⌘", "N"]],
   ["Open Paper…", ["⌘", "O"]],
   ["Share…", ["⇧", "⌘", "S"]],
+  ["Export…", ["⌥", "⌘", "E"]],
   ["Save", ["⌘", "S"]],
   ["Compile", ["⌘", "B"]],
   ["Show Compile Log", ["⇧", "⌘", "L"]],
