@@ -279,10 +279,25 @@ export async function agentApply(root: string, runId: string, picks: Pick[] | un
   if (!native) { await wait(300); return ["main.tex"]; }
   return invoke<string[]>("agent_apply", { root, runId, picks: picks ?? null, prompt, provider });
 }
-export interface Checkpoint { id: string; message: string; at: number }
-export async function checkpoint(root: string, message: string): Promise<string | null> { return native ? invoke<string | null>("checkpoint", { root, message }) : null; }
-export async function checkpoints(root: string): Promise<Checkpoint[]> { return native ? invoke<Checkpoint[]>("checkpoints", { root }) : []; }
+/** One step of the paper's history: a snapshot of the working tree and what it changed against the step before. */
+export interface Checkpoint { id: string; message: string; at: number; files: Change[] }
+const now = Math.floor(Date.now() / 1000);
+const SAMPLE_HISTORY: Checkpoint[] = [
+  { id: "9c1e4d2", message: "Grok: add a figure", at: now - 420, files: [{ path: "main.tex", status: "modified", add: 14, del: 2, binary: false }] },
+  { id: "7b02a51", message: "You edited main.tex", at: now - 1500, files: [{ path: "main.tex", status: "modified", add: 3, del: 1, binary: false }] },
+  { id: "5d7f9e0", message: "Claude Code: Rerun the noise sweep to σ = 0.3 and update Table 1", at: now - 5400, files: [{ path: "tables/psnr-sweep.tex", status: "modified", add: 2, del: 0, binary: false }, { path: "main.tex", status: "modified", add: 2, del: 1, binary: false }, { path: "figures/psnr-vs-noise.pdf", status: "modified", add: 0, del: 0, binary: true }] },
+  { id: "31a8c77", message: "You edited refs.bib", at: now - 86400 - 600, files: [{ path: "refs.bib", status: "modified", add: 6, del: 0, binary: false }] },
+];
+/** Snapshot the working tree; `coalesce` folds a repeat of the newest message within a few minutes into it. */
+export async function checkpoint(root: string, message: string, coalesce = false): Promise<string | null> { return native ? invoke<string | null>("checkpoint", { root, message, coalesce }) : null; }
+export async function checkpoints(root: string): Promise<Checkpoint[]> { return native ? invoke<Checkpoint[]>("checkpoints", { root }) : SAMPLE_HISTORY; }
+export async function checkpointPatch(root: string, id: string): Promise<string> { if (!native) { await wait(150); return SAMPLE_PATCH; } return invoke<string>("checkpoint_patch", { root, id }); }
+/** Put the paper back as it was at this step. The current state is snapshotted first. */
 export async function checkpointRestore(root: string, id: string): Promise<void> { if (native) await invoke("checkpoint_restore", { root, id }); }
+/** Take this one step out, leaving later edits in place; fails when they overlap. */
+export async function checkpointUndo(root: string, id: string): Promise<void> { if (native) await invoke("checkpoint_undo", { root, id }); }
+/** Put one file back to its committed state (or delete it when untracked). Snapshotted first. */
+export async function gitDiscard(root: string, path: string): Promise<void> { if (native) await invoke("git_discard", { root, path }); }
 export async function agentPullRequest(root: string, runId: string, message: string): Promise<string> {
   if (!native) { await wait(400); return "https://github.com/vantreight/score-anchor/pull/12"; }
   return invoke<string>("agent_pull_request", { root, runId, message });
