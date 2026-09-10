@@ -6,7 +6,7 @@
 
 Dabir (دبیر, Persian for *scribe*) opens a folder that holds your manuscript and the code that made its figures. It shows LaTeX like a document, compiles locally, and lets the agent you already pay for, whether Claude Code, Codex, Cursor, Grok or OpenCode, rerun an experiment, update the figure and the table, and open the pull request. Nothing is uploaded. Delete the app and your project is still a plain Git repo.
 
-> Status: phases 0 to 4 built, run on macOS; Windows and Linux build in CI but are untested. Open a folder, an Overleaf zip or a GitHub repo; edit the paper visually or as source in one buffer; compile with Tectonic; click the PDF to jump to the line; commit from the sidebar; ask Claude Code, Codex, Cursor, Grok or OpenCode to change the paper on a worktree and review the diff hunk by hunk before it touches your checkout (verified live with Claude Code, Codex, Cursor and Grok); keep the project brief, facts and provenance in `.dabir/` so every agent shares them. Start a live session from Share and coauthors edit with you in real time, with presence and comments; pull and push to Overleaf's Git bridge; import references from Zotero or a .bib file; start new papers from journal templates or in Typst. Compile problems are traceable to the line and fixable by the agent. Comments live with the paper and show as pins on the compiled PDF. Spelling, grammar and completion are built in, each with an off switch (⌘,). Progress and next steps are in [PLAN.md](PLAN.md).
+> Status: phases 0 to 4 built, run on macOS; Windows and Linux build in CI but are untested. Open a folder, an Overleaf zip or a GitHub repo; edit the paper visually or as source in one buffer; compile with Tectonic; click the PDF to jump to the line; commit from the sidebar; ask Claude Code, Codex, Cursor, Grok or OpenCode (choosing the model and effort) to change the paper on a worktree, then read and compile their version in the editor before it touches your checkout (verified live with Claude Code, Codex, Cursor and Grok); keep the project brief, facts and provenance in `.dabir/` so every agent shares them. Start a live session from Share and coauthors edit with you in real time, with presence and comments; pull and push to Overleaf's Git bridge; import references from Zotero or a .bib file; start new papers from journal templates or in Typst, with a visual layer for both. Compile problems are traceable to the line and fixable by the agent. Comments live with the paper and show as pins on the compiled PDF. Offline LaTeX-aware spelling, grammar and completion are built in, each with an off switch (⌘,). Progress and next steps are in [PLAN.md](PLAN.md).
 
 ## Why
 
@@ -28,7 +28,7 @@ Predictive text finishes the word or phrase you are typing in grey, learned only
 
 Four views: Visual, Source, PDF, and Split (⌘4), which puts the source next to the PDF with a draggable divider, Overleaf style. Visual folds the preamble into one row that opens on click, renders equations, figures and tables in place, and while you edit an equation's source it shows the rendered result underneath it. In Split, the PDF follows the cursor line; in every view a double-click on the PDF goes to the source line and Option-click leaves a comment there, while a plain click selects text. The PDF toolbar has page navigation, zoom presets, fit to width or page, and find (⌘F when the PDF has focus).
 
-Settings (⌘,) hold every switch: system spelling, LanguageTool grammar on demand (⇧⌘G, off until you name a server, since text leaves the machine), LaTeX command and snippet completion, project completion for citation keys, labels and file paths, text sizes, wrapping, and compile on save.
+Settings (⌘,) hold every switch: spelling with bundled British or American dictionaries that skip commands, math and citation keys (or the system checker), LanguageTool grammar on demand (⇧⌘G, off until you name a server, since text leaves the machine), LaTeX command and snippet completion, project completion for citation keys, labels and file paths, text sizes, wrapping, and compile on save.
 
 ## Working together without a server
 
@@ -36,7 +36,7 @@ Share (⇧⌘S) offers three ways, none of which cost anything: direct, where ma
 
 ## Agents, briefly
 
-Set Up Memory (Memory tab) writes three small things into the paper's repo: `.dabir/PROJECT.md`, the paper's identity and how its code runs; `.dabir/skills/`, six playbooks every CLI discovers; and `.dabir/memory/`, one fact per file plus a log of accepted runs. Every run starts with a ten-line preamble built from them and the passages most relevant to your request. Runs happen on a Git worktree; you review the diff hunk by hunk.
+Set Up Memory (Memory tab) writes three small things into the paper's repo: `.dabir/PROJECT.md`, the paper's identity and how its code runs; `.dabir/skills/`, six playbooks every CLI discovers; and `.dabir/memory/`, one fact per file plus a log of accepted runs. Every run starts with a ten-line preamble built from them and the passages most relevant to your request. Runs happen on a Git worktree seeded from your working copy, so nothing needs committing first; afterwards the editor shows the agent's version with the changes marked, ⌘B compiles it, and you accept into your files, accept and commit, or reject, hunk by hunk if you like.
 
 ## Run it
 
