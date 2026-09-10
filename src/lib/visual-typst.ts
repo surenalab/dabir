@@ -1,12 +1,13 @@
 // The visual layer for Typst: the same idea as the LaTeX layer, built on the
-// same widgets. Headings, figures, citations, links and emphasis read like the
-// paper; set rules fold into a preamble row; math stays as source, because
-// Typst's math syntax has no browser renderer here. Anything under the cursor
-// shows its source.
+// same widgets. Headings, figures, tables, citations, links and emphasis read
+// like the paper; set rules fold into a preamble row; math is translated to
+// LaTeX for KaTeX and falls back to styled source when the translation cannot
+// follow. Anything under the cursor shows its source.
 
 import { Decoration, EditorView, type DecorationSet } from "@codemirror/view";
 import type { Range, EditorState } from "@codemirror/state";
-import { ChipWidget, FigureWidget, FoldWidget, TextWidget, badger, citeLabel, cursorOnLine, decorationField, finishRanges, hide, line, mark, selectionTouches, visualContext, visualEvents, visualTheme } from "./visual";
+import { ChipWidget, FigureWidget, FoldWidget, MathWidget, PreviewWidget, TextWidget, VzWidget, badger, citeLabel, cursorOnLine, decorationField, finishRanges, hide, inlineHtml, line, mark, renderMath, selectionTouches, visualContext, visualEvents, visualTheme } from "./visual";
+import { typstMathToTex } from "./typst-math";
 
 /** Index just past the `)` or `]` that closes the bracket opened at `open`, honouring strings and nesting. */
 function closeOf(text: string, open: number): number {
@@ -23,9 +24,112 @@ function closeOf(text: string, open: number): number {
   return -1;
 }
 
-/** Caption text for a widget: Typst markup reduced to plain words. */
-function plainCaption(src: string): string {
-  return src.replace(/\$[^$]*\$/g, (m) => m.slice(1, -1)).replace(/[*_]/g, "").replace(/#[a-zA-Z]+(\[[^\]]*\])?/g, (m) => /\[/.test(m) ? m.slice(m.indexOf("[") + 1, -1) : "").replace(/<[^>]*>/g, "").trim();
+/** Typst math as LaTeX that KaTeX accepts, or null when it does not translate or render. */
+function mathTex(src: string, display: boolean): string | null {
+  const tex = typstMathToTex(src);
+  if (tex === null) return null;
+  const body = display && /&|\\\\/.test(tex) ? `\\begin{aligned}${tex}\\end{aligned}` : tex;
+  return renderMath(body, display).includes("katex-error") ? null : body;
+}
+
+/** Typst inline markup rewritten into the LaTeX-ish form the shared widgets' inlineHtml renders. */
+function latexish(src: string): string {
+  return src
+    .replace(/\$([^$]*)\$/g, (_, m: string) => { const t = mathTex(m, false); return t ? `$${t}$` : m; })
+    .replace(/(^|[\s(])\*(\S[^*]*?)\*/g, "$1\\textbf{$2}")
+    .replace(/(^|[\s(])_(\S[^_]*?)_/g, "$1\\emph{$2}")
+    .replace(/#[a-zA-Z.]+(\([^)]*\))?(\[([^\]]*)\])?/g, (_, _a, _b, inner: string | undefined) => inner ?? "")
+    .replace(/<[^>]*>/g, "")
+    .trim();
+}
+const inlineTypst = (src: string) => inlineHtml(latexish(src));
+
+/** Splits call arguments on top-level commas, honouring brackets and strings. Returns [positional, named]. */
+function splitArgs(src: string): [string[], Record<string, string>] {
+  const pos: string[] = []; const named: Record<string, string> = {};
+  let depth = 0, quoted = false, cur = "";
+  const flush = () => {
+    const t = cur.trim(); cur = "";
+    if (!t) return;
+    const nm = /^([a-zA-Z_][\w-]*)\s*:\s*([\s\S]*)$/.exec(t);
+    if (nm) named[nm[1]] = nm[2]; else pos.push(t);
+  };
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    if (quoted) { cur += c; if (c === "\\") { cur += src[++i] ?? ""; } else if (c === '"') quoted = false; continue; }
+    if (c === '"') { quoted = true; cur += c; continue; }
+    if ("([{".includes(c)) depth++;
+    if (")]}".includes(c)) depth--;
+    if (c === "," && depth === 0) { flush(); continue; }
+    cur += c;
+  }
+  flush();
+  return [pos, named];
+}
+
+/** Body of a `[...]` content block, or the string inside quotes, or the source itself. */
+const unwrap = (s: string) => { const t = s.trim(); return /^\[[\s\S]*\]$/.test(t) ? t.slice(1, -1).trim() : /^"[\s\S]*"$/.test(t) ? t.slice(1, -1) : t; };
+
+/** A `table(...)` call parsed into header and body rows of cell markup. */
+function parseTable(args: string): { header: string[]; rows: string[][] } | null {
+  const [pos, named] = splitArgs(args);
+  const cols = named.columns?.trim() ?? "";
+  let n = /^\d+$/.test(cols) ? Number(cols) : cols.startsWith("(") ? splitArgs(cols.slice(1, -1))[0].length : 0;
+  const header: string[] = []; const cells: string[] = [];
+  for (const a of pos) {
+    const hm = /^table\.header\(([\s\S]*)\)$/.exec(a);
+    if (hm) { header.push(...splitArgs(hm[1])[0].map(unwrap)); continue; }
+    if (/^table\.(hline|vline|cell)\(/.test(a) && !/^table\.cell\(/.test(a)) continue;
+    cells.push(unwrap(a.replace(/^table\.cell\([^)]*\)/, "")));
+  }
+  if (!n) n = header.length || Math.ceil(Math.sqrt(cells.length)) || 1;
+  const rows: string[][] = [];
+  for (let i = 0; i < cells.length; i += n) rows.push(cells.slice(i, i + n));
+  if (!header.length && rows.length > 1) header.push(...rows.shift()!);
+  return header.length || rows.length ? { header, rows } : null;
+}
+
+class TypstTableWidget extends VzWidget {
+  constructor(readonly header: string[], readonly rows: string[][], readonly caption: string, readonly number: number, readonly from: number) { super(); }
+  eq(o: TypstTableWidget) { return this.sameBadges(o) && o.caption === this.caption && o.number === this.number && JSON.stringify(o.header) === JSON.stringify(this.header) && JSON.stringify(o.rows) === JSON.stringify(this.rows); }
+  render() {
+    const el = document.createElement("figure");
+    el.className = "vz-figure vz-tablefig";
+    el.dataset.from = String(this.from);
+    const table = document.createElement("table"); table.className = "vz-tab";
+    if (this.header.length) { const tr = document.createElement("tr"); for (const h of this.header) { const th = document.createElement("th"); th.innerHTML = inlineTypst(h); tr.appendChild(th); } table.appendChild(tr); }
+    for (const r of this.rows) { const tr = document.createElement("tr"); for (const c of r) { const td = document.createElement("td"); td.innerHTML = inlineTypst(c); tr.appendChild(td); } table.appendChild(tr); }
+    el.appendChild(table);
+    if (this.number) { const cap = document.createElement("figcaption"); cap.innerHTML = `<b>Table ${this.number}.</b> ${inlineTypst(this.caption)}`; el.appendChild(cap); }
+    return el;
+  }
+  ignoreEvent() { return false; }
+}
+
+/** The paper's title and authors, from the template's title block or a show rule's arguments. */
+class TitleWidget extends VzWidget {
+  constructor(readonly title: string, readonly authors: string[], readonly from: number) { super(); }
+  eq(o: TitleWidget) { return this.sameBadges(o) && o.title === this.title && o.authors.join("|") === this.authors.join("|"); }
+  render() {
+    const el = document.createElement("div");
+    el.className = "vz-titleblock";
+    el.dataset.from = String(this.from);
+    el.title = "Click to edit the title block";
+    const t = document.createElement("div"); t.className = "vz-title"; t.innerHTML = inlineTypst(this.title); el.appendChild(t);
+    if (this.authors.length) { const a = document.createElement("div"); a.className = "vz-author"; a.textContent = this.authors.join(", "); el.appendChild(a); }
+    return el;
+  }
+  ignoreEvent() { return false; }
+}
+
+/** Author names out of a Typst `authors:` value: strings, or dictionaries with a `name`. */
+function authorNames(src: string): string[] {
+  const t = src.trim();
+  const inner = t.startsWith("(") ? t.slice(1, -1) : t;
+  return splitArgs(inner)[0].map((a) => {
+    const nm = /name\s*:\s*("([^"]*)"|\[([^\]]*)\])/.exec(a);
+    return nm ? (nm[2] ?? nm[3]) : unwrap(a);
+  }).filter(Boolean);
 }
 
 const PREAMBLE_LINE = /^\s*(#(set|show|import|include|let)\b.*|\/\/.*)?\s*$/;
@@ -38,11 +142,37 @@ export function buildTypstDecorations(state: EditorState): DecorationSet {
   const badge = badger(state);
   const bib = visualContext().bib;
 
+  // Title block: `#show: tmpl.with(title: …, authors: …)` or the template's `#align(center)[#text(…)[Title] \\ Authors]`.
+  const blocked: [number, number][] = [];
+  let titleSpan: [number, number] | null = null;
+  {
+    const show = /^#show:\s*[\w.]+\.with\(/m.exec(text);
+    if (show) {
+      const to = closeOf(text, show.index + show[0].length - 1);
+      const [, named] = to > 0 ? splitArgs(text.slice(show.index + show[0].length, to - 1)) : [[], {} as Record<string, string>];
+      if (to > 0 && (named.title || named.authors)) {
+        const end = doc.lineAt(to).to;
+        titleSpan = [show.index, end];
+        blocked.push(titleSpan);
+        if (selectionTouches(state, show.index, end + 1)) { let x = doc.lineAt(show.index); while (x.from <= end) { push(x.from, x.from, line("vz-preamble")); if (x.to >= doc.length) break; x = doc.lineAt(x.to + 1); } }
+        else push(show.index, end, Decoration.replace({ widget: badge(new TitleWidget(unwrap(named.title ?? ""), named.authors ? authorNames(named.authors) : [], show.index), show.index, end), block: true }));
+      }
+    }
+    const al = /^#align\(center\)\[\s*#text\([^)]*\)\[([^\]]*)\]\s*(?:\\\s*([^\]]*))?\]\s*$/m.exec(text);
+    if (al && !titleSpan) {
+      const end = al.index + al[0].length;
+      titleSpan = [al.index, end];
+      blocked.push(titleSpan);
+      if (selectionTouches(state, al.index, end + 1)) push(al.index, al.index, line("vz-preamble"));
+      else push(al.index, end, Decoration.replace({ widget: badge(new TitleWidget(al[1].trim(), al[2] ? al[2].split(/\s*(?:,|\\\\|\\)\s*/).map((a) => a.trim()).filter(Boolean) : [], al.index), al.index, end), block: true }));
+    }
+  }
+
   // Preamble: the leading run of set/show/import rules folds into one row until the cursor enters it.
   let preambleEnd = 0;
   {
     let l = doc.line(1), last = -1, lines = 0;
-    while (PREAMBLE_LINE.test(l.text)) {
+    while (PREAMBLE_LINE.test(l.text) && !(titleSpan && l.from >= titleSpan[0])) {
       if (l.text.trim()) { last = l.to; lines++; }
       if (l.to >= doc.length) break; l = doc.lineAt(l.to + 1);
     }
@@ -58,31 +188,59 @@ export function buildTypstDecorations(state: EditorState): DecorationSet {
     }
   }
 
-  // Figures: #figure(...) spanning one or more lines becomes a rendered figure.
-  const blocked: [number, number][] = [];
-  let figCount = 0;
-  const figRe = /#figure\(/g; let m: RegExpExecArray | null;
+  // Figures and tables: #figure(...) and bare #table(...) spanning one or more lines become rendered blocks.
+  let figCount = 0, tabCount = 0;
+  const figRe = /#(figure|table)\(/g; let m: RegExpExecArray | null;
   while ((m = figRe.exec(text))) {
     const from = m.index, to = closeOf(text, m.index + m[0].length - 1);
     if (to < 0 || from < preambleEnd) continue;
     // Take the trailing label too, so the row hides completely.
     const tail = /^\s*<[^>\n]*>/.exec(text.slice(to));
     const end = tail ? to + tail[0].length : to;
-    figCount++;
     blocked.push([from, end]);
     const inner = text.slice(from + m[0].length, to - 1);
+    const [pos, named] = m[1] === "figure" ? splitArgs(inner) : [[`table(${inner})`], {} as Record<string, string>];
+    const body = pos[0] ?? "";
+    const tab = /^table\(([\s\S]*)\)$/.exec(body);
+    const parsed = tab ? parseTable(tab[1]) : null;
+    if (parsed) tabCount++; else figCount++;
     if (selectionTouches(state, from, end)) { push(from, from + m[0].length, mark("vz-envtag")); push(to - 1, to, mark("vz-envtag")); continue; }
-    const file = /image\(\s*"([^"]*)"/.exec(inner)?.[1] ?? null;
-    const capAt = inner.indexOf("caption:");
-    let caption = "";
-    if (capAt >= 0) {
-      const open = inner.indexOf("[", capAt);
-      const close = open >= 0 ? closeOf(inner, open) : -1;
-      caption = close > 0 ? plainCaption(inner.slice(open + 1, close - 1)) : "";
+    const caption = named.caption ? unwrap(named.caption) : "";
+    if (parsed) push(from, end, Decoration.replace({ widget: badge(new TypstTableWidget(parsed.header, parsed.rows, caption, m[1] === "figure" ? tabCount : 0, from), from, end), block: true }));
+    else {
+      const file = /image\(\s*"([^"]*)"/.exec(body)?.[1] ?? null;
+      push(from, end, Decoration.replace({ widget: badge(new FigureWidget(file, latexish(caption), figCount, from), from, end), block: true }));
     }
-    push(from, end, Decoration.replace({ widget: badge(new FigureWidget(file, caption, figCount, from), from, end), block: true }));
   }
   const inBlocked = (pos: number) => blocked.some(([a, b]) => pos >= a && pos < b);
+
+  // Math: every $…$ pair. Padded delimiters ($ x $) mean display; on a line of its own it becomes a block.
+  let eqCount = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] !== "$" || text[i - 1] === "\\") continue;
+    let j = i + 1;
+    while (j < text.length && !(text[j] === "$" && text[j - 1] !== "\\")) j++;
+    if (j >= text.length) break;
+    const from = i, to = j + 1, inner = text.slice(i + 1, j);
+    i = j;
+    if (from < preambleEnd || inBlocked(from) || !inner.trim()) continue;
+    const display = /^\s/.test(inner) && /\s$/.test(inner);
+    const lineFrom = doc.lineAt(from), lineTo = doc.lineAt(to);
+    const tail = /^\s*(<[^>\n]*>)?\s*$/.exec(text.slice(to, lineTo.to));
+    const ownLine = display && !text.slice(lineFrom.from, from).trim() && !!tail;
+    const end = ownLine ? lineTo.to : to;
+    if (ownLine) blocked.push([lineFrom.from, end]);
+    const label = ownLine && tail?.[1] ? true : false;
+    if (label) eqCount++;
+    const touched = ownLine ? selectionTouches(state, lineFrom.from, end + 1) : selectionTouches(state, from, to) || cursorOnLine(state, from, to);
+    const tex = mathTex(inner, display);
+    if (touched) {
+      if (ownLine && tex) { push(from, from + 1, mark("vz-envtag")); push(to - 1, to, mark("vz-envtag")); push(end, end, Decoration.widget({ widget: new PreviewWidget(tex), block: true, side: 1 })); }
+      continue;
+    }
+    if (tex) push(ownLine ? lineFrom.from : from, end, Decoration.replace({ widget: badge(new MathWidget(tex, ownLine, label ? `(${eqCount})` : "", from), from, end), block: ownLine }));
+    else { push(from, from + 1, hide); push(from + 1, to - 1, mark("vz-typ-math")); push(to - 1, to, hide); }
+  }
 
   for (let i = 1; i <= doc.lines; i++) {
     const l = doc.line(i);
@@ -94,6 +252,9 @@ export function buildTypstDecorations(state: EditorState): DecorationSet {
     // Comments
     const cm = /(^|[^:])(\/\/.*)$/.exec(s);
     if (cm && !/https?:$/.test(s.slice(0, cm.index + cm[1].length))) push(l.from + cm.index + cm[1].length, l.to, mark("vz-comment"));
+
+    // Abstract paragraph: *Abstract.* text
+    if (/^\s*\*Abstract\.?\*/.test(s)) push(l.from, l.from, line("vz-abstract"));
 
     // Headings: = Title, == Subtitle, === Sub-subtitle
     const sec = /^(\s*)(=+)\s+(.*)$/.exec(s);
@@ -124,13 +285,6 @@ export function buildTypstDecorations(state: EditorState): DecorationSet {
     if (revealed) continue;
 
     let mm: RegExpExecArray | null;
-    // Math stays as source but reads as math: inline $x$ and display $ x $.
-    const im = /\$([^$\n]+)\$/g;
-    while ((mm = im.exec(s))) {
-      const from = l.from + mm.index, to = from + mm[0].length;
-      if (selectionTouches(state, from, to)) continue;
-      push(from, from + 1, hide); push(from + 1, to - 1, mark("vz-typ-math")); push(to - 1, to, hide);
-    }
     // Citations and references: @key, #cite(<key>), #ref(<key>)
     const cr = /@([\w:.-]+)|#(cite|ref)\(\s*<([^>]*)>\s*\)/g;
     while ((mm = cr.exec(s))) {
