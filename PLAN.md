@@ -10,6 +10,8 @@ The full plan with the design brief and architecture is rendered at [docs/plan.h
 
 **2026-09-10, harden and bench.** Accept without commit now logs to `.dabir/memory/runs.md` and forces a buffer reload (cancelling a pending autosave so a dirty editor cannot overwrite the applied patch). Live thinking shows “Thought for n s…”; streamed prose and thought coalesce; review copy matches Accept-without-commit. Versions lists all snapshots via Show more. Bundle split: PdfView lazy-loads, pdf.js / KaTeX / Yjs / CodeMirror are separate chunks (main JS ≈ 353 KB gzip 111 KB, down from a single 1.8 MB chunk). Visual decorations skip a full rebuild when the caret stays on the same line. `bench/` holds twenty repair and revision tasks on score-anchor plus `./bench/run.sh <provider> [task]`; smoke with Grok passed `01-strong-baselines` in 12.8 s.
 
+**Harness (2026-09-10):** CONTRIBUTING.md, docs/REVIEW.md, `npm run check`, `npm run review` (own review bot on local agent subscriptions), ESLint, clippy and fmt in CI, pull request template, pre-push hook, optional Claude review workflow on the owner's subscription.
+
 **Next, in order:**
 1. Owner resets `APPLE_ID` and `APPLE_PASSWORD`; re-run tag v0.1.1 for signed, notarised DMGs.
 2. Owner tests the Windows installer and the Linux AppImage against docs/TESTING.md; fix what breaks (expect font fallbacks, menu chords, path handling).
@@ -17,7 +19,7 @@ The full plan with the design brief and architecture is rendered at [docs/plan.h
 4. Run `./bench/run.sh` for each signed-in vendor; publish pass rates. Tighten tasks that flake.
 5. Track changes for coauthors who will not use Git (suggesting mode on the Yjs document, per-author colour, accept per change, persisted in `.dabir`).
 6. Remote cursors in Visual view; offline LaTeX-aware spell dictionary; Typst visual layer; local retrieval index.
-7. Public launch: MIT LICENSE and CONTRIBUTING.md in place, repository public, draft release published, site product page restored, launch post.
+7. Public launch: MIT LICENSE in place (CONTRIBUTING.md exists), repository public, draft release published, site product page restored, launch post.
 
 ## Thesis
 
