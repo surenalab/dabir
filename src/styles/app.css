@@ -534,6 +534,8 @@ button { background: none; border: 0; padding: 0; cursor: default; }
 .vz-bold { font-weight: 600; }
 .vz-mono { font-family: var(--font-mono); font-size: .86em; }
 .vz-math { cursor: text; }
+/* Typst math has no browser renderer: the source reads as math (serif italic, thin rule underneath) until the caret opens it. */
+.vz-typ-math { font-family: var(--font-doc); font-style: italic; color: var(--ink-2); padding: 0 .1em; border-bottom: 1px dotted var(--line-strong); }
 .vz-math:hover, .vz-chip:hover { background: var(--accent-wash); border-radius: 3px; }
 .vz-eq { position: relative; padding: .5em 3em .5em 1.5em; margin: .2em 0; cursor: text; }
 .vz-eq .katex-display { margin: 0; text-align: left; }

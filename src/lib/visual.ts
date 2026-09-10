@@ -19,6 +19,7 @@ export interface VisualContext {
 
 let ctx: VisualContext = { revealOnClick: true, root: "", bib: {}, macros: {}, loadImage: async () => null, openFile: () => {} };
 export function setVisualContext(c: VisualContext) { ctx = c; }
+export const visualContext = () => ctx;
 
 // ---------------------------------------------------------------- widgets
 
@@ -39,7 +40,7 @@ export const remoteCursorsField = StateField.define<RemoteCursor[]>({
 });
 const samePeers = (a: RemoteCursor[], b: RemoteCursor[]) => a.length === b.length && a.every((x, i) => x.name === b[i].name && x.color === b[i].color);
 
-abstract class VzWidget extends WidgetType {
+export abstract class VzWidget extends WidgetType {
   sugg: SuggBadge | null = null;
   peers: RemoteCursor[] = [];
   abstract render(): HTMLElement;
@@ -100,7 +101,7 @@ class MathWidget extends VzWidget {
 }
 
 /** A folded run of preamble lines. Click to open it. */
-class FoldWidget extends VzWidget {
+export class FoldWidget extends VzWidget {
   constructor(readonly lines: number, readonly first: string, readonly from: number) { super(); }
   eq(o: FoldWidget) { return this.sameBadges(o) && o.lines === this.lines && o.first === this.first; }
   render() {
@@ -127,7 +128,7 @@ class PreviewWidget extends WidgetType {
   ignoreEvent() { return true; }
 }
 
-class ChipWidget extends VzWidget {
+export class ChipWidget extends VzWidget {
   constructor(readonly kind: "cite" | "ref" | "input" | "note" | "link", readonly label: string, readonly title: string, readonly from: number, readonly target?: string) { super(); }
   eq(o: ChipWidget) { return this.sameBadges(o) && o.kind === this.kind && o.label === this.label && o.title === this.title; }
   render() {
@@ -144,7 +145,7 @@ class ChipWidget extends VzWidget {
   ignoreEvent() { return false; }
 }
 
-class TextWidget extends VzWidget {
+export class TextWidget extends VzWidget {
   constructor(readonly text: string, readonly from: number) { super(); }
   eq(o: TextWidget) { return this.sameBadges(o) && o.text === this.text; }
   render() { const el = document.createElement("span"); el.textContent = this.text; el.dataset.from = String(this.from); return el; }
@@ -197,7 +198,7 @@ class TableWidget extends VzWidget {
 
 const imageCache = new Map<string, Promise<string | null>>();
 
-class FigureWidget extends VzWidget {
+export class FigureWidget extends VzWidget {
   constructor(readonly file: string | null, readonly caption: string, readonly number: number, readonly from: number) { super(); }
   eq(o: FigureWidget) { return this.sameBadges(o) && o.file === this.file && o.caption === this.caption && o.number === this.number; }
   render() {
@@ -248,7 +249,7 @@ function mathBody(env: string, inner: string): string {
   return tex;
 }
 
-function citeLabel(key: string): string {
+export function citeLabel(key: string): string {
   const e = ctx.bib[key];
   if (e) return e.label;
   const m = /^([a-zA-Z-]+?)(\d{4})?[a-z]*$/.exec(key);
@@ -259,21 +260,21 @@ function citeLabel(key: string): string {
 
 // ---------------------------------------------------------------- decoration builder
 
-const hide = Decoration.replace({});
-const mark = (cls: string) => Decoration.mark({ class: cls });
-const line = (cls: string) => Decoration.line({ class: cls });
+export const hide = Decoration.replace({});
+export const mark = (cls: string) => Decoration.mark({ class: cls });
+export const line = (cls: string) => Decoration.line({ class: cls });
 
 const ENV_BLOCK = /\\begin\{(equation\*?|align\*?|gather\*?|multline\*?|figure\*?|table\*?)\}/g;
 
 /** True when the selection lies strictly inside the range, or a non-empty selection overlaps it. */
-function selectionTouches(state: EditorState, from: number, to: number): boolean {
+export function selectionTouches(state: EditorState, from: number, to: number): boolean {
   for (const r of state.selection.ranges) {
     if (r.empty) { if (r.from > from && r.from < to) return true; }
     else if (r.from < to && r.to > from) return true;
   }
   return false;
 }
-function cursorOnLine(state: EditorState, from: number, to: number): boolean {
+export function cursorOnLine(state: EditorState, from: number, to: number): boolean {
   for (const r of state.selection.ranges) {
     const a = state.doc.lineAt(r.from).from, b = state.doc.lineAt(r.to).to;
     if (a <= to && b >= from) return true;
@@ -281,25 +282,41 @@ function cursorOnLine(state: EditorState, from: number, to: number): boolean {
   return false;
 }
 
-export function buildDecorations(state: EditorState): DecorationSet {
-  const doc = state.doc;
-  const text = doc.toString();
-  const ranges: Range<Decoration>[] = [];
-  const push = (from: number, to: number, d: Decoration) => { if (to >= from) ranges.push(d.range(from, to)); };
-  // Suggestions whose text a widget would hide: the widget wears the badge instead.
+/** Suggestions whose text a widget would hide, and coauthors' carets inside it: the widget wears the badges instead. */
+export function badger(state: EditorState) {
   const suggs = state.field(changesField, false)?.items ?? [];
   const cursors = state.field(remoteCursorsField, false) ?? [];
-  const badge = <T extends VzWidget>(w: T, from: number, to: number): T => {
+  return <T extends VzWidget>(w: T, from: number, to: number): T => {
     const hits = suggs.filter((c) => c.from < to && c.to > from);
     if (hits.length) {
       const kinds = new Set(hits.map((c) => c.kind));
       w.sugg = { kind: kinds.size === 1 ? hits[0].kind : "mixed", color: hits[0].color, author: hits.every((c) => c.author === hits[0].author) ? hits[0].author : `${hits[0].author} and others`, count: hits.length };
     }
-    // A coauthor's caret inside the hidden source: the widget shows who is there.
     const here = cursors.filter((c) => c.pos > from && c.pos < to);
     if (here.length) w.peers = here;
     return w;
   };
+}
+
+/** Sorts the collected ranges and drops overlaps the builder cannot take (a hide inside a replaced block, for example). */
+export function finishRanges(ranges: Range<Decoration>[]): DecorationSet {
+  ranges.sort((a, b) => a.from - b.from || a.value.startSide - b.value.startSide);
+  const builder = new RangeSetBuilder<Decoration>();
+  let lastFrom = -1, lastTo = -1;
+  for (const r of ranges) {
+    if (r.from < lastTo && !(r.from === lastFrom && r.to === lastTo && r.value.spec.class)) continue;
+    builder.add(r.from, r.to, r.value);
+    if (r.to > r.from) { lastFrom = r.from; lastTo = r.to; }
+  }
+  return builder.finish();
+}
+
+export function buildDecorations(state: EditorState): DecorationSet {
+  const doc = state.doc;
+  const text = doc.toString();
+  const ranges: Range<Decoration>[] = [];
+  const push = (from: number, to: number, d: Decoration) => { if (to >= from) ranges.push(d.range(from, to)); };
+  const badge = badger(state);
 
   // Preamble: everything before \begin{document}
   const beginDoc = text.indexOf("\\begin{document}");
@@ -491,39 +508,33 @@ export function buildDecorations(state: EditorState): DecorationSet {
     }
   }
 
-  ranges.sort((a, b) => a.from - b.from || a.value.startSide - b.value.startSide);
-  const builder = new RangeSetBuilder<Decoration>();
-  let lastFrom = -1, lastTo = -1;
-  for (const r of ranges) {
-    // Drop overlaps that the builder cannot take (a hide inside a replaced block, for example).
-    if (r.from < lastTo && !(r.from === lastFrom && r.to === lastTo && r.value.spec.class)) continue;
-    builder.add(r.from, r.to, r.value);
-    if (r.to > r.from) { lastFrom = r.from; lastTo = r.to; }
-  }
-  return builder.finish();
+  return finishRanges(ranges);
 }
 
 // ---------------------------------------------------------------- extension
 
 // Block widgets must come from a state field, not a view plugin.
-const visualField = StateField.define<DecorationSet>({
-  create: (state) => buildDecorations(state),
-  update: (deco, tr) => {
-    if (tr.docChanged) return buildDecorations(tr.state);
-    if (tr.startState.field(changesField, false)?.items !== tr.state.field(changesField, false)?.items) return buildDecorations(tr.state);
-    if (tr.effects.some((e) => e.is(setRemoteCursors))) return buildDecorations(tr.state);
-    if (!tr.selection) return deco;
-    // Skip a full rebuild when the caret stays on the same line(s); widgets only reveal on line intersection.
-    const a = tr.startState.selection.main, b = tr.state.selection.main;
-    const sameLine = tr.startState.doc.lineAt(a.head).number === tr.state.doc.lineAt(b.head).number
-      && tr.startState.doc.lineAt(a.anchor).number === tr.state.doc.lineAt(b.anchor).number
-      && a.empty === b.empty;
-    return sameLine ? deco : buildDecorations(tr.state);
-  },
-  provide: (f) => EditorView.decorations.from(f),
-});
+export function decorationField(build: (state: EditorState) => DecorationSet) {
+  return StateField.define<DecorationSet>({
+    create: (state) => build(state),
+    update: (deco, tr) => {
+      if (tr.docChanged) return build(tr.state);
+      if (tr.startState.field(changesField, false)?.items !== tr.state.field(changesField, false)?.items) return build(tr.state);
+      if (tr.effects.some((e) => e.is(setRemoteCursors))) return build(tr.state);
+      if (!tr.selection) return deco;
+      // Skip a full rebuild when the caret stays on the same line(s); widgets only reveal on line intersection.
+      const a = tr.startState.selection.main, b = tr.state.selection.main;
+      const sameLine = tr.startState.doc.lineAt(a.head).number === tr.state.doc.lineAt(b.head).number
+        && tr.startState.doc.lineAt(a.anchor).number === tr.state.doc.lineAt(b.anchor).number
+        && a.empty === b.empty;
+      return sameLine ? deco : build(tr.state);
+    },
+    provide: (f) => EditorView.decorations.from(f),
+  });
+}
+const visualField = decorationField(buildDecorations);
 
-const visualEvents = EditorView.domEventHandlers({
+export const visualEvents = EditorView.domEventHandlers({
   mousedown(e, view) {
     const t = (e.target as HTMLElement).closest<HTMLElement>("[data-from]");
     if (!t) return false;

@@ -199,7 +199,7 @@ export function Document(p: Props) {
   const rv = p.review;
   const previewing = !!rv && rv.showing && rv.canShow && rv.text != null;
   const editor = source != null && isTex ? (
-    <SourceEditor ref={p.editorRef} value={previewing ? rv!.text! : source} visual={mode === "visual" && /\.tex$/i.test(p.file ?? "")} onChange={p.onSourceChange} onSave={p.onSave}
+    <SourceEditor ref={p.editorRef} value={previewing ? rv!.text! : source} visual={mode === "visual" && /\.tex$/i.test(p.file ?? "") ? "tex" : mode === "visual" && /\.typ$/i.test(p.file ?? "") ? "typst" : false} onChange={p.onSourceChange} onSave={p.onSave}
       onCursorLine={p.onCursorLine} jumpLine={p.jumpLine} jumpStamp={p.jumpStamp} findRequest={p.findRequest}
       collab={p.collab} comments={p.comments} onSelection={p.onSelection} jumpOffset={p.jumpOffset} marks={editorMarks}
       changes={previewing ? [] : p.changes} suggesting={p.settings.suggesting} author={p.author} onChanges={p.onChanges}
