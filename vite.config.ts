@@ -2,11 +2,19 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 // @ts-expect-error type error without @types/node package
 import process from "node:process";
+import { execSync } from "node:child_process";
 const host = process.env.TAURI_DEV_HOST;
+
+// Stamp each build with its commit and day so a running copy can be told apart from an older one.
+const build = (() => {
+  try { return execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim(); } catch { return "dev"; }
+})();
+const built = new Date().toISOString().slice(0, 10);
 
 // https://vite.dev/config/
 export default defineConfig(() => ({
   plugins: [react()],
+  define: { __DABIR_BUILD__: JSON.stringify(`${build} · ${built}`) },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //

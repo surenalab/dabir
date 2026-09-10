@@ -104,11 +104,15 @@ function Transcript({ steps, running, started, root }: { steps: Step[]; running:
     </div>
   );
 }
+/** An earlier request and reply in the same run, kept when the author asks for more before accepting. */
+interface Turn { prompt: string; summary: string; steps: Step[] }
 type Run =
   | { phase: "idle" }
-  | { phase: "running"; runId: string; worktree: string; prompt: string; steps: Step[]; provider: string; steer?: string; started: number }
-  | { phase: "review"; runId: string; worktree: string; prompt: string; steps: Step[]; provider: string; steer?: string; ok: boolean; summary: string; diff: WorktreeDiff | null; error?: string; started: number; finished: number }
+  | { phase: "running"; runId: string; worktree: string; prompt: string; steps: Step[]; provider: string; steer?: string; started: number; turns?: Turn[] }
+  | { phase: "review"; runId: string; worktree: string; prompt: string; steps: Step[]; provider: string; steer?: string; ok: boolean; summary: string; diff: WorktreeDiff | null; error?: string; started: number; finished: number; turns?: Turn[] }
   | { phase: "done"; text: string };
+/** Every request of a run, oldest first, for the memory log and the History step. */
+const allPrompts = (r: Run): string => r.phase === "running" || r.phase === "review" ? [...(r.turns ?? []).map((t) => t.prompt), r.prompt].join(" → ") : "";
 
 interface Hunk { header: string; lines: string[] }
 interface FileDiff { name: string; hunks: Hunk[]; binary: boolean }
@@ -342,11 +346,11 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
       let diff: WorktreeDiff | null = null, error: string | undefined;
       if (project) { try { diff = await agentDiff(project.root, r.runId); } catch (err) { error = String(err); } }
       const summary = e.text || r.steps.filter((s) => s.kind === "text").map((s) => s.text).join("\n");
-      setRun({ phase: "review", runId: r.runId, worktree: r.worktree, prompt: r.prompt, steps: r.steps, provider: r.provider, steer: r.steer, ok: e.ok ?? true, summary, diff, error, started: r.started, finished: Date.now() });
+      setRun({ phase: "review", runId: r.runId, worktree: r.worktree, prompt: r.prompt, steps: r.steps, provider: r.provider, steer: r.steer, ok: e.ok ?? true, summary, diff, error, started: r.started, finished: Date.now(), turns: r.turns });
       setMessage(r.prompt.length > 72 ? r.prompt.slice(0, 69) + "…" : r.prompt);
       setExcluded(new Set());
     } else if (e.kind === "error") {
-      setRun({ phase: "review", runId: r.runId, worktree: r.worktree, prompt: r.prompt, steps: r.steps, provider: r.provider, steer: r.steer, ok: false, summary: e.text, diff: null, started: r.started, finished: Date.now() });
+      setRun({ phase: "review", runId: r.runId, worktree: r.worktree, prompt: r.prompt, steps: r.steps, provider: r.provider, steer: r.steer, ok: false, summary: e.text, diff: null, started: r.started, finished: Date.now(), turns: r.turns });
     } else if (e.kind === "thinking") {
       const last = r.steps[r.steps.length - 1];
       // Keep the original `at` so "Thought for n s" measures the whole burst, not the last chunk.
@@ -384,8 +388,11 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
     if (!prompt || !project || run.phase === "running") return;
     try {
       await onBeforeRun();
-      const started = await agentRun(project.root, provider, prompt, model, effort);
-      setRun({ phase: "running", runId: started.runId, worktree: started.worktree, prompt, steps: [], provider, steer: steerLabel || undefined, started: Date.now() });
+      // Asking again while a run is under review continues that run: same worktree, its changes kept.
+      const follow = run.phase === "review" && run.diff && run.diff.changes.length > 0 ? run : null;
+      const started = await agentRun(project.root, follow ? follow.provider : provider, prompt, model, effort, follow ? { runId: follow.runId, prompt: follow.prompt, reply: follow.summary } : null);
+      const turns: Turn[] | undefined = follow ? [...(follow.turns ?? []), { prompt: follow.prompt, summary: follow.summary, steps: follow.steps }] : undefined;
+      setRun({ phase: "running", runId: started.runId, worktree: started.worktree, prompt, steps: [], provider: follow ? follow.provider : provider, steer: steerLabel || undefined, started: Date.now(), turns });
       setDraft("");
     } catch (e) { onNote(String(e)); }
   };
@@ -418,7 +425,7 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
     const { picks, partial } = selection();
     if (picks.length === 0) { onNote("Nothing selected to accept."); return; }
     setBusy(true);
-    try { await onBeforeRun(); const files = await agentApply(project.root, run.runId, partial ? picks : undefined, run.prompt, run.provider, run.summary); setRun({ phase: "done", text: `Applied to ${files.length} file${files.length === 1 ? "" : "s"} and saved${partial ? " (only the selected changes)" : ""}. A snapshot was taken; commit whenever you like.` }); onChanged(); refreshMemory(); }
+    try { await onBeforeRun(); const files = await agentApply(project.root, run.runId, partial ? picks : undefined, allPrompts(run), run.provider, run.summary); setRun({ phase: "done", text: `Applied to ${files.length} file${files.length === 1 ? "" : "s"} and saved${partial ? " (only the selected changes)" : ""}. A snapshot was taken; commit whenever you like.` }); onChanged(); refreshMemory(); }
     catch (e) { onNote(String(e)); } finally { setBusy(false); }
   };
   const accept = async () => {
@@ -426,13 +433,13 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
     const { picks, partial } = selection();
     if (picks.length === 0) { onNote("Nothing selected to accept."); return; }
     setBusy(true);
-    try { await onBeforeRun(); const id = await agentAccept(project.root, run.runId, message.trim() || run.prompt, partial ? picks : undefined, run.provider, run.prompt, run.summary); setRun({ phase: "done", text: `Committed ${id} to your checkout${partial ? " (only the selected changes; the rest was discarded)" : ""}.` }); onChanged(); refreshMemory(); }
+    try { await onBeforeRun(); const id = await agentAccept(project.root, run.runId, message.trim() || run.prompt, partial ? picks : undefined, run.provider, allPrompts(run), run.summary); setRun({ phase: "done", text: `Committed ${id} to your checkout${partial ? " (only the selected changes; the rest was discarded)" : ""}.` }); onChanged(); refreshMemory(); }
     catch (e) { onNote(String(e)); } finally { setBusy(false); }
   };
   const reject = async () => {
     if (run.phase !== "review" || !project) return;
     setBusy(true);
-    try { await agentReject(project.root, run.runId, run.provider, run.prompt, run.summary); setRun({ phase: "done", text: "Run discarded. Your files were not touched." }); }
+    try { await agentReject(project.root, run.runId, run.provider, allPrompts(run), run.summary); setRun({ phase: "done", text: "Run discarded. Your files were not touched." }); }
     catch (e) { onNote(String(e)); } finally { setBusy(false); }
   };
   const pr = async () => {
@@ -511,7 +518,7 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
 
           <div className="composer">
             <textarea ref={textarea}
-              placeholder={project ? (current?.installed ? `Ask ${current.label} to change the paper or rerun an experiment…` : "Choose an installed agent first") : "Open a paper first"}
+              placeholder={project ? (run.phase === "review" && run.diff && run.diff.changes.length > 0 ? "Ask for more on top of these changes…" : current?.installed ? `Ask ${current.label} to change the paper or rerun an experiment…` : "Choose an installed agent first") : "Open a paper first"}
               value={draft} onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && e.metaKey) { e.preventDefault(); send(); } }}
               disabled={!project || !current?.installed || run.phase === "running"} aria-label="Message to the agent" />
@@ -523,7 +530,13 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
 
           {(run.phase === "running" || run.phase === "review") && (
             <div className="run">
-              <div className="prompt"><b>You asked {providers.find((p) => p.id === run.provider)?.label ?? run.provider}{run.steer ? <span className="steer-tag"> · {run.steer}</span> : null}</b>{run.prompt}</div>
+              {run.turns?.map((t, i) => (
+                <div className="turn" key={i}>
+                  <div className="prompt"><b>You asked {providers.find((p) => p.id === run.provider)?.label ?? run.provider}</b>{t.prompt}</div>
+                  {t.summary && <div className="reply">{renderMarkdown(t.summary)}</div>}
+                </div>
+              ))}
+              <div className="prompt"><b>{run.turns?.length ? "Then you asked" : `You asked ${providers.find((p) => p.id === run.provider)?.label ?? run.provider}`}{run.steer ? <span className="steer-tag"> · {run.steer}</span> : null}</b>{run.prompt}</div>
               <Transcript steps={run.steps} running={run.phase === "running"} started={run.started} root={project?.root ?? null} />
               {run.phase === "running" && <div className="actions"><button className="btn" onClick={cancel}><Square /> Stop</button></div>}
               {run.steps.some((s) => s.kind === "log") && (
