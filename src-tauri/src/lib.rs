@@ -2545,6 +2545,9 @@ mod tests {
                     }
                     if e.kind == "done" {
                         ok_agent = e.ok.unwrap_or(false);
+                        if !ok_agent {
+                            err = e.text; // the CLI's own reason (usage limit, sign-in), not a bare failure
+                        }
                         break;
                     }
                     if e.kind == "error" {
