@@ -37,7 +37,9 @@ Running several providers at once is fine (each task works in its own temp copy)
 | Grok | 20/20 | 20 s | |
 | Claude Code | 19/20 | 34 s | 13 wrote `$A$` where the check wanted `A`; check loosened, passes on rerun |
 | Cursor | 18/20 | 52 s | 13 as above; 11 reran the sweep and regenerated the figure PDF, and the apply step corrupted non-UTF-8 bytes in that diff (fixed: patches are now byte-exact; passes on rerun in 146 s) |
-| Codex | 0/20 | 3 s | Account at its usage limit; the CLI's error was swallowed as a bare failure (fixed: the message now reaches the transcript) |
+| Codex | 19/20 | 40 s | First attempt found the account at its usage limit and every task failed in 3 s; the CLI's error was swallowed as a bare failure (fixed: the message now reaches the transcript). Rerun after the window reset: 10 hung past the 180 s cap once and passed in 36 s on rerun |
+
+With the two fixes above, every vendor passes every task on rerun; the cap of 180 s is generous for all of them (Grok 8–40 s, Codex 16–38 s, Claude and Cursor up to ~2 min on the compile-and-fix task).
 
 ## Task shape
 
