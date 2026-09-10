@@ -223,7 +223,9 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
   const sendReply = (id: string) => { const t = replyDraft.trim(); if (!t) return; onReplyComment(id, t); setReplyDraft(""); setReplyTo(null); };
   const [tab, setTab] = useState<Tab>("agent");
   const [providers, setProviders] = useState<Provider[]>([]);
-  const [provider, setProvider] = useState("claude");
+  const settings = useSettings();
+  const provider = settings.agentProvider;
+  const setProvider = (id: string) => updateSettings({ agentProvider: id });
   const [draft, setDraft] = useState("");
   const [run, setRun] = useState<Run>({ phase: "idle" });
   const [message, setMessage] = useState("");
@@ -273,7 +275,6 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
   const finishedRun = run.phase === "review";
 
   // Which model and how much thinking, per provider; remembered on this machine.
-  const settings = useSettings();
   const model = settings.agentModel[provider] ?? "";
   const effort = settings.agentEffort[provider] ?? "";
   const setModel = (m: string) => updateSettings({ agentModel: { ...settings.agentModel, [provider]: m } });

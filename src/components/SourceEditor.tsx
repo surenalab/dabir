@@ -15,7 +15,7 @@ import { typstVisualExtensions } from "../lib/visual-typst";
 import { projectCompletions, type CompletionSources } from "../lib/completions";
 import type { GrammarMatch } from "../lib/grammar";
 import type { Settings } from "../lib/settings";
-import { prediction } from "../lib/predict";
+import { currentGhost, ghostText, prediction, setGhostText } from "../lib/predict";
 import { trackChanges, suggestConfig, setChanges, changesIn, resolveChanges, type ChangeRange } from "../lib/changes";
 import { reviewField, setReview, type ReviewMarks } from "../lib/review";
 import { spelling, spellConfig } from "../lib/spell";
@@ -127,6 +127,8 @@ interface Props {
   /** The paper's own words (.dabir/dictionary.txt) and how to add one. */
   dictionary: string[];
   onAddWord: (word: string) => void;
+  /** Asks the agent for the text that should follow `before`; null when no agent is available. */
+  onContinue?: (before: string) => Promise<string | null>;
   onSelection: (from: number, to: number) => void;
   jumpOffset: { pos: number; stamp: number } | null;
   onChange: (text: string) => void;
@@ -149,17 +151,33 @@ export interface EditorApi {
   redo: () => void;
   focus: () => void;
   resolveChanges: (ids: string[] | null, accept: boolean) => void;  // accept or reject suggestions; null means all
+  continueSentence: () => void;                   // ask the agent for the next sentence as ghost text
 }
 
 const modeExt = (visual: Props["visual"]) => (visual === "typst" ? typstVisualExtensions() : visual ? visualExtensions() : sourceOnly());
 
-export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({ value, visual, settings, completions, collab, comments, changes, suggesting, author, onChanges, grammar, marks, review, dictionary, onAddWord, onSelection, jumpOffset, onChange, onSave, onCursorLine, jumpLine, jumpStamp, findRequest }, ref) {
+export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({ value, visual, settings, completions, collab, comments, changes, suggesting, author, onChanges, grammar, marks, review, dictionary, onAddWord, onContinue, onSelection, jumpOffset, onChange, onSave, onCursorLine, jumpLine, jumpStamp, findRequest }, ref) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const modeComp = useRef(new Compartment());
   const readOnlyComp = useRef(new Compartment());
   const spellComp = useRef(new Compartment());
   const onAddWordRef = useRef(onAddWord); onAddWordRef.current = onAddWord;
+  const onContinueRef = useRef(onContinue); onContinueRef.current = onContinue;
+  /** Ghost placeholder now, the agent's sentence when it arrives, nothing if the caret moved meanwhile. */
+  const continueSentence = async () => {
+    const v = view.current; if (!v || !onContinueRef.current) return;
+    if (currentGhost(v)?.pending) return;
+    const head = v.state.selection.main.head;
+    const before = v.state.doc.sliceString(Math.max(0, head - 3000), head);
+    setGhostText(v, { pos: head, text: "…", pending: true, source: "agent" });
+    const text = await onContinueRef.current(before).catch(() => null);
+    const still = currentGhost(v);
+    if (!still || !still.pending || still.pos !== head || v.state.selection.main.head !== head) return;
+    if (!text) { setGhostText(v, null); return; }
+    const sep = /\S$/.test(before) && /^[\p{L}\p{N}(\\$]/u.test(text) ? " " : "";
+    setGhostText(v, { pos: head, text: sep + text, source: "agent" });
+  };
   const spellCfg = (s: Settings, words: string[]) => spellConfig.of({ on: s.spellcheck && s.spellLanguage !== "system", lang: s.spellLanguage === "system" ? "en-GB" : s.spellLanguage, words, onAddWord: (w) => onAddWordRef.current(w) });
   const collabComp = useRef(new Compartment());
   const prefsComp = useRef(new Compartment());
@@ -178,6 +196,7 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
     EditorView.contentAttributes.of({ spellcheck: s.spellcheck && s.spellLanguage === "system" ? "true" : "false", autocorrect: "off", autocapitalize: "off" }),
     s.lineWrap ? EditorView.lineWrapping : [],
     EditorView.theme({ "&": { "--doc-size": `${s.fontSize}px`, "--mono-size": `${s.monoSize}px` } }),
+    ghostText(),
     s.prediction ? prediction() : [],
   ];
   const completionExt = (s: Settings) => {
@@ -209,6 +228,7 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
         commentField, markField, grammarField, grammarHover,
         keymap.of([
           { key: "Mod-s", run: () => { onSaveRef.current(); return true; } },
+          { key: "Mod-Shift-Space", run: () => { void continueSentence(); return true; } },
           ...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...historyKeymap, ...completionKeymap, indentWithTab,
         ]),
         EditorView.updateListener.of((u) => {
@@ -372,7 +392,8 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
     redo() { if (view.current) { redo(view.current); view.current.focus(); } },
     focus() { view.current?.focus(); },
     resolveChanges(ids, accept) { if (view.current) resolveChanges(view.current, ids, accept); },
-  }), []);
+    continueSentence() { void continueSentence(); },
+  }), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return <div className={`editor ${visual ? "visual" : ""}`} ref={host} />;
 });
