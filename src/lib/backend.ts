@@ -243,9 +243,9 @@ export async function contextPack(root: string, query: string): Promise<string> 
 export async function compileCancel(): Promise<boolean> { return native ? invoke<boolean>("compile_cancel") : true; }
 export async function agentReject(root: string, runId: string): Promise<void> { if (native) await invoke("agent_reject", { root, runId }); }
 /** Accept without committing: the changes land in the checkout and a snapshot is taken. */
-export async function agentApply(root: string, runId: string, picks: Pick[] | undefined, prompt: string): Promise<string[]> {
+export async function agentApply(root: string, runId: string, picks: Pick[] | undefined, prompt: string, provider: string): Promise<string[]> {
   if (!native) { await wait(300); return ["main.tex"]; }
-  return invoke<string[]>("agent_apply", { root, runId, picks: picks ?? null, prompt });
+  return invoke<string[]>("agent_apply", { root, runId, picks: picks ?? null, prompt, provider });
 }
 export interface Checkpoint { id: string; message: string; at: number }
 export async function checkpoint(root: string, message: string): Promise<string | null> { return native ? invoke<string | null>("checkpoint", { root, message }) : null; }

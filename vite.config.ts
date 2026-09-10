@@ -30,4 +30,17 @@ export default defineConfig(() => ({
       ignored: ["**/src-tauri/**", "**/.dabir/**", "**/examples/**", "**/Dabir Sessions/**"],
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id: string) {
+          if (id.includes("node_modules/pdfjs-dist")) return "pdfjs";
+          if (id.includes("node_modules/katex")) return "katex";
+          if (id.includes("node_modules/yjs") || id.includes("node_modules/y-") || id.includes("node_modules/lib0")) return "yjs";
+          if (id.includes("node_modules/@codemirror") || id.includes("node_modules/codemirror-lang-latex") || id.includes("node_modules/@lezer") || id.includes("node_modules/style-mod") || id.includes("node_modules/w3c-keyname")) return "codemirror";
+          if (id.includes("node_modules/lucide-react")) return "icons";
+        },
+      },
+    },
+  },
 }));

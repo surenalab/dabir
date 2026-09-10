@@ -1,0 +1,1 @@
+{"id":"03-caption-seeds","kind":"revision","prompt":"In the figure caption in main.tex, change 'five seeds' to 'five independent seeds'. Touch only that caption.","expect_files":["main.tex"],"expect_contains":[{"file":"main.tex","text":"five independent seeds"}],"timeout_secs":180}

@@ -646,7 +646,16 @@ export default function App() {
   }, [project, file, selectFile]);
   const fixWithAgent = useCallback((prompt: string) => { if (!inspectorOpen) toggleInspector(); setPrefill({ text: prompt, stamp: Date.now() }); }, [inspectorOpen, toggleInspector]);
   const jumpTo = useCallback((line: number, inSource?: boolean) => { if (inSource) setMode("source"); setJumpLine(line); setJumpStamp(Date.now()); }, []);
-  const onChanged = useCallback(() => { refreshGit(); reloadProject(); if (project) refreshVersions(project.root); if (file) readText(file).then((t) => { if (!dirty) setSource(t); }).catch(() => {}); }, [refreshGit, reloadProject, file, dirty, project, refreshVersions]);
+  const onChanged = useCallback(() => {
+    // Cancel a pending autosave so a dirty buffer cannot overwrite an accepted agent change.
+    if (autosaveTimer.current) { clearTimeout(autosaveTimer.current); autosaveTimer.current = 0; }
+    refreshGit();
+    reloadProject();
+    if (project) refreshVersions(project.root);
+    if (file) {
+      readText(file).then((t) => { setSource(t); setDirty(false); setSaveState("saved"); }).catch(() => {});
+    }
+  }, [refreshGit, reloadProject, file, project, refreshVersions]);
 
   const cls = ["app", native ? "native" : "", isMac ? "mac" : "", navOpen ? "" : "nav-hidden", inspectorOpen ? "" : "inspector-hidden", animating ? "animating" : "", focused ? "" : "inactive"].join(" ").trim();
 

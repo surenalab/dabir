@@ -1,0 +1,1 @@
+{"id":"14-label-sampler-rename","kind":"revision","prompt":"Rename label sec:sampler to sec:sampling in main.tex and update every reference to it. Leave other labels alone.","expect_files":["main.tex"],"expect_contains":[{"file":"main.tex","text":"sec:sampling"}],"expect_absent":[{"file":"main.tex","text":"sec:sampler"}],"timeout_secs":180}

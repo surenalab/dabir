@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
 import { AlertCircle, CheckCircle2, FolderOpen, FilePlus, GitBranch, Loader2, Circle, Upload, Radio } from "lucide-react";
 import { parseDocument, type BibEntry } from "../lib/latex";
 import { setVisualContext } from "../lib/visual";
 import { readBinary, type PdfPos, type Project } from "../lib/backend";
-import * as pdfjs from "pdfjs-dist";
 import type { ViewMode } from "./Toolbar";
 import type { CompileState } from "../App";
 import { SourceEditor, type CommentRange, type EditorApi } from "./SourceEditor";
@@ -11,10 +10,12 @@ import { FormatBar } from "./FormatBar";
 import { Problems, groupProblems } from "./Problems";
 import type * as Y from "yjs";
 import type { Awareness } from "y-protocols/awareness";
-import { PdfView, type PdfPin, type PdfZoom } from "./PdfView";
+import type { PdfPin, PdfZoom } from "./PdfView";
 import type { Settings } from "../lib/settings";
 import type { GrammarMatch } from "../lib/grammar";
 import type { CompletionSources } from "../lib/completions";
+
+const PdfView = lazy(() => import("./PdfView").then((m) => ({ default: m.PdfView })));
 
 /** Pull \newcommand definitions from the preamble so KaTeX can expand them. */
 function collectMacros(src: string): Record<string, string> {
@@ -37,6 +38,7 @@ async function loadFigure(root: string, rel: string): Promise<string | null> {
         return URL.createObjectURL(new Blob([bytes as BlobPart], { type: mime }));
       }
       if (/\.pdf$/i.test(c)) {
+        const pdfjs = await import("pdfjs-dist");
         const doc = await pdfjs.getDocument({ data: bytes }).promise;
         const page = await doc.getPage(1);
         const base = page.getViewport({ scale: 1 });
@@ -176,7 +178,11 @@ export function Document(p: Props) {
       collab={p.collab} comments={p.comments} onSelection={p.onSelection} jumpOffset={p.jumpOffset} marks={editorMarks}
       settings={p.settings} grammar={p.grammar} completions={p.completions} />
   ) : source != null ? <div className="doc-empty"><div className="card"><p>This file type is not editable in Dabir yet.</p></div></div> : null;
-  const pdf = <PdfView path={result?.pdf ?? null} stamp={compileState.status === "done" ? compileState.at : 0} target={p.pdfTarget} onJump={p.onPdfClick} onComment={p.onPdfComment} pins={p.pins} onPin={p.onPin} zoom={p.pdfZoom} onZoom={p.onPdfZoom} findRequest={p.pdfFindRequest} />;
+  const pdf = showPdf ? (
+    <Suspense fallback={<div className="doc-empty"><div className="card"><p>Loading PDF…</p></div></div>}>
+      <PdfView path={result?.pdf ?? null} stamp={compileState.status === "done" ? compileState.at : 0} target={p.pdfTarget} onJump={p.onPdfClick} onComment={p.onPdfComment} pins={p.pins} onPin={p.onPin} zoom={p.pdfZoom} onZoom={p.onPdfZoom} findRequest={p.pdfFindRequest} />
+    </Suspense>
+  ) : null;
 
   return (
     <main className="document">

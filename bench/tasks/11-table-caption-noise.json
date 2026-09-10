@@ -1,0 +1,1 @@
+{"id":"11-table-caption-noise","kind":"revision","prompt":"Open tables/psnr-sweep.tex and append ' across five seeds' to the end of the caption text before the closing brace, if not already present. Touch only the caption.","expect_files":["tables/psnr-sweep.tex"],"expect_contains":[{"file":"tables/psnr-sweep.tex","text":"five seeds"}],"timeout_secs":180}

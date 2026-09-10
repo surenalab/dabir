@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUp, Check, Loader2, Paperclip, RefreshCw, Square, X, FileText, Pencil, Terminal, Search, Wrench, Brain, FileDiff } from "lucide-react";
 import {
   agentAccept, agentApply, agentCancel, agentDiff, agentProviders, agentPullRequest, agentReject, agentRun, memoryRead, memorySetup,
@@ -28,9 +28,13 @@ function Transcript({ steps, running, started }: { steps: Step[]; running: boole
   const [, tick] = useState(0);
   useEffect(() => { if (!running) return; const t = setInterval(() => tick((n) => n + 1), 1000); return () => clearInterval(t); }, [running]);
   const shown = steps.filter((s) => s.kind !== "log");
-  // group consecutive tool steps so a burst of reads is one block
+  // group consecutive tool/thinking/text so streamed prose and thought stay one block
   const blocks: { kind: string; steps: Step[] }[] = [];
-  for (const st of shown) { const last = blocks[blocks.length - 1]; if (last && last.kind === st.kind && (st.kind === "tool" || st.kind === "thinking")) last.steps.push(st); else blocks.push({ kind: st.kind, steps: [st] }); }
+  for (const st of shown) {
+    const last = blocks[blocks.length - 1];
+    if (last && last.kind === st.kind && (st.kind === "tool" || st.kind === "thinking" || st.kind === "text")) last.steps.push(st);
+    else blocks.push({ kind: st.kind, steps: [st] });
+  }
   const lastBlock = blocks[blocks.length - 1];
   return (
     <div className="transcript" role="log" aria-live="polite">
@@ -38,10 +42,11 @@ function Transcript({ steps, running, started }: { steps: Step[]; running: boole
         const isLast = b === lastBlock;
         if (b.kind === "thinking") {
           const text = b.steps.map((x) => x.text).join("");
-          if (running && isLast) return <div key={i} className="think live"><Brain aria-hidden /><span>{text.slice(-220)}</span></div>;
-          return <details key={i} className="think"><summary><Brain aria-hidden />Thought for {fmtElapsed((b.steps[b.steps.length - 1].at - b.steps[0].at) || 1000)}</summary><p>{text}</p></details>;
+          const elapsed = Math.max(1000, (running && isLast ? Date.now() : b.steps[b.steps.length - 1].at) - b.steps[0].at);
+          if (running && isLast) return <div key={i} className="think live"><Brain aria-hidden /><span>Thought for {fmtElapsed(elapsed)}…</span></div>;
+          return <details key={i} className="think"><summary><Brain aria-hidden />Thought for {fmtElapsed(elapsed)}</summary><p>{text}</p></details>;
         }
-        if (b.kind === "text") return <div key={i} className="say">{b.steps.map((x, j) => <p key={j}>{x.text}</p>)}</div>;
+        if (b.kind === "text") return <div key={i} className="say"><p>{b.steps.map((x) => x.text).join("")}</p></div>;
         return (
           <div key={i} className="tools">
             {b.steps.map((x, j) => { const f = toolFace(x.tool, x.text); return (
@@ -111,6 +116,17 @@ function DiffView({ files, excluded, onToggle }: { files: FileDiff[]; excluded: 
   );
 }
 
+function ReviewDiff({ patch, excluded, onToggle }: { patch: string; excluded: Set<string>; onToggle: (key: string, on: boolean) => void }) {
+  const files = useMemo(() => splitPatch(patch), [patch]);
+  return (
+    <div className="evidence">
+      <div className="evidence-heading">What changed</div>
+      <span className="target">Untick a file or a hunk to leave it out of Accept.</span>
+      <DiffView files={files} excluded={excluded} onToggle={onToggle} />
+    </div>
+  );
+}
+
 interface Props {
   live: boolean;
   peers: Peer[];
@@ -123,15 +139,16 @@ interface Props {
   onRemoveComment: (id: string) => void;
   onJumpComment: (c: Comment) => void;
   onShare: () => void;
-  autoRun?: string | null;
   project: Project | null;
   gitRepo: boolean;
   askFocus: number;
   prefill: { text: string; stamp: number } | null;
   onProviderReady: (ready: boolean) => void;
-  onChanged: () => void;         // git status or files changed
+  onChanged: () => void;         // git status or files changed; reloads the open buffer from disk
   onOpenFile: (path: string) => void;
   onNote: (text: string) => void;
+  /** Preview-only: start a run with this prompt once providers are ready. */
+  autoRun?: string | null;
 }
 
 export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady, onChanged, onOpenFile, onNote, live, peers, comments, currentFile, hasSelection, onAddComment, onResolveComment, onReplyComment, onRemoveComment, onJumpComment, onShare, autoRun }: Props) {
@@ -175,8 +192,13 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
       setRun({ phase: "review", runId: r.runId, prompt: r.prompt, steps: r.steps, provider: r.provider, ok: false, summary: e.text, diff: null, started: r.started, finished: Date.now() });
     } else if (e.kind === "thinking") {
       const last = r.steps[r.steps.length - 1];
-      if (last && last.kind === "thinking" && Date.now() - last.at < 4000) setRun({ ...r, steps: [...r.steps.slice(0, -1), { ...last, text: last.text + e.text, at: Date.now() }] });
+      // Keep the original `at` so "Thought for n s" measures the whole burst, not the last chunk.
+      if (last && last.kind === "thinking" && Date.now() - last.at < 30_000) setRun({ ...r, steps: [...r.steps.slice(0, -1), { ...last, text: last.text + e.text }] });
       else setRun({ ...r, steps: [...r.steps, { kind: "thinking", text: e.text, at: Date.now() }] });
+    } else if (e.kind === "text") {
+      const last = r.steps[r.steps.length - 1];
+      if (last && last.kind === "text") setRun({ ...r, steps: [...r.steps.slice(0, -1), { ...last, text: last.text + e.text }] });
+      else setRun({ ...r, steps: [...r.steps, { kind: "text", text: e.text, at: Date.now() }] });
     } else {
       setRun({ ...r, steps: [...r.steps, { kind: e.kind as Step["kind"], text: e.text, tool: e.tool, at: Date.now() }] });
     }
@@ -223,7 +245,7 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
     const { picks, partial } = selection();
     if (picks.length === 0) { onNote("Nothing selected to accept."); return; }
     setBusy(true);
-    try { const files = await agentApply(project.root, run.runId, partial ? picks : undefined, run.prompt); setRun({ phase: "done", text: `Applied to ${files.length} file${files.length === 1 ? "" : "s"} and saved${partial ? " (only the selected changes)" : ""}. A snapshot was taken; commit whenever you like.` }); onChanged(); refreshMemory(); }
+    try { const files = await agentApply(project.root, run.runId, partial ? picks : undefined, run.prompt, run.provider); setRun({ phase: "done", text: `Applied to ${files.length} file${files.length === 1 ? "" : "s"} and saved${partial ? " (only the selected changes)" : ""}. A snapshot was taken; commit whenever you like.` }); onChanged(); refreshMemory(); }
     catch (e) { onNote(String(e)); } finally { setBusy(false); }
   };
   const accept = async () => {
@@ -314,11 +336,7 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
                   </div>
                   {run.error && <p className="composer-note" role="alert">{run.error}</p>}
                   {run.diff && run.diff.changes.length > 0 ? (
-                    <div className="evidence">
-                      <div className="evidence-heading">What changed</div>
-                      <span className="target">Untick a file or a hunk to leave it out of the commit.</span>
-                      <DiffView files={splitPatch(run.diff.patch)} excluded={excluded} onToggle={(key, on) => setExcluded((x) => { const n = new Set(x); if (on) n.delete(key); else n.add(key); return n; })} />
-                    </div>
+                    <ReviewDiff patch={run.diff.patch} excluded={excluded} onToggle={(key, on) => setExcluded((x) => { const n = new Set(x); if (on) n.delete(key); else n.add(key); return n; })} />
                   ) : (
                     <p className="composer-note">The agent made no file changes.</p>
                   )}
@@ -344,7 +362,7 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
             <p className="composer-note" role="status">{run.text} <button className="btn" style={{ height: 22, marginLeft: 6 }} onClick={() => setRun({ phase: "idle" })}>OK</button></p>
           )}
           {run.phase === "idle" && project && !finishedRun && (
-            <p className="composer-note">Runs happen on a Git worktree on their own branch. You review the diff, then accept, reject, or open a pull request.{gitRepo ? "" : " This folder needs a Git repository first."}</p>
+            <p className="composer-note">Runs happen on a Git worktree. You review the diff, then Accept (lands the change and takes a snapshot), Reject, or open a pull request.{gitRepo ? "" : " This folder needs a Git repository first."}</p>
           )}
         </div>
       )}

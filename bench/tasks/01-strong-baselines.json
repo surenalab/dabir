@@ -1,0 +1,1 @@
+{"id":"01-strong-baselines","kind":"revision","prompt":"Open main.tex and change the abstract's phrase 'three baselines' to 'three strong baselines'. Do not touch anything else. Reply DONE when finished.","expect_files":["main.tex"],"expect_contains":[{"file":"main.tex","text":"three strong baselines"}],"timeout_secs":180}
