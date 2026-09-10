@@ -8,9 +8,9 @@ import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap, s
 import { tags } from "@lezer/highlight";
 import { latex, latexCompletionSource } from "codemirror-lang-latex";
 import { yCollab } from "y-codemirror.next";
-import type * as Y from "yjs";
+import * as Y from "yjs";
 import type { Awareness } from "y-protocols/awareness";
-import { visualExtensions } from "../lib/visual";
+import { visualExtensions, remoteCursorsField, setRemoteCursors, type RemoteCursor } from "../lib/visual";
 import { projectCompletions, type CompletionSources } from "../lib/completions";
 import type { GrammarMatch } from "../lib/grammar";
 import type { Settings } from "../lib/settings";
@@ -193,7 +193,7 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
         suggestComp.current.of(suggestConfig.of({ on: suggesting, author })),
         trackChanges(),
         readOnlyComp.current.of([]),
-        reviewField,
+        reviewField, remoteCursorsField,
         commentField, markField, grammarField, grammarHover,
         keymap.of([
           { key: "Mod-s", run: () => { onSaveRef.current(); return true; } },
@@ -241,6 +241,24 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
       onChangeRef.current(shared);
     }
     v.dispatch({ effects: collabComp.current.reconfigure(yCollab(collab.text, collab.awareness)) });
+    // Coauthors' carets as offsets, so Visual widgets can show who is inside the source they hide.
+    const sync = () => {
+      const view_ = view.current; if (!view_) return;
+      const out: RemoteCursor[] = [];
+      const doc = collab.text.doc; if (!doc) return;
+      collab.awareness.getStates().forEach((st, clientId) => {
+        if (clientId === collab.awareness.clientID) return;
+        const cur = (st as { cursor?: { head?: unknown } }).cursor, u = (st as { user?: { name?: string; color?: string } }).user;
+        if (!cur?.head || !u?.name) return;
+        try {
+          const abs = Y.createAbsolutePositionFromRelativePosition(Y.createRelativePositionFromJSON(cur.head), doc);
+          if (abs && abs.type === collab.text) out.push({ pos: abs.index, name: u.name, color: u.color ?? "#888888" });
+        } catch { /* stale position */ }
+      });
+      view_.dispatch({ effects: setRemoteCursors.of(out) });
+    };
+    collab.awareness.on("change", sync); sync();
+    return () => { collab.awareness.off("change", sync); view.current?.dispatch({ effects: setRemoteCursors.of([]) }); };
   }, [collab]);
 
   useEffect(() => { view.current?.dispatch({ effects: setComments.of(comments) }); }, [comments]);
