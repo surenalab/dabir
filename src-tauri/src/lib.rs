@@ -1826,8 +1826,11 @@ mod tests {
 
     #[test]
     fn filters_patch_by_file_and_hunk() {
+        let filter = |p: &str, picks: &[git::Pick]| {
+            String::from_utf8(git::filter_patch_bytes(p.as_bytes(), picks)).unwrap()
+        };
         let patch = "diff --git a/a.tex b/a.tex\n--- a/a.tex\n+++ b/a.tex\n@@ -1,1 +1,1 @@\n-x\n+y\n@@ -10,1 +10,1 @@\n-p\n+q\ndiff --git a/b.tex b/b.tex\n--- a/b.tex\n+++ b/b.tex\n@@ -1,1 +1,1 @@\n-m\n+n\n";
-        let only_b = git::filter_patch(
+        let only_b = filter(
             patch,
             &[git::Pick {
                 path: "b.tex".into(),
@@ -1835,7 +1838,7 @@ mod tests {
             }],
         );
         assert!(only_b.contains("+n") && !only_b.contains("+y"));
-        let second_hunk = git::filter_patch(
+        let second_hunk = filter(
             patch,
             &[git::Pick {
                 path: "a.tex".into(),
@@ -1847,7 +1850,7 @@ mod tests {
                 && !second_hunk.contains("+y")
                 && second_hunk.contains("+++ b/a.tex")
         );
-        let none = git::filter_patch(
+        let none = filter(
             patch,
             &[git::Pick {
                 path: "a.tex".into(),
@@ -1855,6 +1858,31 @@ mod tests {
             }],
         );
         assert!(none.trim().is_empty());
+    }
+
+    #[test]
+    fn filter_patch_keeps_non_utf8_bytes() {
+        // A PDF Git treats as text carries bytes outside UTF-8; they must survive filtering untouched.
+        let mut patch =
+            b"diff --git a/f.pdf b/f.pdf\n--- a/f.pdf\n+++ b/f.pdf\n@@ -1,1 +1,1 @@\n-".to_vec();
+        patch.extend_from_slice(&[0xE9, 0xFF, 0x80]);
+        patch.extend_from_slice(b"\n+ok\n");
+        let out = git::filter_patch_bytes(
+            &patch,
+            &[git::Pick {
+                path: "f.pdf".into(),
+                hunks: None,
+            }],
+        );
+        assert_eq!(out, patch);
+        let none = git::filter_patch_bytes(
+            &patch,
+            &[git::Pick {
+                path: "other.tex".into(),
+                hunks: None,
+            }],
+        );
+        assert!(none.is_empty());
     }
 
     /// Native relay round trip: two y-websocket clients through the in-process server.
@@ -2246,7 +2274,11 @@ mod tests {
         } else {
             ((passed as f64) / (total as f64)).into()
         };
-        let out = results_dir.join(format!("{provider}.json"));
+        // A single-task run must not overwrite the full suite's result file.
+        let out = match &only {
+            Some(t) => results_dir.join(format!("{provider}-{t}.json")),
+            None => results_dir.join(format!("{provider}.json")),
+        };
         fs::write(&out, serde_json::to_string_pretty(&report).unwrap()).unwrap();
         eprintln!("\n{passed}/{total} passed → {}", out.display());
         assert!(total > 0, "no tasks ran");
