@@ -34,6 +34,60 @@ pub struct AgentEvent {
 
 static RUNNING: Mutex<Option<HashMap<String, u32>>> = Mutex::new(None);
 
+/// Directories with tools the app ships or knows about (the bundled tectonic), put on every agent's PATH.
+static TOOL_DIRS: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+
+pub fn register_tool_dir(dir: PathBuf) {
+    let mut g = TOOL_DIRS.lock().unwrap();
+    if !g.contains(&dir) {
+        g.push(dir);
+    }
+}
+
+/// The PATH of the user's login shell. An app launched from the Finder inherits only the system
+/// defaults, so `python3` from conda or `latexmk` from TeX Live would be invisible to agents otherwise.
+fn login_shell_path() -> Option<String> {
+    use std::sync::OnceLock;
+    static CACHE: OnceLock<Option<String>> = OnceLock::new();
+    CACHE
+        .get_or_init(|| {
+            let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
+            let (tx, rx) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                let out = Command::new(shell)
+                    .args(["-lc", "printf %s \"$PATH\""])
+                    .stdin(Stdio::null())
+                    .output();
+                let _ = tx.send(
+                    out.ok()
+                        .filter(|o| o.status.success())
+                        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()),
+                );
+            });
+            rx.recv_timeout(std::time::Duration::from_secs(4))
+                .ok()
+                .flatten()
+                .filter(|p| !p.is_empty())
+        })
+        .clone()
+}
+
+/// PATH for a child agent: registered tool directories, the usual CLI install places, the login
+/// shell's PATH, then whatever this process has. Duplicates dropped, order kept.
+pub fn agent_path() -> std::ffi::OsString {
+    let mut dirs: Vec<PathBuf> = TOOL_DIRS.lock().unwrap().clone();
+    dirs.extend(candidates());
+    if let Some(p) = login_shell_path() {
+        dirs.extend(std::env::split_paths(&p));
+    }
+    let mut seen = std::collections::HashSet::new();
+    let dirs: Vec<PathBuf> = dirs
+        .into_iter()
+        .filter(|d| seen.insert(d.clone()))
+        .collect();
+    std::env::join_paths(dirs).unwrap_or_else(|_| std::env::var_os("PATH").unwrap_or_default())
+}
+
 fn candidates() -> Vec<PathBuf> {
     let home = std::env::var("HOME").unwrap_or_default();
     let mut dirs: Vec<PathBuf> = vec![
@@ -416,8 +470,12 @@ fn parse_line(id: &str, line: &str) -> Vec<(String, String, Option<String>, Opti
                                     let detail = inp
                                         .get("command")
                                         .or(inp.get("file_path"))
+                                        .or(inp.get("target_file"))
                                         .or(inp.get("path"))
+                                        .or(inp.get("target_directory"))
                                         .or(inp.get("pattern"))
+                                        .or(inp.get("query"))
+                                        .or(inp.get("url"))
                                         .map(short)
                                         .unwrap_or_else(|| short(inp));
                                     out.push(("tool".into(), detail, Some(name), None));
@@ -635,7 +693,10 @@ where
     };
     let args = args_for(&provider, &prompt, &cwd, &steer);
     let mut cmd = Command::new(&bin);
-    cmd.args(&args).current_dir(&cwd).env("DABIR", "1");
+    cmd.args(&args)
+        .current_dir(&cwd)
+        .env("DABIR", "1")
+        .env("PATH", agent_path());
     for k in SCRUB_ENV {
         cmd.env_remove(k);
     }
@@ -659,7 +720,15 @@ where
     let stderr = child.stderr.take().unwrap();
     let emit = {
         let run_id = run_id.clone();
+        // Tool lines name files relative to the paper, not by their long worktree path.
+        let cwd_prefix = format!("{}/", cwd.to_string_lossy());
+        let cwd_private = format!("/private{}", cwd_prefix);
         move |kind: &str, text: String, tool: Option<String>, ok: Option<bool>| {
+            let text = if kind == "tool" {
+                text.replace(&cwd_private, "").replace(&cwd_prefix, "")
+            } else {
+                text
+            };
             emit_raw(AgentEvent {
                 run_id: run_id.clone(),
                 kind: kind.into(),

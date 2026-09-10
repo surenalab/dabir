@@ -1,6 +1,8 @@
 # Dabir agent benchmark
 
-Twenty LaTeX repair and revision tasks on a fresh copy of `examples/score-anchor`. The runner reuses the same worktree + vendor CLI path as `live_agent_run`.
+Twenty-one LaTeX repair, revision and one deliberately vague task on a fresh copy of `examples/score-anchor`. The runner reuses the same worktree + vendor CLI path as the app, and since 2026-09-10 sends the same prompt the app sends (the preamble with the brief, file map and context pack in front of the request), so it measures the prompt too.
+
+`DABIR_BENCH_VERBOSE=1` prints every tool call and reply with its time; each result records the number of tool calls.
 
 ## Run
 
@@ -29,6 +31,10 @@ Or from the repo root:
 Pass rates per vendor are the artifact that matters; publish them with a release note when the numbers stabilize.
 
 Running several providers at once is fine (each task works in its own temp copy), but build the test binary once first (`cargo test --no-run`) and start the runs from that binary, or the second `cargo test` will wait on the build lock and may rewrite the binary under the first.
+
+## Results, 2026-09-10, third run (preamble in the loop)
+
+The vague task `21-add-a-figure-vague` (prompt: "add a figure") was added after a real run in the app took over six minutes and added nothing: the agent read Dabir's own CLAUDE.md and bench folder above the paper, ran `which tectonic`, and edited and reran code. With the raw request as prompt, Grok took 432 s and 36 tool calls and moved the existing figure instead of adding one. With the preamble (boundary, brief and file map inline, numbered procedure, tectonic on PATH) it took 138 s and 8 tool calls and added a TikZ schematic with a caption and a reference. The full Grok suite with the preamble: 21/21, 20 s mean on the twenty scripted tasks (24 s in the second run), 1 to 5 tool calls each, 8.9 min in all.
 
 ## Results, 2026-09-10, second run
 
@@ -59,12 +65,13 @@ Each `tasks/<id>.json`:
 | Field | Meaning |
 |---|---|
 | `id` | Stable slug |
-| `kind` | `revision` or `repair` |
+| `kind` | `revision`, `repair` or `vague` |
 | `prompt` | Exact agent request |
 | `mutate` | Optional `{file, find, replace}` applied before the run (for repair) |
 | `expect_files` | Paths that must appear in the worktree diff |
 | `expect_contains` | Substrings that must appear in the named file after accept |
 | `expect_absent` | Substrings that must not remain |
+| `expect_count` | `{file, text, min}`: the substring must occur at least `min` times |
 | `timeout_secs` | Cap (default 180) |
 
 ## Rules
