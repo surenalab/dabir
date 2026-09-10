@@ -9,6 +9,7 @@ mod git;
 mod memory;
 mod relay;
 mod synctex;
+mod templates;
 mod texlog;
 
 use serde::Serialize;
@@ -824,14 +825,6 @@ fn compile(app: AppHandle, main_tex: String) -> Result<CompileResult, String> {
 
 // ---------------------------------------------------------------- new paper and references
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct Template {
-    id: String,
-    label: String,
-    main: String,
-}
-
 fn templates_dir(app: &AppHandle) -> Option<PathBuf> {
     app.path()
         .resolve("templates", tauri::path::BaseDirectory::Resource)
@@ -847,37 +840,32 @@ fn templates_dir(app: &AppHandle) -> Option<PathBuf> {
         })
 }
 
-#[tauri::command]
-fn templates_list(app: AppHandle) -> Vec<Template> {
-    let labels = [
-        ("ieee-journal", "IEEE journal (IEEEtran)"),
-        ("acm-sigconf", "ACM conference (acmart)"),
-        ("elsevier-article", "Elsevier article (elsarticle)"),
-        ("article", "Plain article"),
-        ("typst-article", "Typst article"),
-    ];
-    let Some(dir) = templates_dir(&app) else {
-        return vec![];
-    };
-    labels
-        .iter()
-        .filter(|(id, _)| dir.join(id).is_dir())
-        .map(|(id, label)| {
-            let main = if dir.join(id).join("main.typ").exists() {
-                "main.typ"
-            } else {
-                "main.tex"
-            };
-            Template {
-                id: id.to_string(),
-                label: label.to_string(),
-                main: main.into(),
-            }
-        })
-        .collect()
+/// Fetched kits live here, keyed by id and version, so a paper can be started offline afterwards.
+fn templates_cache(app: &AppHandle) -> PathBuf {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .unwrap_or_else(|_| std::env::temp_dir())
+        .join("templates");
+    let _ = fs::create_dir_all(&dir);
+    dir
 }
 
-/// Copy a template into a new folder, initialise Git, and draft the memory scaffold.
+#[tauri::command]
+fn templates_list(app: AppHandle) -> Result<templates::Listing, String> {
+    let dir = templates_dir(&app).ok_or("Templates are missing from this build")?;
+    templates::list(&dir, &templates_cache(&app))
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct TemplateProgress {
+    template: String,
+    message: String,
+}
+
+/// Create a paper from a template: copy the kit (fetching an official one on first use),
+/// initialise Git, and draft the memory scaffold. Progress goes out as `template-progress`.
 #[tauri::command]
 fn new_paper(
     app: AppHandle,
@@ -885,12 +873,7 @@ fn new_paper(
     name: String,
     template: String,
 ) -> Result<String, String> {
-    let dir = templates_dir(&app)
-        .ok_or("Templates are missing from this build")?
-        .join(&template);
-    if !dir.is_dir() {
-        return Err(format!("Unknown template {}", template));
-    }
+    let dir = templates_dir(&app).ok_or("Templates are missing from this build")?;
     let safe = name.trim().replace(
         |c: char| !(c.is_alphanumeric() || c == '-' || c == '_'),
         "-",
@@ -902,16 +885,32 @@ fn new_paper(
     if dest.exists() {
         return Err(format!("{} already exists", dest.display()));
     }
-    fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
-    for e in fs::read_dir(&dir).map_err(|e| e.to_string())?.flatten() {
-        let p = e.path();
-        if p.is_file() {
-            fs::copy(&p, dest.join(e.file_name())).map_err(|e| e.to_string())?;
-        }
+    let progress = |message: &str| {
+        let _ = app.emit(
+            "template-progress",
+            TemplateProgress {
+                template: template.clone(),
+                message: message.to_string(),
+            },
+        );
+    };
+    if let Err(e) =
+        templates::instantiate(&dir, &templates_cache(&app), &template, &dest, &progress)
+    {
+        let _ = fs::remove_dir_all(&dest);
+        return Err(e);
     }
     for d in ["figures", "code", "tables"] {
         let _ = fs::create_dir_all(dest.join(d));
     }
+    let gi = dest.join(".gitignore");
+    if !gi.exists() {
+        let _ = fs::write(
+            &gi,
+            ".dabir/build/\n.dabir/index/\n.dabir/worktrees/\n*.aux\n*.log\n*.bbl\n*.blg\n*.out\n*.synctex.gz\n",
+        );
+    }
+    progress("Initialising Git and the memory scaffold…");
     git::init(&dest)?;
     let main = find_main_tex(&dest);
     memory::setup(&dest, main.as_deref())?;

@@ -1,0 +1,536 @@
+{
+  "groups": [
+    {
+      "id": "ml",
+      "label": "Machine learning"
+    },
+    {
+      "id": "vision",
+      "label": "Computer vision"
+    },
+    {
+      "id": "nlp",
+      "label": "Language"
+    },
+    {
+      "id": "publishers",
+      "label": "Journals and publishers"
+    },
+    {
+      "id": "math",
+      "label": "Mathematics"
+    },
+    {
+      "id": "physics",
+      "label": "Physics"
+    },
+    {
+      "id": "general",
+      "label": "General"
+    },
+    {
+      "id": "typst",
+      "label": "Typst"
+    }
+  ],
+  "templates": [
+    {
+      "id": "neurips",
+      "label": "NeurIPS 2026",
+      "venue": "Conference on Neural Information Processing Systems",
+      "group": "ml",
+      "engine": "latex",
+      "official": true,
+      "featured": true,
+      "version": "2026",
+      "summary": "The official neurips_2026.sty with the paper checklist. Anonymous with line numbers by default; add the final or preprint option when the time comes.",
+      "site": "https://neurips.cc/Conferences/2026/CallForPapers",
+      "source": {
+        "kind": "zip",
+        "url": "https://media.neurips.cc/Conferences/NeurIPS2026/Formatting_Instructions_For_NeurIPS_2026.zip"
+      },
+      "main": "neurips_2026.tex"
+    },
+    {
+      "id": "icml",
+      "label": "ICML 2026",
+      "venue": "International Conference on Machine Learning",
+      "group": "ml",
+      "engine": "latex",
+      "official": true,
+      "featured": false,
+      "version": "2026",
+      "summary": "The official icml2026.sty and bibliography style with the example paper. Submissions are anonymous; switch to the accepted option for the camera-ready.",
+      "site": "https://icml.cc/Conferences/2026/CallForPapers",
+      "source": {
+        "kind": "zip",
+        "url": "https://media.icml.cc/Conferences/ICML2026/Styles/icml2026.zip"
+      },
+      "main": "example_paper.tex",
+      "drop": [
+        "example_paper.pdf"
+      ]
+    },
+    {
+      "id": "iclr",
+      "label": "ICLR 2027",
+      "venue": "International Conference on Learning Representations",
+      "group": "ml",
+      "engine": "latex",
+      "official": true,
+      "featured": true,
+      "version": "2027",
+      "summary": "The official ICLR style, bibliography style and math_commands.tex from the ICLR master template. Anonymous by default; uncomment \\iclrfinalcopy for the camera-ready.",
+      "site": "https://github.com/ICLR/Master-Template",
+      "source": {
+        "kind": "zip",
+        "url": "https://raw.githubusercontent.com/ICLR/Master-Template/master/iclr2027.zip"
+      },
+      "main": "iclr2027_conference.tex"
+    },
+    {
+      "id": "tmlr",
+      "label": "TMLR",
+      "venue": "Transactions on Machine Learning Research",
+      "group": "ml",
+      "engine": "latex",
+      "official": true,
+      "featured": false,
+      "version": "main",
+      "summary": "The official TMLR style and bibliography style from the JMLR organisation's repository, with their example paper.",
+      "site": "https://github.com/JmlrOrg/tmlr-style-file",
+      "source": {
+        "kind": "zip",
+        "url": "https://github.com/JmlrOrg/tmlr-style-file/archive/refs/heads/main.zip"
+      },
+      "main": "main.tex",
+      "drop": [
+        "*.pdf"
+      ]
+    },
+    {
+      "id": "jmlr",
+      "label": "JMLR",
+      "venue": "Journal of Machine Learning Research",
+      "group": "ml",
+      "engine": "latex",
+      "official": false,
+      "featured": false,
+      "summary": "A short paper on the jmlr class from CTAN, which the engine fetches on first compile. Author blocks, keywords and the JMLR bibliography style are in place.",
+      "site": "https://ctan.org/pkg/jmlr",
+      "source": {
+        "kind": "bundled"
+      },
+      "main": "main.tex"
+    },
+    {
+      "id": "cvpr",
+      "label": "CVPR 2026",
+      "venue": "IEEE/CVF Conference on Computer Vision and Pattern Recognition",
+      "group": "vision",
+      "engine": "latex",
+      "official": true,
+      "featured": true,
+      "version": "2026-v1",
+      "summary": "The official CVF author kit: cvpr.sty, the IEEE natbib style, sections split under sec/, and the rebuttal template. Review mode with line numbers by default.",
+      "site": "https://github.com/cvpr-org/author-kit",
+      "source": {
+        "kind": "zip",
+        "url": "https://codeload.github.com/cvpr-org/author-kit/zip/refs/tags/CVPR2026-v1(latex)"
+      },
+      "main": "main.tex",
+      "drop": [
+        ".github",
+        ".gitignore"
+      ]
+    },
+    {
+      "id": "iccv",
+      "label": "ICCV 2025",
+      "venue": "IEEE/CVF International Conference on Computer Vision",
+      "group": "vision",
+      "engine": "latex",
+      "official": true,
+      "featured": false,
+      "version": "2025-feb",
+      "summary": "The official ICCV 2025 author kit (iccv.sty, sections under sec/, rebuttal template). ICCV 2027 has not published its kit yet; the format is the shared CVF one.",
+      "site": "https://iccv.thecvf.com/Conferences/2025/AuthorGuidelines",
+      "source": {
+        "kind": "zip",
+        "url": "https://media.eventhosts.cc/Conferences/ICCV2025/ICCV2025-Author-Kit-Feb.zip"
+      },
+      "main": "main.tex",
+      "drop": [
+        "__MACOSX",
+        ".DS_Store"
+      ]
+    },
+    {
+      "id": "eccv",
+      "label": "ECCV 2026",
+      "venue": "European Conference on Computer Vision",
+      "group": "vision",
+      "engine": "latex",
+      "official": true,
+      "featured": false,
+      "version": "2026",
+      "summary": "The official ECCV 2026 kit: Springer's llncs.cls with eccv.sty for anonymous review with line numbers, and the splncs04 bibliography style.",
+      "site": "https://eccv.ecva.net/Conferences/2026/SubmissionPolicies",
+      "source": {
+        "kind": "zip",
+        "url": "https://github.com/paolo-favaro/paper-template/archive/refs/tags/Latest.zip"
+      },
+      "main": "main.tex",
+      "drop": [
+        "ECCV_2026_Paper_Template.pdf",
+        "llncsdoc.pdf",
+        "lncs_history.txt",
+        "lncs_readme.txt"
+      ],
+      "patches": [
+        {
+          "file": "main.tex",
+          "find": "\\usepackage[accsupp]{axessibility}",
+          "replace": "% \\usepackage[accsupp]{axessibility}  % Dabir: this package fails under the bundled engine; re-enable it where it compiles.",
+          "why": "axessibility does not load under the bundled XeTeX engine"
+        }
+      ]
+    },
+    {
+      "id": "acl",
+      "label": "ACL Rolling Review",
+      "venue": "ACL, EMNLP, NAACL and other ACL venues",
+      "group": "nlp",
+      "engine": "latex",
+      "official": true,
+      "featured": false,
+      "version": "master",
+      "summary": "The official ACL style files (acl.sty, acl_natbib.bst) and the example paper from the ACL organisation's repository, shared by every ACL venue.",
+      "site": "https://github.com/acl-org/acl-style-files",
+      "source": {
+        "kind": "files",
+        "base": "https://raw.githubusercontent.com/acl-org/acl-style-files/master/",
+        "files": [
+          "acl.sty",
+          "acl_natbib.bst",
+          "acl_latex.tex",
+          "custom.bib"
+        ]
+      },
+      "main": "acl_latex.tex"
+    },
+    {
+      "id": "ieee-journal",
+      "label": "IEEE Transactions",
+      "venue": "IEEE journals and transactions",
+      "group": "publishers",
+      "engine": "latex",
+      "official": false,
+      "featured": true,
+      "summary": "A short paper on IEEEtran in journal mode, fetched from CTAN by the engine on first compile, with the IEEEtran bibliography style.",
+      "site": "https://ctan.org/pkg/ieeetran",
+      "source": {
+        "kind": "bundled"
+      },
+      "main": "main.tex"
+    },
+    {
+      "id": "ieee-conference",
+      "label": "IEEE conference",
+      "venue": "IEEE conference proceedings",
+      "group": "publishers",
+      "engine": "latex",
+      "official": false,
+      "featured": false,
+      "summary": "IEEEtran in conference mode with author blocks and IEEE keywords. The class comes from CTAN on first compile.",
+      "site": "https://ctan.org/pkg/ieeetran",
+      "source": {
+        "kind": "bundled"
+      },
+      "main": "main.tex"
+    },
+    {
+      "id": "springer-nature",
+      "label": "Springer Nature",
+      "venue": "Springer, BMC and Nature Portfolio journals",
+      "group": "publishers",
+      "engine": "latex",
+      "official": true,
+      "featured": true,
+      "version": "2024-12",
+      "summary": "The official sn-jnl.cls (December 2024) with all eight reference styles and the sample article, set to the math and physical sciences numbered style.",
+      "site": "https://www.springernature.com/gp/authors/campaigns/latex-author-support",
+      "source": {
+        "kind": "zip",
+        "url": "https://cms-resources.apps.public.k8s.springernature.io/springer-cms/rest/v1/content/18782940/data/v12"
+      },
+      "main": "sn-article.tex",
+      "drop": [
+        "*.pdf"
+      ],
+      "flatten": [
+        "bst"
+      ],
+      "patches": [
+        {
+          "file": "main.tex",
+          "find": "\\includegraphics[width=0.9\\textwidth]{fig.eps}",
+          "replace": "\\fbox{\\rule{0pt}{4cm}\\rule{0.9\\textwidth}{0pt}} % Dabir: the kit's example figure is EPS, which the bundled engine cannot embed; use a PDF or PNG",
+          "why": "EPS figures cannot be embedded by the bundled engine"
+        }
+      ]
+    },
+    {
+      "id": "nature",
+      "label": "Nature Portfolio",
+      "venue": "Nature and the Nature research journals",
+      "group": "publishers",
+      "engine": "latex",
+      "official": true,
+      "featured": false,
+      "version": "2024-12",
+      "summary": "The same official Springer Nature kit with the documentclass set to the sn-nature reference style that Nature Portfolio journals ask for.",
+      "site": "https://www.springernature.com/gp/authors/campaigns/latex-author-support",
+      "source": {
+        "kind": "zip",
+        "url": "https://cms-resources.apps.public.k8s.springernature.io/springer-cms/rest/v1/content/18782940/data/v12"
+      },
+      "main": "sn-article.tex",
+      "drop": [
+        "*.pdf"
+      ],
+      "flatten": [
+        "bst"
+      ],
+      "patches": [
+        {
+          "file": "main.tex",
+          "find": "\\documentclass[pdflatex,sn-mathphys-num]{sn-jnl}",
+          "replace": "\\documentclass[pdflatex,sn-nature]{sn-jnl}",
+          "why": "Nature Portfolio journals use the sn-nature reference style"
+        },
+        {
+          "file": "main.tex",
+          "find": "\\includegraphics[width=0.9\\textwidth]{fig.eps}",
+          "replace": "\\fbox{\\rule{0pt}{4cm}\\rule{0.9\\textwidth}{0pt}} % Dabir: the kit's example figure is EPS, which the bundled engine cannot embed; use a PDF or PNG",
+          "why": "EPS figures cannot be embedded by the bundled engine"
+        }
+      ]
+    },
+    {
+      "id": "lncs",
+      "label": "Springer LNCS",
+      "venue": "Lecture Notes in Computer Science proceedings",
+      "group": "publishers",
+      "engine": "latex",
+      "official": false,
+      "featured": false,
+      "summary": "A short paper on llncs with running heads, ORCID, institutes and the splncs04 bibliography style. The class comes from CTAN on first compile.",
+      "site": "https://ctan.org/pkg/llncs",
+      "source": {
+        "kind": "bundled"
+      },
+      "main": "main.tex"
+    },
+    {
+      "id": "acm-sigconf",
+      "label": "ACM conference",
+      "venue": "ACM conferences (acmart, sigconf)",
+      "group": "publishers",
+      "engine": "latex",
+      "official": false,
+      "featured": false,
+      "summary": "A short paper on acmart in sigconf mode, fetched from CTAN on first compile, with the ACM reference format.",
+      "site": "https://ctan.org/pkg/acmart",
+      "source": {
+        "kind": "bundled"
+      },
+      "main": "main.tex"
+    },
+    {
+      "id": "elsevier-article",
+      "label": "Elsevier article",
+      "venue": "Elsevier journals (elsarticle)",
+      "group": "publishers",
+      "engine": "latex",
+      "official": false,
+      "featured": false,
+      "summary": "A short paper on elsarticle, fetched from CTAN on first compile, with the elsarticle-num bibliography style.",
+      "site": "https://ctan.org/pkg/elsarticle",
+      "source": {
+        "kind": "bundled"
+      },
+      "main": "main.tex"
+    },
+    {
+      "id": "siam",
+      "label": "SIAM journals",
+      "venue": "Society for Industrial and Applied Mathematics",
+      "group": "math",
+      "engine": "latex",
+      "official": true,
+      "featured": true,
+      "version": "251216",
+      "summary": "The official siamart251216.cls, siamplain.bst and the example article with its shared front matter. Review mode with line numbers by default.",
+      "site": "https://epubs.siam.org/journal-authors",
+      "source": {
+        "kind": "files",
+        "base": "https://epubs.siam.org/pb-assets/macros/standard/",
+        "files": [
+          "siamart251216.cls",
+          "siamplain.bst",
+          "ex_article.tex",
+          "ex_shared.tex",
+          "references.bib"
+        ]
+      },
+      "main": "ex_article.tex",
+      "patches": [
+        {
+          "file": "main.tex",
+          "prepend": "% Dabir: the SIAM class assumes pdfLaTeX; under the bundled XeTeX engine take its pdf branch and tell hyperref and graphicx which engine this really is.\n\\RequirePackage{iftex}\\ifXeTeX\\PassOptionsToPackage{xetex}{hyperref}\\PassOptionsToPackage{xetex}{graphicx}\\let\\ifpdf\\iftrue\\fi\n",
+          "why": "the SIAM class only compiles under pdfLaTeX or dvips without this prelude"
+        },
+        {
+          "file": "main.tex",
+          "find": "\\label{fig:a}\\includegraphics{lexample_fig1}",
+          "replace": "\\label{fig:a}\\fbox{\\rule{0pt}{4cm}\\rule{5cm}{0pt}} % Dabir: the kit's example figure is EPS, which the bundled engine cannot embed; use a PDF or PNG",
+          "why": "EPS figures cannot be embedded by the bundled engine"
+        }
+      ]
+    },
+    {
+      "id": "ams-article",
+      "label": "AMS article",
+      "venue": "American Mathematical Society journals",
+      "group": "math",
+      "engine": "latex",
+      "official": false,
+      "featured": false,
+      "summary": "A short paper on amsart with theorem environments, subject classification and the amsplain bibliography style.",
+      "site": "https://ctan.org/pkg/amsart",
+      "source": {
+        "kind": "bundled"
+      },
+      "main": "main.tex"
+    },
+    {
+      "id": "revtex-aps",
+      "label": "APS Physical Review",
+      "venue": "Physical Review journals (REVTeX 4.2)",
+      "group": "physics",
+      "engine": "latex",
+      "official": false,
+      "featured": false,
+      "summary": "A two-column letter on revtex4-2 with the aps and prl options, affiliations and acknowledgments. The class comes from CTAN on first compile; change prl to pra, prb, prd or prx.",
+      "site": "https://journals.aps.org/revtex",
+      "source": {
+        "kind": "bundled"
+      },
+      "main": "main.tex"
+    },
+    {
+      "id": "article",
+      "label": "Plain article",
+      "venue": "Preprints, notes and drafts",
+      "group": "general",
+      "engine": "latex",
+      "official": false,
+      "featured": true,
+      "summary": "The standard article class with the usual packages and a numbered bibliography. Nothing to fetch.",
+      "source": {
+        "kind": "bundled"
+      },
+      "main": "main.tex"
+    },
+    {
+      "id": "typst-article",
+      "label": "Typst article",
+      "venue": "Preprints, notes and drafts",
+      "group": "typst",
+      "engine": "typst",
+      "official": false,
+      "featured": false,
+      "summary": "A plain Typst paper: title block, abstract, numbered sections and a bibliography from refs.bib.",
+      "source": {
+        "kind": "bundled"
+      },
+      "main": "main.typ"
+    },
+    {
+      "id": "typst-ieee",
+      "label": "IEEE (Typst)",
+      "venue": "IEEE-style conference and journal papers",
+      "group": "typst",
+      "engine": "typst",
+      "official": false,
+      "featured": false,
+      "summary": "The charged-ieee template from Typst Universe (MIT-0), the two-column IEEE look with author blocks and index terms.",
+      "site": "https://typst.app/universe/package/charged-ieee",
+      "source": {
+        "kind": "bundled"
+      },
+      "main": "main.typ"
+    },
+    {
+      "id": "typst-neurips",
+      "label": "NeurIPS (Typst)",
+      "venue": "NeurIPS-style papers in Typst",
+      "group": "typst",
+      "engine": "typst",
+      "official": false,
+      "featured": false,
+      "summary": "The bloated-neurips template from Typst Universe (MIT), a community reproduction of the NeurIPS style with the checklist and an appendix. Not accepted for submission; the conference requires its LaTeX style.",
+      "site": "https://typst.app/universe/package/bloated-neurips",
+      "source": {
+        "kind": "bundled"
+      },
+      "main": "main.typ"
+    },
+    {
+      "id": "typst-icml",
+      "label": "ICML (Typst)",
+      "venue": "ICML-style papers in Typst",
+      "group": "typst",
+      "engine": "typst",
+      "official": false,
+      "featured": false,
+      "summary": "The lucky-icml template from Typst Universe (MIT), a community reproduction of the ICML style. Not accepted for submission; the conference requires its LaTeX style.",
+      "site": "https://typst.app/universe/package/lucky-icml",
+      "source": {
+        "kind": "bundled"
+      },
+      "main": "main.typ"
+    },
+    {
+      "id": "typst-math",
+      "label": "Mathematics paper (Typst)",
+      "venue": "Mathematical papers in Typst",
+      "group": "typst",
+      "engine": "typst",
+      "official": false,
+      "featured": false,
+      "summary": "The clean-math-paper template from Typst Universe (MIT): theorem environments, numbered equations and a bibliography.",
+      "site": "https://typst.app/universe/package/clean-math-paper",
+      "source": {
+        "kind": "bundled"
+      },
+      "main": "main.typ"
+    },
+    {
+      "id": "typst-arxiv",
+      "label": "arXiv preprint (Typst)",
+      "venue": "Preprints in Typst",
+      "group": "typst",
+      "engine": "typst",
+      "official": false,
+      "featured": false,
+      "summary": "The arkheion template from Typst Universe (MIT), which reproduces the common arXiv preprint look.",
+      "site": "https://typst.app/universe/package/arkheion",
+      "source": {
+        "kind": "bundled"
+      },
+      "main": "main.typ"
+    }
+  ]
+}
