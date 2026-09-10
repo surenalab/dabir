@@ -15,6 +15,11 @@ Read PRODUCT.md and DESIGN.md before touching UI. Tokens live in src/styles/toke
 - Do not touch `src-tauri/**` while the owner is using the dev app: `tauri dev` rebuilds and restarts the app on any Rust change and loses their in-progress review. Ask, or batch Rust edits.
 - The bundled sample `examples/score-anchor` lives inside this repository, so agent worktrees for it are worktrees of this repo; `git::repo_prefix` handles the nesting. Vite ignores `.dabir` and `examples` for that reason; keep it so.
 
+## Contract and review
+- CONTRIBUTING.md is the contract: branch per change, `npm run check` green, pull request template filled, one or two reviews, squash-merge. docs/REVIEW.md is the rubric and the pipeline.
+- `npm run review` is the review bot (scripts/review.mjs): codebase-aware, runs on the local agent subscriptions, posts with `--pr N --post`. Ask a different vendor than the author for the second review.
+- Enable the pre-push hook once per clone: `git config core.hooksPath .githooks`.
+
 ## Harness: how to build, test and release
 - Type and bundle: `npx tsc --noEmit -p tsconfig.json && npx vite build`.
 - Rust tests without disturbing the dev build: `cd src-tauri && CARGO_TARGET_DIR=target/test cargo test`. Rust lives at `~/.cargo/bin`.
