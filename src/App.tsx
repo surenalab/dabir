@@ -19,7 +19,7 @@ import { addComment as yAddComment, connect as yConnect, decodeRange, disconnect
 import type { CommentRange } from "./components/SourceEditor";
 import { safeColor, type Change, type ChangeRange } from "./lib/changes";
 import {
-  bibImportFile, agentComplete, checkForUpdates, projectSnapshot, sessionMaterialize, checkpoint, checkpoints, checkpointRestore, type Checkpoint, newPaper, zoteroImport, compile as runCompile, compileCancel, gitClone, gitPull, gitPush, gitRemoteAdd, gitRemoteUrl, isMac, onCompileProgress, relayStart, relayStop, gitCommit, gitInit, gitStatus, importOverleaf, native, onMenu, onWindowFocus,
+  bibImportFile, agentComplete, checkForUpdates, projectSnapshot, sessionMaterialize, checkpoint, checkpoints, checkpointRestore, checkpointUndo, gitDiscard, type Checkpoint, newPaper, zoteroImport, compile as runCompile, compileCancel, gitClone, gitPull, gitPush, gitRemoteAdd, gitRemoteUrl, isMac, onCompileProgress, relayStart, relayStop, gitCommit, gitInit, gitStatus, importOverleaf, native, onMenu, onWindowFocus,
   openProject, pickFolder, readText, setWindowTitle, synctexForward, synctexInverse, writeText,
   type CompileResult, type GitStatus, type PdfPos, type Project,
 } from "./lib/backend";
@@ -191,11 +191,18 @@ export default function App() {
     await openFolder(dest);
   }, [openFolder]);
 
+  // Every save is a step in History; saves of the same file within a few minutes fold into one step.
+  const versionsRef = useRef<(root: string) => void>(() => {});
+  const recordStep = useCallback((path: string) => {
+    if (!project) return;
+    const rel = path.startsWith(project.root + "/") ? path.slice(project.root.length + 1) : path;
+    checkpoint(project.root, `You edited ${rel}`, true).then((id) => { if (id) versionsRef.current(project.root); }).catch(() => {});
+  }, [project]);
   const save = useCallback(async () => {
     if (!file || sourceRef.current == null) return;
-    try { await writeText(file, sourceRef.current); setDirty(false); refreshGit(); if (compileOnSave) compileRef.current(); }
+    try { await writeText(file, sourceRef.current); setDirty(false); refreshGit(); recordStep(file); if (compileOnSave) compileRef.current(); }
     catch (e) { setError(String(e)); }
-  }, [file, refreshGit, compileOnSave]);
+  }, [file, refreshGit, compileOnSave, recordStep]);
 
   const compile = useCallback(async () => {
     if (!project?.mainTex || compileState.status === "running") return;
@@ -680,25 +687,52 @@ export default function App() {
 
   // Snapshots: every five minutes while something is uncommitted, so the paper has a version history without commits.
   const refreshVersions = useCallback((root: string) => { checkpoints(root).then(setVersions).catch(() => setVersions([])); }, []);
+  versionsRef.current = refreshVersions;
   useEffect(() => { if (project) refreshVersions(project.root); else setVersions([]); }, [project, refreshVersions]);
-  useEffect(() => {
-    if (!project || !settings.autosave || !git?.isRepo) return;
-    const t = window.setInterval(async () => {
-      try { const id = await checkpoint(project.root, "Autosave"); if (id) refreshVersions(project.root); } catch { /* not a repo yet */ }
-    }, 5 * 60 * 1000);
-    return () => clearInterval(t);
-  }, [project, settings.autosave, git?.isRepo, refreshVersions]);
+  // Put the open buffer on disk if it is dirty, and drop any pending autosave, so runs and Accept see what the author sees.
+  const flush = useCallback(async () => {
+    if (autosaveTimer.current) { clearTimeout(autosaveTimer.current); autosaveTimer.current = 0; }
+    if (dirty && file && sourceRef.current != null) { await writeText(file, sourceRef.current); setDirty(false); setSaveState("saved"); recordStep(file); }
+  }, [dirty, file, recordStep]);
+  const [historyBusy, setHistoryBusy] = useState(false);
+  const [historyFocus, setHistoryFocus] = useState(0);
+  // Reload the open file and the project after history moved the working tree.
+  const afterHistory = useCallback(async () => {
+    if (!project) return;
+    await reloadProject();
+    if (file) { const t = await readText(file); setSource(t); setDirty(false); setSaveState("saved"); }
+    refreshGit(); refreshVersions(project.root);
+  }, [project, reloadProject, file, refreshGit, refreshVersions]);
   const restoreVersion = useCallback(async (id: string) => {
     if (!project) return;
+    setHistoryBusy(true);
     try {
-      if (dirty) await save();
+      await flush();
       await checkpointRestore(project.root, id);
-      await reloadProject();
-      if (file) { const t = await readText(file); setSource(t); setDirty(false); }
-      refreshVersions(project.root);
-      setNote(`Restored snapshot ${id}. The state before restoring was kept as a snapshot too.`);
-    } catch (e) { setError(String(e)); }
-  }, [project, dirty, save, reloadProject, file, refreshVersions]);
+      await afterHistory();
+      setNote(`Restored to ${id}. The state before was kept as a step, so this can be undone.`);
+    } catch (e) { setError(String(e)); } finally { setHistoryBusy(false); }
+  }, [project, flush, afterHistory]);
+  const undoVersion = useCallback(async (id: string) => {
+    if (!project) return;
+    setHistoryBusy(true);
+    try {
+      await flush();
+      await checkpointUndo(project.root, id);
+      await afterHistory();
+      setNote(`Took step ${id} out. Later edits were kept.`);
+    } catch (e) { setNote(String(e)); } finally { setHistoryBusy(false); }
+  }, [project, flush, afterHistory]);
+  const discardChange = useCallback(async (path: string) => {
+    if (!project) return;
+    setHistoryBusy(true);
+    try {
+      await flush();
+      await gitDiscard(project.root, path);
+      await afterHistory();
+      setNote(`Discarded changes to ${path}. A step was kept first, so this can be undone from History.`);
+    } catch (e) { setError(String(e)); } finally { setHistoryBusy(false); }
+  }, [project, flush, afterHistory]);
   const jumpToFile = useCallback(async (relFile: string | null, line: number) => {
     if (project && relFile) { const abs = `${project.root}/${relFile}`; if (abs !== file) await selectFile(abs); }
     setMode("source"); setJumpLine(line); setJumpStamp(Date.now());
@@ -769,7 +803,7 @@ export default function App() {
       <Toolbar project={project} file={file} dirty={dirty} saveLabel={settings.autosave ? (saveState === "saving" ? "Saving…" : saveState === "unsaved" ? "Unsaved" : saveState === "saved" ? "Saved" : null) : null} mode={mode} navOpen={navOpen} inspectorOpen={inspectorOpen}
         compiling={compileState.status === "running"} onMode={setMode} onToggleNav={toggleNav} onToggleInspector={toggleInspector} onOpen={open} onCompile={compile} onCancelCompile={() => compileCancel()}
         onShare={() => setSheet("share")} live={!!live} />
-      <Navigator project={project} current={file} outline={outline} git={git} commitFocus={commitFocus} busy={gitBusy} draftMessage={commitDraft} versions={versions} onRestore={restoreVersion}
+      <Navigator project={project} current={file} outline={outline} git={git} commitFocus={commitFocus} busy={gitBusy || historyBusy} draftMessage={commitDraft} onDiscard={discardChange} onHistory={() => { if (!inspectorOpen) toggleInspector(); setHistoryFocus(Date.now()); }} historyCount={versions.length}
         onSelect={selectFile} onJump={(l) => jumpTo(l)} onInitGit={initGit} onCommit={commitAll} />
       <Document project={project} file={file} source={source} bib={bib} mode={mode} jumpLine={jumpLine} jumpStamp={jumpStamp}
         compileState={compileState} progress={progress} showLog={showLog} onToggleLog={() => setShowLog((v) => !v)} findRequest={findRequest}
@@ -784,7 +818,7 @@ export default function App() {
         onPdfComment={onPdfComment} pdfFindRequest={pdfFindRequest} editorRef={editorRef} onFind={() => command("find")} onCommentSelection={() => { if (!inspectorOpen) toggleInspector(); setAskFocus(0); setNote("Type the comment in the People tab; it attaches to your selection."); }} hasSelection={selection.to > selection.from}
         review={docReview} dictionary={dictionary} onAddWord={addWord} onContinue={continueWithAgent} splitRatio={splitRatio} onSplitRatio={setSplitRatio} onPin={(id) => { const c = allComments.find((x) => x.id === id); if (c) jumpToComment(c); }}
         completions={{ bib: () => bib, labels: () => (source ? collectLabels(source) : []), files: () => project?.tree ?? [] }} />
-      <Inspector project={project} gitRepo={!!git?.isRepo} askFocus={askFocus} prefill={prefill} onProviderReady={setAgentReady} onChanged={onChanged} onOpenFile={selectFile} onNote={setNote} autoRun={autoRun} onReview={setReview}
+      <Inspector project={project} gitRepo={!!git?.isRepo} askFocus={askFocus} prefill={prefill} onProviderReady={setAgentReady} onChanged={onChanged} onBeforeRun={flush} onOpenFile={selectFile} history={versions} historyBusy={historyBusy} onRestoreStep={restoreVersion} onUndoStep={undoVersion} historyFocus={historyFocus} onNote={setNote} autoRun={autoRun} onReview={setReview}
         live={!!live} peers={peers} comments={allComments} currentFile={rel(file)} hasSelection={selection.to > selection.from}
         changes={changeItems} suggesting={settings.suggesting} onToggleSuggesting={toggleSuggesting} onResolveChanges={resolveChange} onJumpChange={jumpToChange}
         onAddComment={(t) => addCommentAtSelection(t)} onResolveComment={resolveAnyComment} onReplyComment={replyAnyComment} onRemoveComment={removeAnyComment} onJumpComment={jumpToComment} onShare={() => setSheet("share")} />

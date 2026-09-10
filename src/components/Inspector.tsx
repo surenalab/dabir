@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, Check, Loader2, Paperclip, RefreshCw, Square, X, FileText, Pencil, Terminal, Search, Wrench, Brain, FileDiff, PenLine } from "lucide-react";
+import { ArrowUp, Check, Loader2, Paperclip, RefreshCw, Square, X, FileText, Pencil, Terminal, Search, Wrench, Brain, FileDiff, PenLine, Sparkles, RotateCcw, Undo2 } from "lucide-react";
 import {
   agentAccept, agentApply, agentCancel, agentDiff, agentProviders, agentPullRequest, agentReject, agentRun, memoryRead, memorySetup,
-  onAgentEvent, provenanceRerun, agentModels, type Artefact, type Memory, type ModelOptions, type Pick, type Project, type Provider, type WorktreeDiff,
+  onAgentEvent, provenanceRerun, agentModels, checkpointPatch, type Artefact, type Checkpoint, type Memory, type ModelOptions, type Pick, type Project, type Provider, type WorktreeDiff,
 } from "../lib/backend";
 import { Segmented } from "./Segmented";
 import { renderMarkdown } from "../lib/md";
 import { updateSettings, useSettings } from "../lib/settings";
 import type { Comment, Peer } from "../lib/collab";
 
-type Tab = "agent" | "memory" | "people";
+type Tab = "agent" | "memory" | "people" | "history";
 
 /** A pending suggestion in the open file, with the text it covers. */
 export interface ChangeItem { id: string; author: string; color: string; kind: "insert" | "delete"; excerpt: string; at: number }
@@ -129,7 +129,7 @@ export function splitPatch(patch: string): FileDiff[] {
   return files;
 }
 
-function DiffView({ files, excluded, onToggle }: { files: FileDiff[]; excluded: Set<string>; onToggle: (key: string, on: boolean) => void }) {
+function DiffView({ files, excluded, onToggle, pickable = true }: { files: FileDiff[]; excluded: Set<string>; onToggle: (key: string, on: boolean) => void; pickable?: boolean }) {
   return (
     <>
       {files.map((f) => {
@@ -137,7 +137,7 @@ function DiffView({ files, excluded, onToggle }: { files: FileDiff[]; excluded: 
         return (
           <div className={`diff ${fileOff ? "off" : ""}`} key={f.name}>
             <header>
-              <label className="pickfile"><input type="checkbox" checked={!fileOff} onChange={(e) => onToggle(f.name, e.target.checked)} aria-label={`Include ${f.name}`} /><span className="file">{f.name}</span></label>
+              {pickable ? <label className="pickfile"><input type="checkbox" checked={!fileOff} onChange={(e) => onToggle(f.name, e.target.checked)} aria-label={`Include ${f.name}`} /><span className="file">{f.name}</span></label> : <span className="file">{f.name}</span>}
               <span className="stat">{f.binary ? <span className="add">binary</span> : <><span className="add">+{f.hunks.reduce((n, h) => n + h.lines.filter((l) => l.startsWith("+")).length, 0)}</span><span className="del">−{f.hunks.reduce((n, h) => n + h.lines.filter((l) => l.startsWith("-")).length, 0)}</span></>}</span>
             </header>
             {f.hunks.map((h, i) => {
@@ -145,7 +145,7 @@ function DiffView({ files, excluded, onToggle }: { files: FileDiff[]; excluded: 
               const off = fileOff || excluded.has(key);
               return (
                 <div className={`hunk ${off ? "off" : ""}`} key={key}>
-                  {f.hunks.length > 1 && (
+                  {pickable && f.hunks.length > 1 && (
                     <label className="pickhunk"><input type="checkbox" checked={!off} disabled={fileOff} onChange={(e) => onToggle(key, e.target.checked)} aria-label={`Include hunk ${i + 1} of ${f.name}`} /><span>{h.header.replace(/@@ (.*?) @@.*/, "$1")}</span></label>
                   )}
                   <pre>{h.lines.slice(0, 200).map((l, j) => <span key={j} className={`l ${l.startsWith("+") ? "add" : l.startsWith("-") ? "del" : "ctx"}`}>{l || " "}</span>)}
@@ -168,6 +168,86 @@ function ReviewDiff({ patch, excluded, onToggle }: { patch: string; excluded: Se
       <div className="evidence-heading">What changed</div>
       <span className="target">Untick a file or a hunk to leave it out of Accept.</span>
       <DiffView files={files} excluded={excluded} onToggle={onToggle} />
+    </div>
+  );
+}
+
+/** Who made a step, from its message: the author, an agent, or Dabir itself (restore, undo, discard). */
+function stepKind(message: string): "you" | "agent" | "system" {
+  if (/^You /.test(message)) return "you";
+  if (/^(Before |Restored |Undid|Autosave)/.test(message)) return "system";
+  return "agent";
+}
+function dayLabel(at: number): string {
+  const d = new Date(at * 1000); const today = new Date();
+  const same = (a: Date, b: Date) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  if (same(d, today)) return "Today";
+  const y = new Date(today); y.setDate(today.getDate() - 1);
+  if (same(d, y)) return "Yesterday";
+  return d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+}
+const clock = (at: number) => new Date(at * 1000).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+
+/** The paper's history: every save and every accepted agent change, newest first, each readable and reversible. */
+function HistoryTab({ project, steps, busy, onRestore, onUndo, onOpenFile }: { project: Project | null; steps: Checkpoint[]; busy: boolean; onRestore: (id: string) => void; onUndo: (id: string) => void; onOpenFile: (path: string) => void }) {
+  const [open, setOpen] = useState<string | null>(null);
+  const [patch, setPatch] = useState<{ id: string; text: string } | null>(null);
+  const [limit, setLimit] = useState(30);
+  useEffect(() => {
+    if (!open || !project) return;
+    let alive = true;
+    checkpointPatch(project.root, open).then((text) => { if (alive) setPatch({ id: open, text }); }).catch(() => { if (alive) setPatch({ id: open, text: "" }); });
+    return () => { alive = false; };
+  }, [open, project]);
+  if (steps.length === 0) {
+    return (
+      <div className="inspector-body">
+        <p className="memory-note">Nothing yet. Every save and every accepted agent change becomes a step here: readable, and reversible one at a time or back to any point. Steps are snapshots kept beside your Git history, not commits.</p>
+      </div>
+    );
+  }
+  let lastDay = "";
+  return (
+    <div className="inspector-body history">
+      <p className="memory-note">Every save and every accepted agent change is a step. Open one to read its diff; take it out on its own, or put the paper back to how it was there. Nothing here is a commit.</p>
+      <ol className="timeline" aria-label="History">
+        {steps.slice(0, limit).map((s, i) => {
+          const day = dayLabel(s.at); const showDay = day !== lastDay; lastDay = day;
+          const kind = stepKind(s.message);
+          const expanded = open === s.id;
+          const shown = s.files.slice(0, 2);
+          return (
+            <li key={s.id} className={`step ${kind} ${expanded ? "open" : ""}`}>
+              {showDay && <div className="day">{day}</div>}
+              <button className="step-row" aria-expanded={expanded} onClick={() => setOpen(expanded ? null : s.id)} title={`${s.id} · ${new Date(s.at * 1000).toLocaleString()}`}>
+                <span className="who" aria-hidden>{kind === "you" ? <PenLine /> : kind === "agent" ? <Sparkles /> : <RotateCcw />}</span>
+                <span className="text">
+                  <span className="msg">{s.message}</span>
+                  <span className="files">
+                    {shown.map((f) => <span key={f.path} className="f"><span className="name">{f.path}</span>{f.binary ? <span className="add">binary</span> : <><span className="add">+{f.add}</span><span className="del">−{f.del}</span></>}</span>)}
+                    {s.files.length > 2 && <span className="more">and {s.files.length - 2} more</span>}
+                  </span>
+                </span>
+                <span className="when">{clock(s.at)}</span>
+              </button>
+              {expanded && (
+                <div className="step-body">
+                  {patch?.id === s.id ? (
+                    patch.text ? <DiffView files={splitPatch(patch.text)} excluded={new Set()} onToggle={() => {}} pickable={false} /> : <p className="memory-note">No readable diff for this step.</p>
+                  ) : <div className="tool working"><Loader2 aria-label="Loading" /><span className="verb">Reading</span></div>}
+                  <div className="step-actions">
+                    <button className="btn" disabled={busy} onClick={() => onUndo(s.id)} title="Take only this step out, keeping everything after it. Refused when later edits overlap it."><Undo2 aria-hidden /> Undo this step</button>
+                    <button className="btn" disabled={busy} onClick={() => onRestore(s.id)} title="Put every file back as it was after this step. The current state is kept as a step first, so this can be undone."><RotateCcw aria-hidden /> Restore to here</button>
+                    {s.files.length === 1 && <button className="btn" onClick={() => onOpenFile(s.files[0].path)}>Open {s.files[0].path.split("/").pop()}</button>}
+                  </div>
+                  {i === 0 && <p className="memory-note small">This is the newest step; undoing it is the same as restoring the one below.</p>}
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+      {steps.length > limit && <button className="versions-more" onClick={() => setLimit((n) => n + 30)}>Show {Math.min(30, steps.length - limit)} earlier steps</button>}
     </div>
   );
 }
@@ -195,12 +275,21 @@ interface Props {
   prefill: { text: string; stamp: number } | null;
   onProviderReady: (ready: boolean) => void;
   onChanged: () => void;         // git status or files changed; reloads the open buffer from disk
+  /** Writes the open buffer to disk when it is dirty, so a run starts from, and Accept lands on, what the author sees. */
+  onBeforeRun: () => Promise<void>;
   onOpenFile: (path: string) => void;
   onNote: (text: string) => void;
   /** Preview-only: start a run with this prompt once providers are ready. */
   autoRun?: string | null;
   /** A run entered or left review; the document shows the agent's version and offers Accept / Reject. */
   onReview: (r: ReviewHandle | null) => void;
+  /** The paper's history, newest first, and the two ways back. */
+  history: Checkpoint[];
+  historyBusy: boolean;
+  onRestoreStep: (id: string) => void;
+  onUndoStep: (id: string) => void;
+  /** Bumped by the sidebar's History link to open that tab. */
+  historyFocus: number;
 }
 
 /** A finished run the document can show and act on. */
@@ -216,7 +305,7 @@ export interface ReviewHandle {
   reject: () => void;
 }
 
-export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady, onChanged, onOpenFile, onNote, live, peers, comments, currentFile, hasSelection, onAddComment, onResolveComment, onReplyComment, onRemoveComment, onJumpComment, onShare, autoRun, changes, suggesting, onToggleSuggesting, onResolveChanges, onJumpChange, onReview }: Props) {
+export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady, onChanged, onBeforeRun, onOpenFile, onNote, live, peers, comments, currentFile, hasSelection, onAddComment, onResolveComment, onReplyComment, onRemoveComment, onJumpComment, onShare, autoRun, changes, suggesting, onToggleSuggesting, onResolveChanges, onJumpChange, onReview, history, historyBusy, onRestoreStep, onUndoStep, historyFocus }: Props) {
   const [commentDraft, setCommentDraft] = useState("");
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [replyDraft, setReplyDraft] = useState("");
@@ -238,6 +327,7 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
 
   useEffect(() => { agentProviders().then((ps) => { setProviders(ps); const first = ps.find((p) => p.installed); if (first && !ps.find((p) => p.id === provider)?.installed) setProvider(first.id); }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (askFocus) { setTab("agent"); textarea.current?.focus(); } }, [askFocus]);
+  useEffect(() => { if (historyFocus) setTab("history"); }, [historyFocus]);
   useEffect(() => { if (prefill) { setTab("agent"); setDraft(prefill.text); setTimeout(() => textarea.current?.focus(), 50); } }, [prefill]);
   useEffect(() => { onProviderReady(!!providers.find((p) => p.id === provider)?.installed); }, [providers, provider, onProviderReady]);
 
@@ -293,6 +383,7 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
     const prompt = draft.trim();
     if (!prompt || !project || run.phase === "running") return;
     try {
+      await onBeforeRun();
       const started = await agentRun(project.root, provider, prompt, model, effort);
       setRun({ phase: "running", runId: started.runId, worktree: started.worktree, prompt, steps: [], provider, steer: steerLabel || undefined, started: Date.now() });
       setDraft("");
@@ -327,7 +418,7 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
     const { picks, partial } = selection();
     if (picks.length === 0) { onNote("Nothing selected to accept."); return; }
     setBusy(true);
-    try { const files = await agentApply(project.root, run.runId, partial ? picks : undefined, run.prompt, run.provider); setRun({ phase: "done", text: `Applied to ${files.length} file${files.length === 1 ? "" : "s"} and saved${partial ? " (only the selected changes)" : ""}. A snapshot was taken; commit whenever you like.` }); onChanged(); refreshMemory(); }
+    try { await onBeforeRun(); const files = await agentApply(project.root, run.runId, partial ? picks : undefined, run.prompt, run.provider); setRun({ phase: "done", text: `Applied to ${files.length} file${files.length === 1 ? "" : "s"} and saved${partial ? " (only the selected changes)" : ""}. A snapshot was taken; commit whenever you like.` }); onChanged(); refreshMemory(); }
     catch (e) { onNote(String(e)); } finally { setBusy(false); }
   };
   const accept = async () => {
@@ -335,7 +426,7 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
     const { picks, partial } = selection();
     if (picks.length === 0) { onNote("Nothing selected to accept."); return; }
     setBusy(true);
-    try { const id = await agentAccept(project.root, run.runId, message.trim() || run.prompt, partial ? picks : undefined, run.provider, run.prompt); setRun({ phase: "done", text: `Committed ${id} to your checkout${partial ? " (only the selected changes; the rest was discarded)" : ""}.` }); onChanged(); refreshMemory(); }
+    try { await onBeforeRun(); const id = await agentAccept(project.root, run.runId, message.trim() || run.prompt, partial ? picks : undefined, run.provider, run.prompt); setRun({ phase: "done", text: `Committed ${id} to your checkout${partial ? " (only the selected changes; the rest was discarded)" : ""}.` }); onChanged(); refreshMemory(); }
     catch (e) { onNote(String(e)); } finally { setBusy(false); }
   };
   const reject = async () => {
@@ -378,8 +469,10 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
     <aside className="inspector" aria-label="Inspector">
       <div className="inspector-tabs">
         <Segmented label="Inspector pane" value={tab} onChange={(v) => setTab(v as Tab)}
-          options={[{ value: "agent", label: "Agent" }, { value: "memory", label: "Memory" }, { value: "people", label: "People" }]} />
+          options={[{ value: "agent", label: "Agent" }, { value: "memory", label: "Memory" }, { value: "people", label: "People" }, { value: "history", label: "History" }]} />
       </div>
+
+      {tab === "history" && <HistoryTab project={project} steps={history} busy={historyBusy} onRestore={onRestoreStep} onUndo={onUndoStep} onOpenFile={(p) => { if (project) onOpenFile(`${project.root}/${p}`); }} />}
 
       {tab === "agent" && (
         <div className="inspector-body">
