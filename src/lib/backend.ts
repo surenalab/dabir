@@ -7,6 +7,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { SAMPLE_FILES, SAMPLE_PROJECT } from "./sample";
+import { applyPatch } from "./review";
 
 export type EntryKind = "dir" | "tex" | "bib" | "code" | "figure" | "data" | "other";
 export interface Entry { name: string; path: string; kind: EntryKind; children: Entry[] }
@@ -49,7 +50,12 @@ export async function openProject(path: string): Promise<Project> {
 }
 
 export async function readText(path: string): Promise<string> {
-  if (!native) return SAMPLE_FILES[path] ?? "";
+  if (!native) {
+    // The sample run's worktree: the file as the demo patch leaves it.
+    const wt = /^(.*)\/\.dabir\/worktrees\/[^/]+\/(.+)$/.exec(path);
+    if (wt) { const base = SAMPLE_FILES[`${wt[1]}/${wt[2]}`]; if (base == null) throw new Error("No such file"); return applyPatch(base, SAMPLE_PATCH, wt[2]); }
+    return SAMPLE_FILES[path] ?? "";
+  }
   return invoke<string>("read_text", { path });
 }
 
@@ -194,6 +200,8 @@ export async function agentProviders(): Promise<Provider[]> {
 }
 
 let sampleRunHandlers: ((e: AgentEvent) => void)[] = [];
+// Line numbers match src/lib/sample.ts, so the review preview shows the marks on the real text.
+const SAMPLE_PATCH = `diff --git a/tables/psnr-sweep.tex b/tables/psnr-sweep.tex\n--- a/tables/psnr-sweep.tex\n+++ b/tables/psnr-sweep.tex\n@@ -8,3 +8,5 @@\n 0.2 & 28.9 & 28.1 & 30.7 \\\\\n+0.25 & 27.0 & 26.2 & 28.9 \\\\\n+0.3 & 25.4 & 24.6 & 27.2 \\\\\n \\bottomrule\ndiff --git a/main.tex b/main.tex\n--- a/main.tex\n+++ b/main.tex\n@@ -33,1 +33,1 @@\n-We plug $\\tilde{g}_t$ into a standard predictor--corrector sampler. Figure~\\ref{fig:psnr} reports PSNR against noise level for three baselines; anchoring holds a 1.8 dB margin up to $\\sigma = 0.3$.\n+We plug $\\tilde{g}_t$ into a standard predictor--corrector sampler. Figure~\\ref{fig:psnr} reports PSNR against noise level for three baselines; anchoring holds a 1.8 dB margin up to $\\sigma = 0.3$ (Table~\\ref{tab:psnr}).\n@@ -44,1 +44,2 @@\n \\input{tables/psnr-sweep}\n+The sweep in Table~\\ref{tab:psnr} now extends to $\\sigma = 0.3$.\n`;
 
 export async function agentRun(root: string, provider: string, prompt: string): Promise<{ runId: string; worktree: string }> {
   if (!native) {
@@ -227,7 +235,7 @@ export async function agentDiff(root: string, runId: string): Promise<WorktreeDi
       { path: "tables/psnr-sweep.tex", status: "modified", add: 2, del: 0, binary: false },
       { path: "main.tex", status: "modified", add: 2, del: 1, binary: false },
     ],
-    patch: `diff --git a/tables/psnr-sweep.tex b/tables/psnr-sweep.tex\n--- a/tables/psnr-sweep.tex\n+++ b/tables/psnr-sweep.tex\n@@ -8,3 +8,5 @@\n 0.2 & 28.9 & 28.1 & 30.7 \\\\\n+0.25 & 27.0 & 26.2 & 28.9 \\\\\n+0.3 & 25.4 & 24.6 & 27.2 \\\\\n \\bottomrule\ndiff --git a/main.tex b/main.tex\n--- a/main.tex\n+++ b/main.tex\n@@ -40,2 +40,3 @@\n reports PSNR against noise level for three\n-baselines; the proposed method holds a 1.6 dB margin.\n+baselines; the proposed method holds a 1.8 dB margin up to $\\sigma = 0.3$.\n+\\input{tables/psnr-sweep}\n`,
+    patch: SAMPLE_PATCH,
   };
   return invoke<WorktreeDiff>("agent_diff", { root, runId });
 }

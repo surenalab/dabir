@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
-import { AlertCircle, CheckCircle2, FolderOpen, FilePlus, GitBranch, Loader2, Circle, Upload, Radio } from "lucide-react";
+import { AlertCircle, CheckCircle2, FolderOpen, FilePlus, GitBranch, Loader2, Circle, Upload, Radio, Sparkles, Check, X } from "lucide-react";
 import { parseDocument, type BibEntry } from "../lib/latex";
 import { setVisualContext } from "../lib/visual";
 import { readBinary, type PdfPos, type Project } from "../lib/backend";
@@ -15,6 +15,7 @@ import type { Settings } from "../lib/settings";
 import type { GrammarMatch } from "../lib/grammar";
 import type { CompletionSources } from "../lib/completions";
 import type { ChangeRange } from "../lib/changes";
+import type { ReviewMarks } from "../lib/review";
 
 const PdfView = lazy(() => import("./PdfView").then((m) => ({ default: m.PdfView })));
 
@@ -114,6 +115,22 @@ interface Props {
   hasSelection: boolean;
   splitRatio: number;
   onSplitRatio: (r: number) => void;
+  review: DocReview | null;
+}
+
+/** An agent run under review, as the document shows it. */
+export interface DocReview {
+  label: string;            // "Claude Code"
+  files: string[];          // paper-relative paths the run changed
+  text: string | null;      // the agent's version of the open file, when it changed it
+  marks: ReviewMarks | null;
+  showing: boolean;         // the editor shows the agent's version
+  canShow: boolean;         // false in a live session, where the shared text is the only text
+  busy: boolean;
+  onToggle: () => void;
+  onOpenFile: (rel: string) => void;
+  onAccept: () => void;
+  onReject: () => void;
 }
 
 export function Document(p: Props) {
@@ -177,11 +194,14 @@ export function Document(p: Props) {
   const isTex = !p.file || /\.(tex|sty|cls|bib|md|txt|toml|py|json|typ)$/i.test(p.file);
   const showEditor = mode !== "pdf";
   const showPdf = mode === "pdf" || mode === "split";
+  const rv = p.review;
+  const previewing = !!rv && rv.showing && rv.canShow && rv.text != null;
   const editor = source != null && isTex ? (
-    <SourceEditor ref={p.editorRef} value={source} visual={mode === "visual" && /\.tex$/i.test(p.file ?? "")} onChange={p.onSourceChange} onSave={p.onSave}
+    <SourceEditor ref={p.editorRef} value={previewing ? rv!.text! : source} visual={mode === "visual" && /\.tex$/i.test(p.file ?? "")} onChange={p.onSourceChange} onSave={p.onSave}
       onCursorLine={p.onCursorLine} jumpLine={p.jumpLine} jumpStamp={p.jumpStamp} findRequest={p.findRequest}
       collab={p.collab} comments={p.comments} onSelection={p.onSelection} jumpOffset={p.jumpOffset} marks={editorMarks}
-      changes={p.changes} suggesting={p.settings.suggesting} author={p.author} onChanges={p.onChanges}
+      changes={previewing ? [] : p.changes} suggesting={p.settings.suggesting} author={p.author} onChanges={p.onChanges}
+      review={previewing ? rv!.marks : null}
       settings={p.settings} grammar={p.grammar} completions={p.completions} />
   ) : source != null ? <div className="doc-empty"><div className="card"><p>This file type is not editable in Dabir yet.</p></div></div> : null;
   const pdf = showPdf ? (
@@ -197,7 +217,25 @@ export function Document(p: Props) {
       <Problems problems={grouped} mainFile={mainRel} agentReady={p.agentReady}
         onJump={(file, line) => p.onJumpFile(file, line)} onFix={p.onFix} />
 
-      {showEditor && isTex && <FormatBar api={p.editorRef.current} onFind={p.onFind} onComment={p.onCommentSelection} canComment={p.hasSelection} suggesting={p.settings.suggesting} onToggleSuggesting={p.onToggleSuggesting} pending={p.changes.length} />}
+      {rv && (
+        <div className={`banner review ${previewing ? "showing" : ""}`} role="status">
+          <Sparkles aria-hidden />
+          <span className="what">
+            {rv.text != null ? (
+              <>{rv.label} changed this file{rv.files.length > 1 ? ` and ${rv.files.length - 1} other${rv.files.length > 2 ? "s" : ""}` : ""}.{previewing ? " You are reading its version; ⌘B compiles it." : rv.canShow ? " Showing your version." : ""}</>
+            ) : (
+              <>{rv.label} changed {rv.files.slice(0, 3).map((f, i) => <span key={f}>{i ? ", " : ""}<button className="link" onClick={() => rv.onOpenFile(f)}>{f}</button></span>)}{rv.files.length > 3 ? ` and ${rv.files.length - 3} more` : ""}, not this file.</>
+            )}
+          </span>
+          <span className="grow" />
+          {rv.text != null && rv.canShow && (
+            <button className={`toggle ${previewing ? "on" : ""}`} aria-pressed={previewing} onClick={rv.onToggle} title="Switch between your version and the agent's">{previewing ? "Agent's version" : "Your version"}</button>
+          )}
+          <button className="btn primary" disabled={rv.busy} onClick={rv.onAccept} title="The change lands in your files and is saved. A snapshot is taken; commit whenever you like."><Check aria-hidden /> Accept</button>
+          <button className="btn" disabled={rv.busy} onClick={rv.onReject}><X aria-hidden /> Reject</button>
+        </div>
+      )}
+      {showEditor && isTex && !previewing && <FormatBar api={p.editorRef.current} onFind={p.onFind} onComment={p.onCommentSelection} canComment={p.hasSelection} suggesting={p.settings.suggesting} onToggleSuggesting={p.onToggleSuggesting} pending={p.changes.length} />}
       <div className={`panes ${mode === "split" ? "split" : ""}`} ref={splitRef} style={mode === "split" ? { "--split": `${Math.round(p.splitRatio * 100)}%` } as React.CSSProperties : undefined}>
         <div className="scroll" hidden={!showEditor}>{editor}</div>
         {mode === "split" && <div className={`vdivider ${dragging ? "dragging" : ""}`} onPointerDown={() => setDragging(true)} role="separator" aria-orientation="vertical" aria-label="Resize editor and PDF" />}
@@ -214,8 +252,8 @@ export function Document(p: Props) {
       <footer className="status" role="status" aria-live="polite">
         {compileState.status === "idle" && <span className="state"><Circle aria-hidden /> Not compiled yet</span>}
         {compileState.status === "running" && <span className="state running"><Loader2 aria-hidden /> {p.progress ? <span className="progress" title={p.progress}>{p.progress}</span> : "Compiling…"}</span>}
-        {result && result.ok && errors === 0 && <span className={`state ${warnings ? "warn" : "ok"}`}><CheckCircle2 aria-hidden /> Compiled in {(result.millis / 1000).toFixed(1)} s{warnings ? `, ${warnings} warning${warnings > 1 ? "s" : ""}` : ""}</span>}
-        {result && (!result.ok || errors > 0) && <span className="state error"><AlertCircle aria-hidden /> Compile failed{errors ? `, ${errors} error${errors > 1 ? "s" : ""}` : ""}</span>}
+        {result && result.ok && errors === 0 && <span className={`state ${warnings ? "warn" : "ok"}`}><CheckCircle2 aria-hidden /> Compiled {compileState.status === "done" && compileState.agent ? `${compileState.agent}'s version ` : ""}in {(result.millis / 1000).toFixed(1)} s{warnings ? `, ${warnings} warning${warnings > 1 ? "s" : ""}` : ""}</span>}
+        {result && (!result.ok || errors > 0) && <span className="state error"><AlertCircle aria-hidden /> {compileState.status === "done" && compileState.agent ? `${compileState.agent}'s version failed to compile` : "Compile failed"}{errors ? `, ${errors} error${errors > 1 ? "s" : ""}` : ""}</span>}
         {result && <button onClick={p.onToggleLog} data-p="2">{showLog ? "Hide log" : "Show log"}</button>}
         <button data-p="1" className={`toggle ${p.compileOnSave ? "on" : ""}`} aria-pressed={p.compileOnSave} onClick={p.onToggleCompileOnSave} title="Compile every time you save (⌘S)">{p.compileOnSave ? "Compiles on save" : "Compile on save"}</button>
         <span className="grow" />
