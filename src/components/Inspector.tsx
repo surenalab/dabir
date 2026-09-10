@@ -5,6 +5,7 @@ import {
   onAgentEvent, provenanceRerun, type Artefact, type Memory, type Pick, type Project, type Provider, type WorktreeDiff,
 } from "../lib/backend";
 import { Segmented } from "./Segmented";
+import { renderMarkdown } from "../lib/md";
 import type { Comment, Peer } from "../lib/collab";
 
 type Tab = "agent" | "memory" | "people";
@@ -26,10 +27,27 @@ function toolFace(name: string | null | undefined, detail: string): { verb: stri
 
 function fmtElapsed(ms: number): string { const s = Math.max(0, Math.round(ms / 1000)); return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${s % 60} s`; }
 
-/** The agent's train of thought and work, as a transcript: thinking folded, prose in full, tools as compact rows. */
-function Transcript({ steps, running, started }: { steps: Step[]; running: boolean; started: number }) {
+/** Paths as the paper knows them: the run's worktree and the project root fall away, home becomes ~. */
+function shortenPaths(text: string, root: string | null): string {
+  let t = text;
+  if (root) t = t.split(`${root}/.dabir/worktrees/`).join("").replace(/^[0-9a-f]{8}\//, "").split(`${root}/`).join("");
+  t = t.replace(/(^|[\s"'=])[0-9a-f]{8}\/(?=[\w.])/g, "$1").replace(/(^|[\s"'=])\/Users\/[^/\s]+\//g, "$1~/");
+  return t.replace(/\s+/g, " ").trim();
+}
+
+/** The agent's train of thought and work, as a transcript in a window that scrolls: thinking folded,
+ * prose rendered, tools as compact rows, runs of reads and searches folded into one line. */
+function Transcript({ steps, running, started, root }: { steps: Step[]; running: boolean; started: number; root: string | null }) {
   const [, tick] = useState(0);
   useEffect(() => { if (!running) return; const t = setInterval(() => tick((n) => n + 1), 1000); return () => clearInterval(t); }, [running]);
+  const box = useRef<HTMLDivElement>(null);
+  const follow = useRef(true);
+  // Stay pinned to the newest line while the run streams, unless the reader has scrolled up to look at something.
+  useEffect(() => {
+    const el = box.current; if (!el) return;
+    if (running && follow.current) el.scrollTop = el.scrollHeight;
+  }, [steps, running]);
+  const onScroll = () => { const el = box.current; if (!el) return; follow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24; };
   const shown = steps.filter((s) => s.kind !== "log");
   // group consecutive tool/thinking/text so streamed prose and thought stay one block
   const blocks: { kind: string; steps: Step[] }[] = [];
@@ -39,22 +57,43 @@ function Transcript({ steps, running, started }: { steps: Step[]; running: boole
     else blocks.push({ kind: st.kind, steps: [st] });
   }
   const lastBlock = blocks[blocks.length - 1];
+  const row = (x: Step, j: number) => {
+    const f = toolFace(x.tool, x.text);
+    let text = shortenPaths(x.text, root);
+    // A compile is about the file, not the flags.
+    if (f.verb === "Compiled") { const m = /(\S+\.(?:tex|typ))\b/.exec(text); text = m ? `${m[1]} · ${text.split(/\s+/)[0]}` : text; }
+    return (
+    <div key={j} className={`tool ${f.kind}`} title={x.text}>{f.icon}<span className="verb">{f.verb}</span><code>{text}</code><span className="at">+{fmtElapsed(x.at - started)}</span></div>
+  ); };
   return (
-    <div className="transcript" role="log" aria-live="polite">
+    <div className={`transcript ${running ? "live" : ""}`} role="log" aria-live="polite" ref={box} onScroll={onScroll}>
       {blocks.map((b, i) => {
         const isLast = b === lastBlock;
         if (b.kind === "thinking") {
           const text = b.steps.map((x) => x.text).join("");
           const elapsed = Math.max(1000, (running && isLast ? Date.now() : b.steps[b.steps.length - 1].at) - b.steps[0].at);
-          if (running && isLast) return <div key={i} className="think live"><Brain aria-hidden /><span>Thought for {fmtElapsed(elapsed)}…</span></div>;
-          return <details key={i} className="think"><summary><Brain aria-hidden />Thought for {fmtElapsed(elapsed)}</summary><p>{text}</p></details>;
+          if (running && isLast) return <div key={i} className="think live"><Brain aria-hidden /><span>Thinking for {fmtElapsed(elapsed)}…</span></div>;
+          return <details key={i} className="think"><summary><Brain aria-hidden />Thought for {fmtElapsed(elapsed)}</summary><div className="thought">{renderMarkdown(text)}</div></details>;
         }
-        if (b.kind === "text") return <div key={i} className="say"><p>{b.steps.map((x) => x.text).join("")}</p></div>;
+        if (b.kind === "text") return <div key={i} className="say">{renderMarkdown(b.steps.map((x) => x.text).join(""))}</div>;
+        // Runs of the same quiet verb (reads, searches) fold into one line; edits and commands always show.
+        const groups: Step[][] = [];
+        for (const x of b.steps) {
+          const f = toolFace(x.tool, x.text); const g = groups[groups.length - 1];
+          if (g && (f.kind === "read" || f.kind === "search") && toolFace(g[0].tool, g[0].text).kind === f.kind) g.push(x); else groups.push([x]);
+        }
         return (
           <div key={i} className="tools">
-            {b.steps.map((x, j) => { const f = toolFace(x.tool, x.text); return (
-              <div key={j} className={`tool ${f.kind}`} title={x.text}>{f.icon}<span className="verb">{f.verb}</span><code>{x.text}</code><span className="at">+{fmtElapsed(x.at - started)}</span></div>
-            ); })}
+            {groups.map((g, j) => {
+              if (g.length < 4) return g.map((x, n) => row(x, j * 100 + n));
+              const f = toolFace(g[0].tool, g[0].text);
+              return (
+                <details key={j} className="toolgroup">
+                  <summary className={`tool ${f.kind}`}>{f.icon}<span className="verb">{f.verb}</span><code>{g.length} {f.kind === "read" ? "files" : "searches"}</code><span className="at">+{fmtElapsed(g[g.length - 1].at - started)}</span></summary>
+                  {g.map((x, n) => row(x, n))}
+                </details>
+              );
+            })}
           </div>
         );
       })}
@@ -347,7 +386,7 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
           {(run.phase === "running" || run.phase === "review") && (
             <div className="run">
               <div className="prompt"><b>You asked {providers.find((p) => p.id === run.provider)?.label ?? run.provider}</b>{run.prompt}</div>
-              <Transcript steps={run.steps} running={run.phase === "running"} started={run.started} />
+              <Transcript steps={run.steps} running={run.phase === "running"} started={run.started} root={project?.root ?? null} />
               {run.phase === "running" && <div className="actions"><button className="btn" onClick={cancel}><Square /> Stop</button></div>}
               {run.steps.some((s) => s.kind === "log") && (
                 <details className="log-details"><summary>{run.steps.filter((s) => s.kind === "log").length} log lines</summary>

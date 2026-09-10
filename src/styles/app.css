@@ -818,10 +818,22 @@ input[type="range"] { accent-color: var(--accent); width: 140px; }
 .pdf-marker.fade { transition: opacity 1.2s; opacity: 0; }
 
 /* Agent transcript */
-.transcript { display: flex; flex-direction: column; gap: 6px; padding: 0 var(--space-1); user-select: text; }
+/* A window onto the run: bounded height, scrolls, follows the newest line while streaming. */
+.transcript { display: flex; flex-direction: column; gap: 6px; padding: var(--space-2) var(--space-3); user-select: text; max-height: min(42vh, 360px); overflow-y: auto; overscroll-behavior: contain; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--paper-2); scrollbar-width: thin; }
+.transcript:empty { display: none; }
 .transcript .say { color: var(--ink); font-size: var(--text-sm); line-height: 1.5; }
-.transcript .say p { margin: 0 0 6px; white-space: pre-wrap; }
-.transcript .say p:last-child { margin-bottom: 0; }
+.transcript .say p, .transcript .thought p { margin: 0 0 6px; }
+.transcript .say p.h { font-weight: 600; margin-top: 4px; }
+.transcript .say > :last-child, .transcript .thought > :last-child { margin-bottom: 0; }
+.transcript .say ul, .transcript .say ol, .transcript .thought ul, .transcript .thought ol { margin: 0 0 6px; padding-left: 18px; }
+.transcript .say li { margin: 1px 0; }
+.transcript .say code, .transcript .thought code { font-family: var(--font-mono); font-size: 0.92em; background: var(--paper); border: 1px solid var(--line); border-radius: 3px; padding: 0 3px; }
+.transcript .say pre { margin: 0 0 6px; padding: 6px 8px; font-family: var(--font-mono); font-size: 11px; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--paper); border: 1px solid var(--line); border-radius: 4px; }
+.transcript .thought { margin: 4px 0 2px 18px; font-style: italic; font-size: var(--text-xs); color: var(--ink-3); line-height: 1.45; }
+.transcript .toolgroup summary { list-style: none; cursor: default; }
+.transcript .toolgroup summary::-webkit-details-marker { display: none; }
+.transcript .toolgroup[open] summary code { color: var(--ink); }
+.transcript .toolgroup .tool:not(summary) { padding-left: 22px; }
 .transcript .think { font-size: var(--text-xs); color: var(--ink-3); }
 .transcript .think summary { display: flex; align-items: center; gap: 6px; cursor: default; list-style: none; }
 .transcript .think summary::-webkit-details-marker { display: none; }

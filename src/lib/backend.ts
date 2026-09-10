@@ -208,10 +208,15 @@ export async function agentRun(root: string, provider: string, prompt: string): 
     const runId = Math.random().toString(16).slice(2, 10);
     (async () => {
       const send = (e: Omit<AgentEvent, "runId">) => sampleRunHandlers.forEach((h) => h({ runId, ...e }));
-      await wait(400); send({ kind: "tool", tool: "Read", text: ".dabir/PROJECT.md", ok: null });
+      await wait(300); send({ kind: "thinking", text: "The sweep script writes both the figure and the table; rerunning it with a finer grid changes the margin claim in the sampler section too.", tool: null, ok: null });
+      await wait(400); send({ kind: "tool", tool: "Read", text: `${root}/.dabir/worktrees/${runId}/.dabir/PROJECT.md`, ok: null });
+      await wait(200); send({ kind: "tool", tool: "Read", text: `${root}/.dabir/worktrees/${runId}/main.tex`, ok: null });
+      await wait(200); send({ kind: "tool", tool: "Read", text: `${root}/.dabir/worktrees/${runId}/code/sweep.py`, ok: null });
+      await wait(200); send({ kind: "tool", tool: "Read", text: `${root}/.dabir/worktrees/${runId}/tables/psnr-sweep.tex`, ok: null });
       await wait(700); send({ kind: "tool", tool: "Bash", text: "python code/sweep.py --sigma 0.3", ok: null });
-      await wait(1200); send({ kind: "tool", tool: "Edit", text: "main.tex", ok: null });
-      await wait(600); send({ kind: "text", text: "Reran the sweep to σ = 0.3, regenerated the figure and the table, and updated the margin claim in §2.3.", tool: null, ok: null });
+      await wait(1200); send({ kind: "tool", tool: "Edit", text: `${root}/.dabir/worktrees/${runId}/main.tex`, ok: null });
+      await wait(400); send({ kind: "tool", tool: "Bash", text: "tectonic -X compile --keep-logs --synctex --outdir .dabir/build main.tex", ok: null });
+      await wait(600); send({ kind: "text", text: "Reran the sweep to σ = 0.3 and updated the paper.\n\n- `code/sweep.py` now covers σ ∈ {0.25, 0.3}; the figure and **Table 1** were regenerated.\n- The margin claim in §2.3 now reads 1.8 dB up to σ = 0.3 and points at the table.\n\nThe paper compiles cleanly.", tool: null, ok: null });
       await wait(300); send({ kind: "done", text: "", tool: null, ok: true });
     })();
     return { runId, worktree: `${root}/.dabir/worktrees/${runId}` };
