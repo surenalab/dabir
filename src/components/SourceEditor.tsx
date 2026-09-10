@@ -11,6 +11,7 @@ import { yCollab } from "y-codemirror.next";
 import * as Y from "yjs";
 import type { Awareness } from "y-protocols/awareness";
 import { visualExtensions, remoteCursorsField, setRemoteCursors, type RemoteCursor } from "../lib/visual";
+import { typstVisualExtensions } from "../lib/visual-typst";
 import { projectCompletions, type CompletionSources } from "../lib/completions";
 import type { GrammarMatch } from "../lib/grammar";
 import type { Settings } from "../lib/settings";
@@ -109,7 +110,8 @@ const grammarHover = hoverTooltip((view, pos) => {
 
 interface Props {
   value: string;
-  visual: boolean;
+  /** Visual layer to use, or false for plain source. */
+  visual: false | "tex" | "typst";
   settings: Settings;
   completions: CompletionSources;
   collab: { text: Y.Text; awareness: Awareness } | null;
@@ -148,6 +150,8 @@ export interface EditorApi {
   focus: () => void;
   resolveChanges: (ids: string[] | null, accept: boolean) => void;  // accept or reject suggestions; null means all
 }
+
+const modeExt = (visual: Props["visual"]) => (visual === "typst" ? typstVisualExtensions() : visual ? visualExtensions() : sourceOnly());
 
 export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({ value, visual, settings, completions, collab, comments, changes, suggesting, author, onChanges, grammar, marks, review, dictionary, onAddWord, onSelection, jumpOffset, onChange, onSave, onCursorLine, jumpLine, jumpStamp, findRequest }, ref) {
   const host = useRef<HTMLDivElement>(null);
@@ -195,7 +199,7 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
         completeComp.current.of(completionExt(settings)), search({ top: true }),
         latex({ enableAutocomplete: false, autoCloseBrackets: false }),
         prefsComp.current.of(prefs(settings)),
-        modeComp.current.of(visual ? visualExtensions() : sourceOnly()),
+        modeComp.current.of(modeExt(visual)),
         collabComp.current.of([]),
         suggestComp.current.of(suggestConfig.of({ on: suggesting, author })),
         trackChanges(),
@@ -233,7 +237,7 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => { view.current?.dispatch({ effects: modeComp.current.reconfigure(visual ? visualExtensions() : sourceOnly()) }); }, [visual]);
+  useEffect(() => { view.current?.dispatch({ effects: modeComp.current.reconfigure(modeExt(visual)) }); }, [visual]);
   useEffect(() => { view.current?.dispatch({ effects: [prefsComp.current.reconfigure(prefs(settings)), completeComp.current.reconfigure(completionExt(settings))] }); }, [settings]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { view.current?.dispatch({ effects: spellComp.current.reconfigure(spellCfg(settings, dictionary)) }); }, [settings, dictionary]); // eslint-disable-line react-hooks/exhaustive-deps
 
