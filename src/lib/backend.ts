@@ -127,14 +127,56 @@ export async function importOverleaf(): Promise<string | null> {
 
 // ---------------------------------------------------------------- new paper and references
 
-export interface Template { id: string; label: string; main: string }
-export async function templatesList(): Promise<Template[]> {
-  if (!native) return [{ id: "ieee-journal", label: "IEEE journal (IEEEtran)", main: "main.tex" }, { id: "article", label: "Plain article", main: "main.tex" }, { id: "typst-article", label: "Typst article", main: "main.typ" }];
-  return invoke<Template[]>("templates_list");
+export interface Template {
+  id: string; label: string; venue: string; group: string; engine: "latex" | "typst";
+  official: boolean; featured: boolean; version: string | null; summary: string; site: string | null;
+  main: string;
+  /** Host the official kit is fetched from; null when bundled. */
+  kit: string | null;
+  /** Bundled, or fetched before: usable offline. */
+  cached: boolean;
+  /** Reasons for the adjustments Dabir makes to the kit. */
+  notes: string[];
+}
+export interface TemplateGroup { id: string; label: string }
+export interface TemplateListing { groups: TemplateGroup[]; templates: Template[] }
+const SAMPLE_TEMPLATES: TemplateListing = {
+  groups: [{ id: "ml", label: "Machine learning" }, { id: "vision", label: "Computer vision" }, { id: "publishers", label: "Journals and publishers" }, { id: "math", label: "Mathematics" }, { id: "general", label: "General" }, { id: "typst", label: "Typst" }],
+  templates: [
+    { id: "neurips", label: "NeurIPS 2026", venue: "Conference on Neural Information Processing Systems", group: "ml", engine: "latex", official: true, featured: true, version: "2026", summary: "The official neurips_2026.sty with the paper checklist. Anonymous with line numbers by default; add the final or preprint option when the time comes.", site: "https://neurips.cc/Conferences/2026/CallForPapers", main: "main.tex", kit: "media.neurips.cc", cached: false, notes: [] },
+    { id: "iclr", label: "ICLR 2027", venue: "International Conference on Learning Representations", group: "ml", engine: "latex", official: true, featured: true, version: "2027", summary: "The official ICLR style, bibliography style and math_commands.tex from the ICLR master template.", site: "https://github.com/ICLR/Master-Template", main: "main.tex", kit: "raw.githubusercontent.com", cached: true, notes: [] },
+    { id: "icml", label: "ICML 2026", venue: "International Conference on Machine Learning", group: "ml", engine: "latex", official: true, featured: false, version: "2026", summary: "The official icml2026.sty and bibliography style with the example paper.", site: "https://icml.cc/Conferences/2026/CallForPapers", main: "main.tex", kit: "media.icml.cc", cached: false, notes: [] },
+    { id: "cvpr", label: "CVPR 2026", venue: "IEEE/CVF Conference on Computer Vision and Pattern Recognition", group: "vision", engine: "latex", official: true, featured: true, version: "2026-v1", summary: "The official CVF author kit: cvpr.sty, the IEEE natbib style, sections split under sec/, and the rebuttal template.", site: "https://github.com/cvpr-org/author-kit", main: "main.tex", kit: "codeload.github.com", cached: false, notes: [] },
+    { id: "springer-nature", label: "Springer Nature", venue: "Springer, BMC and Nature Portfolio journals", group: "publishers", engine: "latex", official: true, featured: true, version: "2024-12", summary: "The official sn-jnl.cls (December 2024) with all eight reference styles and the sample article.", site: "https://www.springernature.com/gp/authors/campaigns/latex-author-support", main: "main.tex", kit: "cms-resources.apps.public.k8s.springernature.io", cached: false, notes: ["EPS figures cannot be embedded by the bundled engine"] },
+    { id: "ieee-journal", label: "IEEE Transactions", venue: "IEEE journals and transactions", group: "publishers", engine: "latex", official: false, featured: true, version: null, summary: "A short paper on IEEEtran in journal mode, fetched from CTAN by the engine on first compile.", site: "https://ctan.org/pkg/ieeetran", main: "main.tex", kit: null, cached: true, notes: [] },
+    { id: "siam", label: "SIAM journals", venue: "Society for Industrial and Applied Mathematics", group: "math", engine: "latex", official: true, featured: true, version: "251216", summary: "The official siamart251216.cls, siamplain.bst and the example article with its shared front matter.", site: "https://epubs.siam.org/journal-authors", main: "main.tex", kit: "epubs.siam.org", cached: false, notes: ["the SIAM class only compiles under pdfLaTeX or dvips without this prelude", "EPS figures cannot be embedded by the bundled engine"] },
+    { id: "article", label: "Plain article", venue: "Preprints, notes and drafts", group: "general", engine: "latex", official: false, featured: true, version: null, summary: "The standard article class with the usual packages and a numbered bibliography. Nothing to fetch.", site: null, main: "main.tex", kit: null, cached: true, notes: [] },
+    { id: "typst-ieee", label: "IEEE (Typst)", venue: "IEEE-style conference and journal papers", group: "typst", engine: "typst", official: false, featured: false, version: null, summary: "The charged-ieee template from Typst Universe (MIT-0).", site: "https://typst.app/universe/package/charged-ieee", main: "main.typ", kit: null, cached: true, notes: [] },
+  ],
+};
+export async function templatesList(): Promise<TemplateListing> {
+  if (!native) return SAMPLE_TEMPLATES;
+  return invoke<TemplateListing>("templates_list");
 }
 export async function newPaper(parent: string, name: string, template: string): Promise<string> {
-  if (!native) { await wait(400); return SAMPLE_PROJECT.root; }
+  if (!native) {
+    const say = (message: string) => templateHandlers.forEach((h) => h({ template, message }));
+    await wait(300); say("Fetching the official kit from media.neurips.cc…");
+    await wait(900); say("Unpacking the kit…");
+    await wait(300); say("Laying out the paper…");
+    await wait(300); say("Initialising Git and the memory scaffold…");
+    await wait(300);
+    return SAMPLE_PROJECT.root;
+  }
   return invoke<string>("new_paper", { parent, name, template });
+}
+export interface TemplateProgress { template: string; message: string }
+let templateHandlers: ((p: TemplateProgress) => void)[] = [];
+export function onTemplateProgress(handler: (p: TemplateProgress) => void): () => void {
+  if (!native) { templateHandlers.push(handler); return () => { templateHandlers = templateHandlers.filter((h) => h !== handler); }; }
+  let un: (() => void) | undefined;
+  listen<TemplateProgress>("template-progress", (e) => handler(e.payload)).then((u) => { un = u; });
+  return () => un?.();
 }
 export async function bibImportFile(root: string): Promise<string | null> {
   if (!native) { await wait(300); return "Added 3 new entries to refs.bib."; }

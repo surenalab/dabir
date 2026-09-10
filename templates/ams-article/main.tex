@@ -1,0 +1,32 @@
+\documentclass[11pt]{amsart}
+\usepackage{amsmath,amssymb,amsthm,graphicx}
+\usepackage[hidelinks]{hyperref}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\theoremstyle{definition}\newtheorem{definition}[theorem]{Definition}
+\theoremstyle{remark}\newtheorem{remark}[theorem]{Remark}
+\title{Title}
+\author{Author One}
+\address{Department, University, City, Country}
+\email{one@example.edu}
+\subjclass[2020]{Primary 00A00; Secondary 00B00}
+\keywords{keyword one, keyword two}
+\begin{document}
+\begin{abstract}
+Abstract.
+\end{abstract}
+\maketitle
+\section{Introduction}
+Cite like this~\cite{example2026}.
+\section{Main results}
+\begin{theorem}\label{thm:main}
+Statement.
+\end{theorem}
+\begin{proof}
+Proof.
+\end{proof}
+\section{Conclusion}
+\bibliographystyle{amsplain}
+\bibliography{refs}
+\end{document}
