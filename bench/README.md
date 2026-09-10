@@ -34,7 +34,15 @@ Running several providers at once is fine (each task works in its own temp copy)
 
 ## Results, 2026-09-10, third run (preamble in the loop)
 
-The vague task `21-add-a-figure-vague` (prompt: "add a figure") was added after a real run in the app took over six minutes and added nothing: the agent read Dabir's own CLAUDE.md and bench folder above the paper, ran `which tectonic`, and edited and reran code. With the raw request as prompt, Grok took 432 s and 36 tool calls and moved the existing figure instead of adding one. With the preamble (boundary, brief and file map inline, numbered procedure, tectonic on PATH) it took 138 s and 8 tool calls and added a TikZ schematic with a caption and a reference. The full Grok suite with the preamble: 21/21, 20 s mean on the twenty scripted tasks (24 s in the second run), 1 to 5 tool calls each, 8.9 min in all.
+The vague task `21-add-a-figure-vague` (prompt: "add a figure") was added after a real run in the app took over six minutes and added nothing: the agent read Dabir's own CLAUDE.md and bench folder above the paper, ran `which tectonic`, and edited and reran code. With the raw request as prompt, Grok took 432 s and 36 tool calls and moved the existing figure instead of adding one. With the preamble (boundary, brief and file map inline, numbered procedure, tectonic on PATH) it took 138 s and 8 tool calls and added a TikZ schematic with a caption and a reference. Full suites with the preamble, three providers in parallel from one binary (Codex was at its usage limit and is not in this run):
+
+| Provider | Passed | Mean per scripted task | Tool calls per task | Vague task | Suite |
+|---|---|---|---|---|---|
+| Claude Code | 21/21 | 16 s (35 s in the second run) | 3.0 | 49 s, 3 calls | 6.3 min |
+| Grok | 21/21 | 20 s (24 s) | 2.5 | 128 s, 8 calls | 8.9 min |
+| Cursor | 21/21 | 29 s (44 s) | 2.6 | 49 s, 4 calls | 10.6 min |
+
+The mean per task fell for every provider with the brief and file map in the prompt, since the first turn no longer spends calls on orientation.
 
 ## Results, 2026-09-10, second run
 
