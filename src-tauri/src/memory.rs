@@ -708,7 +708,7 @@ Never hand-edit these or numbers copied from them. Rerun the command (skill: rer
     }
     let runs = dabir.join("memory").join("runs.md");
     if !runs.exists() {
-        fs::write(&runs, "# Accepted agent runs\n\nAppended by Dabir when a run is accepted. Newest at the bottom.\n\n").map_err(|e| e.to_string())?;
+        fs::write(&runs, "# Agent runs\n\nAppended by Dabir when a run is accepted or rejected: date · agent · request · files · outcome · the agent's report. The next run reads the tail. Newest at the bottom.\n\n").map_err(|e| e.to_string())?;
         written.push(".dabir/memory/runs.md".into());
     }
 
@@ -775,27 +775,60 @@ pub fn chrono_date() -> String {
 }
 
 /// Append one line to the run log. Called when a run is accepted.
-pub fn log_run(root: &Path, provider: &str, prompt: &str, files: &[String]) {
+fn one_line(s: &str, max: usize) -> String {
+    s.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(max)
+        .collect()
+}
+
+/// Append one run to `.dabir/memory/runs.md`: date, agent, request, files, outcome, and what the agent
+/// said it did. The next run reads the tail of this file, so an agent knows what came before it.
+pub fn log_run_with(
+    root: &Path,
+    provider: &str,
+    prompt: &str,
+    files: &[String],
+    reply: Option<&str>,
+    outcome: &str,
+) {
     let path = root.join(".dabir").join("memory").join("runs.md");
     if !path.parent().map(|p| p.exists()).unwrap_or(false) {
         return;
     }
-    let existing = fs::read_to_string(&path).unwrap_or_else(|_| "# Accepted agent runs\n\n".into());
-    let summary: String = prompt
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .chars()
-        .take(100)
-        .collect();
-    let line = format!(
-        "- {} · {} · {} · {}\n",
+    let existing = fs::read_to_string(&path).unwrap_or_else(|_| "# Agent runs\n\n".into());
+    let mut line = format!(
+        "- {} · {} · {} · {} · {}",
         chrono_date(),
         provider,
-        summary,
-        files.join(", ")
+        one_line(prompt, 160),
+        if files.is_empty() {
+            "no files".to_string()
+        } else {
+            files.join(", ")
+        },
+        outcome
     );
+    if let Some(r) = reply.map(|r| one_line(r, 400)).filter(|r| !r.is_empty()) {
+        line.push_str(" · ");
+        line.push_str(&r);
+    }
+    line.push('\n');
     let _ = fs::write(&path, format!("{}{}", existing, line));
+}
+
+/// The last `n` runs from runs.md, newest first, as they were logged.
+pub fn recent_runs(root: &Path, n: usize) -> Vec<String> {
+    let path = root.join(".dabir").join("memory").join("runs.md");
+    let text = fs::read_to_string(path).unwrap_or_default();
+    text.lines()
+        .filter(|l| l.starts_with("- "))
+        .rev()
+        .take(n)
+        .map(|l| l.trim_start_matches("- ").to_string())
+        .collect()
 }
 
 #[derive(Serialize, Debug)]
