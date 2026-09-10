@@ -264,20 +264,21 @@ export async function agentDiff(root: string, runId: string): Promise<WorktreeDi
   return invoke<WorktreeDiff>("agent_diff", { root, runId });
 }
 export interface Pick { path: string; hunks: number[] | null }
-export async function agentAccept(root: string, runId: string, message: string, picks: Pick[] | undefined, provider: string, prompt: string): Promise<string> {
+export async function agentAccept(root: string, runId: string, message: string, picks: Pick[] | undefined, provider: string, prompt: string, reply = ""): Promise<string> {
   if (!native) { await wait(400); return "c1d2e3f"; }
-  return invoke<string>("agent_accept", { root, runId, message, picks: picks ?? null, provider, prompt });
+  return invoke<string>("agent_accept", { root, runId, message, picks: picks ?? null, provider, prompt, reply: reply || null });
 }
 export async function contextPack(root: string, query: string): Promise<string> {
   if (!native) return "main.tex:38-52\n\\subsection{Guided sampling}\n…";
   return invoke<string>("context_pack", { root, query });
 }
 export async function compileCancel(): Promise<boolean> { return native ? invoke<boolean>("compile_cancel") : true; }
-export async function agentReject(root: string, runId: string): Promise<void> { if (native) await invoke("agent_reject", { root, runId }); }
+/** Discard a run. The request and the agent's report are still logged as rejected, so the next run knows. */
+export async function agentReject(root: string, runId: string, provider = "", prompt = "", reply = ""): Promise<void> { if (native) await invoke("agent_reject", { root, runId, provider: provider || null, prompt: prompt || null, reply: reply || null }); }
 /** Accept without committing: the changes land in the checkout and a snapshot is taken. */
-export async function agentApply(root: string, runId: string, picks: Pick[] | undefined, prompt: string, provider: string): Promise<string[]> {
+export async function agentApply(root: string, runId: string, picks: Pick[] | undefined, prompt: string, provider: string, reply = ""): Promise<string[]> {
   if (!native) { await wait(300); return ["main.tex"]; }
-  return invoke<string[]>("agent_apply", { root, runId, picks: picks ?? null, prompt, provider });
+  return invoke<string[]>("agent_apply", { root, runId, picks: picks ?? null, prompt, provider, reply: reply || null });
 }
 /** One step of the paper's history: a snapshot of the working tree and what it changed against the step before. */
 export interface Checkpoint { id: string; message: string; at: number; files: Change[] }

@@ -418,7 +418,7 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
     const { picks, partial } = selection();
     if (picks.length === 0) { onNote("Nothing selected to accept."); return; }
     setBusy(true);
-    try { await onBeforeRun(); const files = await agentApply(project.root, run.runId, partial ? picks : undefined, run.prompt, run.provider); setRun({ phase: "done", text: `Applied to ${files.length} file${files.length === 1 ? "" : "s"} and saved${partial ? " (only the selected changes)" : ""}. A snapshot was taken; commit whenever you like.` }); onChanged(); refreshMemory(); }
+    try { await onBeforeRun(); const files = await agentApply(project.root, run.runId, partial ? picks : undefined, run.prompt, run.provider, run.summary); setRun({ phase: "done", text: `Applied to ${files.length} file${files.length === 1 ? "" : "s"} and saved${partial ? " (only the selected changes)" : ""}. A snapshot was taken; commit whenever you like.` }); onChanged(); refreshMemory(); }
     catch (e) { onNote(String(e)); } finally { setBusy(false); }
   };
   const accept = async () => {
@@ -426,13 +426,13 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
     const { picks, partial } = selection();
     if (picks.length === 0) { onNote("Nothing selected to accept."); return; }
     setBusy(true);
-    try { await onBeforeRun(); const id = await agentAccept(project.root, run.runId, message.trim() || run.prompt, partial ? picks : undefined, run.provider, run.prompt); setRun({ phase: "done", text: `Committed ${id} to your checkout${partial ? " (only the selected changes; the rest was discarded)" : ""}.` }); onChanged(); refreshMemory(); }
+    try { await onBeforeRun(); const id = await agentAccept(project.root, run.runId, message.trim() || run.prompt, partial ? picks : undefined, run.provider, run.prompt, run.summary); setRun({ phase: "done", text: `Committed ${id} to your checkout${partial ? " (only the selected changes; the rest was discarded)" : ""}.` }); onChanged(); refreshMemory(); }
     catch (e) { onNote(String(e)); } finally { setBusy(false); }
   };
   const reject = async () => {
     if (run.phase !== "review" || !project) return;
     setBusy(true);
-    try { await agentReject(project.root, run.runId); setRun({ phase: "done", text: "Run discarded. Your files were not touched." }); }
+    try { await agentReject(project.root, run.runId, run.provider, run.prompt, run.summary); setRun({ phase: "done", text: "Run discarded. Your files were not touched." }); }
     catch (e) { onNote(String(e)); } finally { setBusy(false); }
   };
   const pr = async () => {
