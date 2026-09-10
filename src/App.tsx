@@ -16,7 +16,7 @@ import type { PdfPin, PdfZoom } from "./components/PdfView";
 import type { ManualProvider } from "./lib/manual";
 import { addComment as yAddComment, connect as yConnect, decodeRange, disconnect as yDisconnect, encodeRange, peers as yPeers, randomRoom, removeComment as yRemoveComment, resolveComment as yResolveComment, setCurrentFile, textFor, whenSynced, type Comment, type Peer, type Session, type Transport, replyComment as yReplyComment, userName, colorFor, markHost, hostPresent, publishProject, republishChanged, awaitSnapshot, sharedTexts, persist, setFileChanges } from "./lib/collab";
 import type { CommentRange } from "./components/SourceEditor";
-import type { Change, ChangeRange } from "./lib/changes";
+import { safeColor, type Change, type ChangeRange } from "./lib/changes";
 import {
   bibImportFile, checkForUpdates, projectSnapshot, sessionMaterialize, checkpoint, checkpoints, checkpointRestore, type Checkpoint, newPaper, zoteroImport, compile as runCompile, compileCancel, gitClone, gitPull, gitPush, gitRemoteAdd, gitRemoteUrl, isMac, onCompileProgress, relayStart, relayStop, gitCommit, gitInit, gitStatus, importOverleaf, native, onMenu, onWindowFocus,
   openProject, pickFolder, readText, setWindowTitle, synctexForward, synctexInverse, writeText,
@@ -441,15 +441,18 @@ export default function App() {
   const allChanges: Change[] = session ? sessChanges : localChanges;
   const changeRanges: ChangeRange[] = useMemo(() => (file ? allChanges.filter((c) => c.file === rel(file)) : []).map((c) => {
     const r = rangeOf(c);
-    return r && r.to > r.from ? { id: c.id, author: c.author, color: c.color, kind: c.kind, from: r.from, to: r.to, at: c.at } : null;
+    return r && r.to > r.from ? { id: c.id, author: c.author, color: safeColor(c.color), kind: c.kind, from: r.from, to: r.to, at: c.at } : null;
   }).filter((x): x is ChangeRange => !!x), [file, allChanges, rel, rangeOf]);
+  // Ids the editor has been handed, so a session sync only removes records this client has actually seen.
+  const knownChangeIds = useRef(new Set<string>());
+  useEffect(() => { knownChangeIds.current = new Set(changeRanges.map((c) => c.id)); }, [changeRanges]);
   const changesWrite = useRef<{ timer: number; json: string; root: string } | null>(null);
   const onEditorChanges = useCallback((ranges: ChangeRange[], doc: string, marksChanged: boolean) => {
     if (!file || !project) return;
     const f = rel(file)!;
     if (session) {
       if (!marksChanged) return; // relative positions follow the text on their own
-      queueMicrotask(() => { const t = textFor(session, f); setFileChanges(session, f, ranges.map((r) => ({ id: r.id, author: r.author, color: r.color, kind: r.kind, file: f, at: r.at, ...encodeRange(t, r.from, r.to) }))); });
+      queueMicrotask(() => { const t = textFor(session, f); setFileChanges(session, f, ranges.map((r) => ({ id: r.id, author: r.author, color: r.color, kind: r.kind, file: f, at: r.at, ...encodeRange(t, r.from, r.to) })), knownChangeIds.current); });
       return;
     }
     setLocalChanges((prev) => {

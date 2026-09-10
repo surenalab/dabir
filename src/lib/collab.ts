@@ -121,14 +121,27 @@ export function encodeRange(text: Y.Text, from: number, to: number): { anchor: s
   return { anchor: enc(from), head: enc(to) };
 }
 
-/** Replace every suggestion recorded for one file with the editor's current set. */
-export function setFileChanges(s: Session, file: string, next: Change[]) {
-  const current = s.changes.toArray();
-  const same = current.filter((c) => c.file === file);
-  if (same.length === next.length && same.every((c, i) => c.id === next[i].id && c.anchor === next[i].anchor && c.head === next[i].head && c.kind === next[i].kind)) return;
+/** Bring the shared suggestions for one file in line with the editor's current set.
+ *  Records are matched by id: new ones are added, moved ones updated, and a record is removed only
+ *  when this client had already seen it (`known`), so a coauthor's suggestion that arrived after the
+ *  editor last synced is left alone instead of being wiped by a stale list. */
+export function setFileChanges(s: Session, file: string, next: Change[], known: Set<string>) {
+  const pending = new Map(next.map((c) => [c.id, c]));
+  const updates: { i: number; c: Change }[] = [];
+  const removals: number[] = [];
+  s.changes.toArray().forEach((c, i) => {
+    if (c.file !== file) return;
+    const n = pending.get(c.id);
+    if (n) {
+      if (n.anchor !== c.anchor || n.head !== c.head || n.kind !== c.kind) updates.push({ i, c: n });
+      pending.delete(c.id);
+    } else if (known.has(c.id)) removals.push(i);
+  });
+  if (!updates.length && !removals.length && !pending.size) return;
   s.doc.transact(() => {
-    for (let i = s.changes.length - 1; i >= 0; i--) if (s.changes.get(i).file === file) s.changes.delete(i, 1);
-    if (next.length) s.changes.push(next);
+    for (const u of updates) { s.changes.delete(u.i, 1); s.changes.insert(u.i, [u.c]); }
+    for (const i of removals.sort((a, b) => b - a)) s.changes.delete(i, 1);
+    if (pending.size) s.changes.push([...pending.values()]);
   });
 }
 
