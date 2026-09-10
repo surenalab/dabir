@@ -52,7 +52,12 @@ pub struct Project {
     pub has_git: bool,
     pub has_memory: bool,
     pub tree: Vec<Entry>,
+    /// True when the folder held more files than the tree shows (a home folder, not a paper).
+    pub tree_truncated: bool,
 }
+
+/// The most files the sidebar tree will list. A paper has hundreds; a home folder has hundreds of thousands.
+const TREE_BUDGET: usize = 4000;
 
 const SKIP_DIRS: &[&str] = &[
     ".git",
@@ -86,38 +91,41 @@ fn classify(path: &Path) -> EntryKind {
     }
 }
 
-fn walk(dir: &Path, depth: usize) -> Vec<Entry> {
-    if depth > 6 {
+/// Lists a folder for the sidebar, depth-first, stopping once `budget` entries have been taken.
+fn walk(dir: &Path, depth: usize, budget: &mut usize) -> Vec<Entry> {
+    if depth > 6 || *budget == 0 {
         return vec![];
     }
     let Ok(read) = fs::read_dir(dir) else {
         return vec![];
     };
-    let mut entries: Vec<Entry> = read
-        .filter_map(|e| e.ok())
-        .filter_map(|e| {
-            let path = e.path();
-            let name = e.file_name().to_string_lossy().to_string();
-            if name.starts_with('.') || SKIP_DIRS.contains(&name.as_str()) {
-                return None;
-            }
-            if path.is_dir() {
-                Some(Entry {
-                    name,
-                    path: path.to_string_lossy().to_string(),
-                    kind: EntryKind::Dir,
-                    children: walk(&path, depth + 1),
-                })
-            } else {
-                Some(Entry {
-                    name,
-                    path: path.to_string_lossy().to_string(),
-                    kind: classify(&path),
-                    children: vec![],
-                })
-            }
-        })
-        .collect();
+    let mut entries: Vec<Entry> = Vec::new();
+    for e in read.filter_map(|e| e.ok()) {
+        if *budget == 0 {
+            break;
+        }
+        let path = e.path();
+        let name = e.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') || SKIP_DIRS.contains(&name.as_str()) {
+            continue;
+        }
+        *budget -= 1;
+        if path.is_dir() {
+            entries.push(Entry {
+                name,
+                path: path.to_string_lossy().to_string(),
+                kind: EntryKind::Dir,
+                children: walk(&path, depth + 1, budget),
+            });
+        } else {
+            entries.push(Entry {
+                name,
+                path: path.to_string_lossy().to_string(),
+                kind: classify(&path),
+                children: vec![],
+            });
+        }
+    }
     entries.sort_by(|a, b| {
         let da = a.kind == EntryKind::Dir;
         let db = b.kind == EntryKind::Dir;
@@ -128,25 +136,46 @@ fn walk(dir: &Path, depth: usize) -> Vec<Entry> {
 }
 
 /// Find the root document: main.tex, a .tex file containing \documentclass, or main.typ.
+/// The manuscript: main.tex or main.typ, else a .tex with \documentclass, in the folder or one level down.
 fn find_main_tex(root: &Path) -> Option<PathBuf> {
-    let preferred = root.join("main.tex");
-    if preferred.exists() {
-        return Some(preferred);
-    }
-    let typ = root.join("main.typ");
-    if typ.exists() {
-        return Some(typ);
-    }
-    let Ok(read) = fs::read_dir(root) else {
-        return None;
-    };
-    read.filter_map(|e| e.ok().map(|e| e.path()))
-        .filter(|p| p.extension().map(|e| e == "tex").unwrap_or(false))
-        .find(|p| {
+    fn in_dir(dir: &Path) -> Option<PathBuf> {
+        let preferred = dir.join("main.tex");
+        if preferred.exists() {
+            return Some(preferred);
+        }
+        let typ = dir.join("main.typ");
+        if typ.exists() {
+            return Some(typ);
+        }
+        let read = fs::read_dir(dir).ok()?;
+        let mut tex: Vec<PathBuf> = read
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| p.extension().map(|e| e == "tex").unwrap_or(false))
+            .collect();
+        tex.sort();
+        tex.into_iter().find(|p| {
             fs::read_to_string(p)
                 .map(|s| s.contains("\\documentclass"))
                 .unwrap_or(false)
         })
+    }
+    if let Some(p) = in_dir(root) {
+        return Some(p);
+    }
+    let read = fs::read_dir(root).ok()?;
+    let mut dirs: Vec<PathBuf> = read
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.is_dir())
+        .filter(|p| {
+            let name = p
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            !name.starts_with('.') && !SKIP_DIRS.contains(&name.as_str())
+        })
+        .collect();
+    dirs.sort();
+    dirs.iter().take(200).find_map(|d| in_dir(d))
 }
 
 // ---------------------------------------------------------------- live session mirrors
@@ -348,13 +377,16 @@ fn open_project(path: String) -> Result<Project, String> {
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "Untitled".into());
+    let mut budget = TREE_BUDGET;
+    let tree = walk(&root, 0, &mut budget);
     Ok(Project {
         root: root.to_string_lossy().to_string(),
         name,
         main_tex: find_main_tex(&root).map(|p| p.to_string_lossy().to_string()),
         has_git: root.join(".git").exists(),
         has_memory: root.join(".dabir").join("PROJECT.md").exists(),
-        tree: walk(&root, 0),
+        tree,
+        tree_truncated: budget == 0,
     })
 }
 
@@ -1130,6 +1162,85 @@ fn agent_run(
     })
 }
 
+/// One sentence from the agent to continue the prose at the cursor. Runs on a throwaway
+/// worktree like every other run, so a model that ignores "do not edit" cannot touch the
+/// checkout; only its reply comes back. Waits at most a minute.
+#[tauri::command]
+async fn agent_complete(
+    root: String,
+    provider: String,
+    file: String,
+    context: String,
+    model: Option<String>,
+    effort: Option<String>,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let root_p = PathBuf::from(&root);
+        let run_id = format!("c{}", &uuid::Uuid::new_v4().to_string()[..7]);
+        let wt = git::worktree_add(&root_p, &run_id)?;
+        let ask = format!(
+            "You are completing the author's sentence in this paper. Below is the end of `{file}` up to the cursor. \
+Reply with only the text that should come next: finish the current sentence if it is unfinished, otherwise write the one sentence that follows. \
+Match the voice, tense and markup conventions already in use. No quotation marks, no commentary, no headings, and do not edit or create any file.\n\n<<<\n{context}\n>>>"
+        );
+        let full = agent_preamble(&root_p, &ask);
+        let (tx, rx) = std::sync::mpsc::channel::<agents::AgentEvent>();
+        let steer = agents::Steer { model, effort };
+        let result = (|| {
+            agents::run_with(provider, full, wt.clone(), run_id.clone(), steer, move |e| {
+                let _ = tx.send(e);
+            })?;
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+            let mut text = String::new();
+            loop {
+                let left = deadline.saturating_duration_since(std::time::Instant::now());
+                match rx.recv_timeout(left) {
+                    Ok(e) if e.kind == "text" => {
+                        text.push_str(&e.text);
+                        text.push('\n');
+                    }
+                    Ok(e) if e.kind == "error" => return Err(e.text),
+                    Ok(e) if e.kind == "done" => {
+                        if e.ok == Some(false) && text.trim().is_empty() {
+                            return Err(if e.text.is_empty() { "The agent gave no reply.".into() } else { e.text });
+                        }
+                        break;
+                    }
+                    Ok(_) => {}
+                    Err(_) => {
+                        agents::cancel(&run_id);
+                        return Err("The agent took longer than a minute; try again.".into());
+                    }
+                }
+            }
+            Ok(clean_continuation(&text))
+        })();
+        let _ = git::worktree_remove(&root_p, &run_id);
+        result
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// The reply as text to insert: first paragraph only, quotes and fences stripped, no trailing chatter.
+fn clean_continuation(raw: &str) -> String {
+    let mut t = raw.trim().to_string();
+    if t.starts_with("```") {
+        t = t
+            .trim_start_matches("```")
+            .lines()
+            .skip(1)
+            .take_while(|l| !l.starts_with("```"))
+            .collect::<Vec<_>>()
+            .join("\n");
+    }
+    let first = t.split("\n\n").next().unwrap_or("").trim();
+    let first = first
+        .trim_start_matches(['"', '\u{201c}', '\u{2018}', '\u{2026}', '.', ' '])
+        .trim_end_matches(['"', '\u{201d}', '\u{2019}']);
+    first.trim().to_string()
+}
+
 /// The minimal context every run starts with: who the paper is, where to read more,
 /// the environment prefix, and the passages most likely relevant to this request.
 fn agent_preamble(root: &Path, prompt: &str) -> String {
@@ -1466,6 +1577,12 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
         .item(&MenuItemBuilder::with_id("fmt-table", "Table").build(app)?)
         .separator()
         .item(
+            &MenuItemBuilder::with_id("agent-continue", "Continue Sentence with Agent")
+                .accelerator("CmdOrCtrl+Shift+Space")
+                .build(app)?,
+        )
+        .separator()
+        .item(
             &MenuItemBuilder::with_id("fmt-cite", "Citation…")
                 .accelerator("CmdOrCtrl+Shift+C")
                 .build(app)?,
@@ -1586,6 +1703,7 @@ pub fn run() {
             agent_providers,
             agent_models,
             agent_run,
+            agent_complete,
             agent_cancel,
             agent_diff,
             agent_accept,
@@ -1799,6 +1917,42 @@ mod tests {
         assert_eq!(evs.len(), 1);
         assert_eq!(evs[0].2.as_deref(), Some("Read"));
         assert_eq!(evs[0].1, "/p/main.tex");
+    }
+
+    #[test]
+    fn opening_a_folder_that_is_not_a_paper_is_bounded_and_finds_a_nested_manuscript() {
+        let dir = std::env::temp_dir().join(format!("dabir-home-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(dir.join("paper")).unwrap();
+        for i in 0..TREE_BUDGET + 500 {
+            fs::write(dir.join(format!("f{i}.txt")), "x").unwrap();
+        }
+        fs::write(dir.join("paper/thesis.tex"), "\\documentclass{article}").unwrap();
+        let p = open_project(dir.to_string_lossy().to_string()).unwrap();
+        assert!(p.tree_truncated);
+        assert!(p.tree.len() <= TREE_BUDGET);
+        assert!(p.main_tex.unwrap().ends_with("paper/thesis.tex"));
+        let empty = std::env::temp_dir().join(format!("dabir-empty-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&empty).unwrap();
+        let q = open_project(empty.to_string_lossy().to_string()).unwrap();
+        assert!(!q.tree_truncated && q.main_tex.is_none());
+        let _ = fs::remove_dir_all(&dir);
+        let _ = fs::remove_dir_all(&empty);
+    }
+
+    #[test]
+    fn continuation_replies_are_trimmed_to_one_paragraph() {
+        assert_eq!(
+            clean_continuation("\"The anchor is the only new hyperparameter.\"\n\nI kept the voice of the section."),
+            "The anchor is the only new hyperparameter."
+        );
+        assert_eq!(
+            clean_continuation("```latex\nSee Section~\\ref{sec:results} for its effect.\n```"),
+            "See Section~\\ref{sec:results} for its effect."
+        );
+        assert_eq!(
+            clean_continuation("… holds a margin of 1.8 dB."),
+            "holds a margin of 1.8 dB."
+        );
     }
 
     #[test]

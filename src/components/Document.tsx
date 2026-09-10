@@ -170,6 +170,26 @@ export function Document(p: Props) {
   const currentRel = p.file && project ? p.file.replace(project.root + "/", "") : null;
   const editorMarks = grouped.filter((d) => d.line != null && (d.file ?? mainRel) === currentRel).map((d) => ({ line: d.line!, severity: d.severity, message: d.message }));
 
+  if (project && !p.file && mode !== "pdf") {
+    // A folder is open but holds no manuscript: say so, rather than showing the welcome card over a full sidebar.
+    return (
+      <main className="document">
+        {error && <div className="banner error" role="alert"><span>{error}</span><button onClick={p.onDismissError}>Dismiss</button></div>}
+        <div className="doc-empty">
+          <div className="card">
+            <h1>No manuscript in {project.name}</h1>
+            <p>Dabir looked for <code>main.tex</code>, <code>main.typ</code> or a <code>.tex</code> file with <code>\documentclass</code>, here and one folder down, and found none.{project.treeTruncated ? " This folder is large; the sidebar lists its first few thousand files." : ""}</p>
+            <div className="actions">
+              <button className="btn primary" onClick={p.onOpen}><FolderOpen /> Open the Paper's Folder…</button>
+              <button className="btn" onClick={p.onNew} title="Start from a journal template"><FilePlus /> New Paper…</button>
+            </div>
+            <div className="hint">Or pick any text file in the sidebar to edit it.</div>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
   if (!project || (source == null && mode !== "pdf")) {
     return (
       <main className="document">

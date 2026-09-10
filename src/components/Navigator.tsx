@@ -85,7 +85,7 @@ export function Navigator({ project, current, outline, git, commitFocus, busy, o
   return (
     <aside className="navigator" ref={ref} onKeyDown={onKey}>
       <section className="nav-section">
-        <div className="nav-heading"><span>Files</span><span className="count">{countFiles(project.tree)}</span></div>
+        <div className="nav-heading"><span>Files</span><span className="count" title={project.treeTruncated ? "This folder holds more files than the sidebar lists. Open the paper's own folder to see all of it." : undefined}>{countFiles(project.tree)}{project.treeTruncated ? "+" : ""}</span></div>
         <ul className="tree" role="tree" aria-label="Project files" tabIndex={0}
           onFocus={(e) => { if (e.target === e.currentTarget) e.currentTarget.querySelector<HTMLButtonElement>('.tree-row[aria-current="true"], .tree-row')?.focus(); }}>
           {project.tree.map((e) => <Node key={e.path} entry={e} current={current} onSelect={onSelect} depth={0} />)}
