@@ -1270,6 +1270,28 @@ fn agent_preamble(root: &Path, cwd: &Path, prompt: &str) -> String {
         .unwrap_or_default();
     let files = memory::file_map(root, 80);
     let pack = memory::context_pack(root, prompt, 2200);
+    // What happened before this run: the last runs (request, outcome, the agent's own report) and the
+    // paper's last steps, so "make it bigger" or "undo that" has a referent.
+    let runs = memory::recent_runs(root, 3);
+    let steps: Vec<String> = git::checkpoints(root, 6)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|c| {
+            let files: Vec<String> = c
+                .files
+                .iter()
+                .take(4)
+                .map(|f| {
+                    if f.binary {
+                        f.path.clone()
+                    } else {
+                        format!("{} +{} -{}", f.path, f.add, f.del)
+                    }
+                })
+                .collect();
+            format!("{} ({})", c.message, files.join(", "))
+        })
+        .collect();
 
     let mut out = String::new();
     out.push_str(&format!(
@@ -1316,6 +1338,25 @@ fn agent_preamble(root: &Path, cwd: &Path, prompt: &str) -> String {
         out.push_str(&pack);
         out.push('\n');
     }
+    if !runs.is_empty() || !steps.is_empty() {
+        out.push_str("\nWhat happened before this request (newest first)\n");
+        if !runs.is_empty() {
+            out.push_str("Previous agent runs (date · agent · request · files · accepted or rejected by the author · the agent's report). The request below may refer to these; a rejected run is one the author did not want.\n");
+            for r in &runs {
+                out.push_str("- ");
+                out.push_str(r);
+                out.push('\n');
+            }
+        }
+        if !steps.is_empty() {
+            out.push_str("Recent steps in the paper's history (\"You\" is the author):\n");
+            for s in &steps {
+                out.push_str("- ");
+                out.push_str(s);
+                out.push('\n');
+            }
+        }
+    }
     out.push_str("\n---\nRequest\n");
     out.push_str(prompt);
     out
@@ -1344,6 +1385,7 @@ fn agent_accept(
     picks: Option<Vec<git::Pick>>,
     provider: Option<String>,
     prompt: Option<String>,
+    reply: Option<String>,
 ) -> Result<String, String> {
     let root_p = Path::new(&root);
     let files: Vec<String> = match &picks {
@@ -1352,18 +1394,40 @@ fn agent_accept(
             .map(|d| d.changes.iter().map(|c| c.path.clone()).collect())
             .unwrap_or_default(),
     };
-    memory::log_run(
+    memory::log_run_with(
         root_p,
         provider.as_deref().unwrap_or("agent"),
         prompt.as_deref().unwrap_or(&message),
         &files,
+        reply.as_deref(),
+        "accepted and committed",
     );
     git::worktree_accept(root_p, &run_id, &message, picks)
 }
 
 #[tauri::command]
-fn agent_reject(root: String, run_id: String) -> Result<(), String> {
-    git::worktree_remove(Path::new(&root), &run_id)
+fn agent_reject(
+    root: String,
+    run_id: String,
+    provider: Option<String>,
+    prompt: Option<String>,
+    reply: Option<String>,
+) -> Result<(), String> {
+    let root_p = Path::new(&root);
+    if let Some(p) = prompt.as_deref().filter(|p| !p.is_empty()) {
+        let files: Vec<String> = git::worktree_diff(root_p, &run_id)
+            .map(|d| d.changes.iter().map(|c| c.path.clone()).collect())
+            .unwrap_or_default();
+        memory::log_run_with(
+            root_p,
+            provider.as_deref().unwrap_or("agent"),
+            p,
+            &files,
+            reply.as_deref(),
+            "rejected",
+        );
+    }
+    git::worktree_remove(root_p, &run_id)
 }
 
 /// Accept without a commit: the changes land in the checkout (autosaved, snapshotted), the user commits when they like.
@@ -1374,15 +1438,18 @@ fn agent_apply(
     picks: Option<Vec<git::Pick>>,
     prompt: Option<String>,
     provider: Option<String>,
+    reply: Option<String>,
 ) -> Result<Vec<String>, String> {
     let root_p = PathBuf::from(&root);
     let applied = git::worktree_apply(&root_p, &run_id, picks)?;
     let label = prompt.as_deref().unwrap_or("agent change");
-    memory::log_run(
+    memory::log_run_with(
         &root_p,
         provider.as_deref().unwrap_or("agent"),
         label,
         &applied,
+        reply.as_deref(),
+        "accepted",
     );
     let short: String = label.chars().take(72).collect();
     let who = match provider.as_deref() {
@@ -2006,6 +2073,24 @@ mod tests {
         assert!(out.contains("tectonic -X compile main.tex"));
         assert!(out.contains("do not stop to ask"));
         assert!(out.ends_with("Request\nadd a figure"));
+        // A later run learns what the earlier one did and whether the author kept it.
+        fs::create_dir_all(dir.join(".dabir/memory")).unwrap();
+        memory::log_run_with(
+            &dir,
+            "grok",
+            "add a figure",
+            &["main.tex".into()],
+            Some("Added a TikZ schematic of the clip."),
+            "rejected",
+        );
+        let again = agent_preamble(&dir, &cwd, "make the figure a plot instead");
+        assert!(again.contains("Previous agent runs"));
+        assert!(
+            again.contains(
+                "grok · add a figure · main.tex · rejected · Added a TikZ schematic of the clip."
+            ),
+            "{again}"
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 
