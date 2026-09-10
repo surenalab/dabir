@@ -64,8 +64,8 @@ function Transcript({ steps, running, started }: { steps: Step[]; running: boole
 }
 type Run =
   | { phase: "idle" }
-  | { phase: "running"; runId: string; prompt: string; steps: Step[]; provider: string; started: number }
-  | { phase: "review"; runId: string; prompt: string; steps: Step[]; provider: string; ok: boolean; summary: string; diff: WorktreeDiff | null; error?: string; started: number; finished: number }
+  | { phase: "running"; runId: string; worktree: string; prompt: string; steps: Step[]; provider: string; started: number }
+  | { phase: "review"; runId: string; worktree: string; prompt: string; steps: Step[]; provider: string; ok: boolean; summary: string; diff: WorktreeDiff | null; error?: string; started: number; finished: number }
   | { phase: "done"; text: string };
 
 interface Hunk { header: string; lines: string[] }
@@ -157,9 +157,24 @@ interface Props {
   onNote: (text: string) => void;
   /** Preview-only: start a run with this prompt once providers are ready. */
   autoRun?: string | null;
+  /** A run entered or left review; the document shows the agent's version and offers Accept / Reject. */
+  onReview: (r: ReviewHandle | null) => void;
 }
 
-export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady, onChanged, onOpenFile, onNote, live, peers, comments, currentFile, hasSelection, onAddComment, onResolveComment, onReplyComment, onRemoveComment, onJumpComment, onShare, autoRun, changes, suggesting, onToggleSuggesting, onResolveChanges, onJumpChange }: Props) {
+/** A finished run the document can show and act on. */
+export interface ReviewHandle {
+  runId: string;
+  provider: string;
+  label: string;
+  worktree: string;          // the paper's folder inside the run's worktree
+  patch: string;
+  changes: WorktreeDiff["changes"];
+  busy: boolean;
+  accept: () => void;
+  reject: () => void;
+}
+
+export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady, onChanged, onOpenFile, onNote, live, peers, comments, currentFile, hasSelection, onAddComment, onResolveComment, onReplyComment, onRemoveComment, onJumpComment, onShare, autoRun, changes, suggesting, onToggleSuggesting, onResolveChanges, onJumpChange, onReview }: Props) {
   const [commentDraft, setCommentDraft] = useState("");
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [replyDraft, setReplyDraft] = useState("");
@@ -193,11 +208,11 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
       let diff: WorktreeDiff | null = null, error: string | undefined;
       if (project) { try { diff = await agentDiff(project.root, r.runId); } catch (err) { error = String(err); } }
       const summary = e.text || r.steps.filter((s) => s.kind === "text").map((s) => s.text).join("\n");
-      setRun({ phase: "review", runId: r.runId, prompt: r.prompt, steps: r.steps, provider: r.provider, ok: e.ok ?? true, summary, diff, error, started: r.started, finished: Date.now() });
+      setRun({ phase: "review", runId: r.runId, worktree: r.worktree, prompt: r.prompt, steps: r.steps, provider: r.provider, ok: e.ok ?? true, summary, diff, error, started: r.started, finished: Date.now() });
       setMessage(r.prompt.length > 72 ? r.prompt.slice(0, 69) + "…" : r.prompt);
       setExcluded(new Set());
     } else if (e.kind === "error") {
-      setRun({ phase: "review", runId: r.runId, prompt: r.prompt, steps: r.steps, provider: r.provider, ok: false, summary: e.text, diff: null, started: r.started, finished: Date.now() });
+      setRun({ phase: "review", runId: r.runId, worktree: r.worktree, prompt: r.prompt, steps: r.steps, provider: r.provider, ok: false, summary: e.text, diff: null, started: r.started, finished: Date.now() });
     } else if (e.kind === "thinking") {
       const last = r.steps[r.steps.length - 1];
       // Keep the original `at` so "Thought for n s" measures the whole burst, not the last chunk.
@@ -220,7 +235,7 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
     if (!prompt || !project || run.phase === "running") return;
     try {
       const started = await agentRun(project.root, provider, prompt);
-      setRun({ phase: "running", runId: started.runId, prompt, steps: [], provider, started: Date.now() });
+      setRun({ phase: "running", runId: started.runId, worktree: started.worktree, prompt, steps: [], provider, started: Date.now() });
       setDraft("");
     } catch (e) { onNote(String(e)); }
   };
@@ -230,7 +245,7 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
   useEffect(() => {
     if (!autoRun || autoRan.current || !project || !providers.length || run.phase !== "idle") return;
     autoRan.current = true; setTab("agent");
-    (async () => { try { const started = await agentRun(project.root, provider, autoRun); setRun({ phase: "running", runId: started.runId, prompt: autoRun, steps: [], provider, started: Date.now() }); } catch { /* preview only */ } })();
+    (async () => { try { const started = await agentRun(project.root, provider, autoRun); setRun({ phase: "running", runId: started.runId, worktree: started.worktree, prompt: autoRun, steps: [], provider, started: Date.now() }); } catch { /* preview only */ } })();
   }, [autoRun, project, providers, provider, run.phase]);
 
   const cancel = async () => { if (run.phase === "running") { await agentCancel(run.runId); } };
@@ -276,6 +291,17 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
     try { const out = await agentPullRequest(project.root, run.runId, message.trim() || run.prompt); setRun({ phase: "done", text: out || "Pull request opened." }); }
     catch (e) { onNote(String(e)); } finally { setBusy(false); }
   };
+
+  // The document mirrors the review: it shows the agent's version and its Accept / Reject call back here.
+  const actions = useRef({ apply, reject }); actions.current = { apply, reject };
+  useEffect(() => {
+    if (run.phase !== "review" || !run.diff || run.diff.changes.length === 0) { onReview(null); return; }
+    onReview({
+      runId: run.runId, provider: run.provider, label: providers.find((p) => p.id === run.provider)?.label ?? run.provider,
+      worktree: run.worktree, patch: run.diff.patch, changes: run.diff.changes, busy,
+      accept: () => actions.current.apply(), reject: () => actions.current.reject(),
+    });
+  }, [run, busy, providers, onReview]);
 
   const setup = async () => {
     if (!project) return;
@@ -370,7 +396,7 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
             <p className="composer-note" role="status">{run.text} <button className="btn" style={{ height: 22, marginLeft: 6 }} onClick={() => setRun({ phase: "idle" })}>OK</button></p>
           )}
           {run.phase === "idle" && project && !finishedRun && (
-            <p className="composer-note">Runs happen on a Git worktree. You review the diff, then Accept (lands the change and takes a snapshot), Reject, or open a pull request.{gitRepo ? "" : " This folder needs a Git repository first."}</p>
+            <p className="composer-note">The agent works on a copy of the paper as it is now. When it finishes, the document shows its version with the changes marked and ⌘B compiles it; then Accept (lands the change and takes a snapshot), Reject, or open a pull request.{gitRepo ? "" : " This folder needs a Git repository first."}</p>
           )}
         </div>
       )}

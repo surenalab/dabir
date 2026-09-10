@@ -348,11 +348,112 @@ pub fn worktree_add(root: &Path, run_id: &str) -> Result<PathBuf, String> {
     if !out.status.success() {
         return Err(String::from_utf8_lossy(&out.stderr).to_string());
     }
+    // The agent should see the paper as it is now, not as of the last commit: carry uncommitted edits
+    // (and new files) into the worktree as its base commit, so the run's diff is the agent's work alone
+    // and applies cleanly onto the same edits in the checkout.
+    let (workdir, prefix) = repo_prefix(root)?;
+    if let Err(e) = seed_working_copy(&workdir, &dir) {
+        let _ = Command::new("git")
+            .current_dir(root)
+            .args(["worktree", "remove", "--force"])
+            .arg(&dir)
+            .output();
+        return Err(e);
+    }
     // The agent works in the paper's folder inside the worktree, which is the whole repository.
-    let (_, prefix) = repo_prefix(root)?;
     let cwd = dir.join(&prefix);
     let _ = std::fs::create_dir_all(cwd.join(".dabir"));
     Ok(cwd)
+}
+
+/// Copy the checkout's uncommitted state (tracked edits and untracked files) into a fresh worktree
+/// and commit it there. No-op when the checkout is clean.
+fn seed_working_copy(workdir: &Path, wt: &Path) -> Result<(), String> {
+    let patch = Command::new("git")
+        .current_dir(workdir)
+        .args(["diff", "HEAD", "--binary"])
+        .output()
+        .map_err(|e| e.to_string())?;
+    let untracked = Command::new("git")
+        .current_dir(workdir)
+        .args(["ls-files", "--others", "--exclude-standard", "-z"])
+        .output()
+        .map_err(|e| e.to_string())?;
+    let untracked: Vec<String> = untracked
+        .stdout
+        .split(|b| *b == 0)
+        .filter(|s| !s.is_empty())
+        .map(|s| String::from_utf8_lossy(s).to_string())
+        .collect();
+    let dirty = patch.stdout.iter().any(|b| !b.is_ascii_whitespace());
+    if !dirty && untracked.is_empty() {
+        return Ok(());
+    }
+    if dirty {
+        let mut child = Command::new("git")
+            .current_dir(wt)
+            .args(["apply", "--index", "--whitespace=nowarn", "-"])
+            .stdin(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        use std::io::Write;
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(&patch.stdout)
+            .map_err(|e| e.to_string())?;
+        let out = child.wait_with_output().map_err(|e| e.to_string())?;
+        if !out.status.success() {
+            return Err(format!(
+                "Could not carry your uncommitted edits into the run: {}",
+                String::from_utf8_lossy(&out.stderr)
+            ));
+        }
+    }
+    for rel in &untracked {
+        let src = workdir.join(rel);
+        let dst = wt.join(rel);
+        if let Some(p) = dst.parent() {
+            std::fs::create_dir_all(p).map_err(|e| e.to_string())?;
+        }
+        std::fs::copy(&src, &dst).map_err(|e| format!("{}: {}", rel, e))?;
+        let _ = Command::new("git")
+            .current_dir(wt)
+            .args(["add", "--"])
+            .arg(rel)
+            .output();
+    }
+    // The owner's identity when configured; a local fallback only so the seed commit can exist at all.
+    let has_identity = Command::new("git")
+        .current_dir(wt)
+        .args(["config", "user.email"])
+        .output()
+        .map(|o| o.status.success() && !o.stdout.is_empty())
+        .unwrap_or(false);
+    let mut commit = Command::new("git");
+    commit.current_dir(wt);
+    if !has_identity {
+        commit.args(["-c", "user.name=Dabir", "-c", "user.email=dabir@localhost"]);
+    }
+    let out = commit
+        .args([
+            "commit",
+            "-q",
+            "--no-verify",
+            "-m",
+            "Working copy at run start",
+        ])
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        return Err(format!(
+            "Could not record your uncommitted edits for the run: {}",
+            String::from_utf8_lossy(&out.stderr)
+        ));
+    }
+    Ok(())
 }
 
 #[derive(Serialize, Debug)]
@@ -554,26 +655,35 @@ fn apply_selection(
     };
     if patch.iter().any(|b| !b.is_ascii_whitespace()) {
         // Apply from the repository root: git apply run in a subdirectory silently drops paths outside it.
-        let mut child = Command::new("git")
-            .current_dir(&workdir)
-            .args(["apply", "--3way", "--index", "-"])
-            .stdin(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .map_err(|e| e.to_string())?;
-        use std::io::Write;
-        child
-            .stdin
-            .take()
-            .unwrap()
-            .write_all(&patch)
-            .map_err(|e| e.to_string())?;
-        let out = child.wait_with_output().map_err(|e| e.to_string())?;
-        if !out.status.success() {
-            return Err(format!(
-                "Could not apply the agent's changes: {}",
-                String::from_utf8_lossy(&out.stderr)
-            ));
+        // The working tree is the target, never the index: the user may have unstaged edits, and the run
+        // started from exactly those, so a plain apply is the common case. A three-way merge is the
+        // fallback for files edited since the run started; it needs the file to match the index.
+        let run = |args: &[&str]| -> Result<std::process::Output, String> {
+            let mut child = Command::new("git")
+                .current_dir(&workdir)
+                .args(args)
+                .stdin(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .spawn()
+                .map_err(|e| e.to_string())?;
+            use std::io::Write;
+            child
+                .stdin
+                .take()
+                .unwrap()
+                .write_all(&patch)
+                .map_err(|e| e.to_string())?;
+            child.wait_with_output().map_err(|e| e.to_string())
+        };
+        let plain = run(&["apply", "--whitespace=nowarn", "-"])?;
+        if !plain.status.success() {
+            let merged = run(&["apply", "--3way", "--whitespace=nowarn", "-"])?;
+            if !merged.status.success() {
+                return Err(format!(
+                    "Could not apply the agent's changes; the file changed since the run started. Save your edits and try again, or reject the run.\n{}",
+                    String::from_utf8_lossy(&plain.stderr).trim()
+                ));
+            }
         }
     }
     let mut selected = selected;

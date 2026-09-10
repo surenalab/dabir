@@ -16,6 +16,7 @@ import type { GrammarMatch } from "../lib/grammar";
 import type { Settings } from "../lib/settings";
 import { prediction } from "../lib/predict";
 import { trackChanges, suggestConfig, setChanges, changesIn, resolveChanges, type ChangeRange } from "../lib/changes";
+import { reviewField, setReview, type ReviewMarks } from "../lib/review";
 
 const highlight = HighlightStyle.define([
   { tag: [tags.keyword, tags.controlKeyword, tags.function(tags.variableName), tags.macroName], class: "tok-cmd" },
@@ -118,6 +119,8 @@ interface Props {
   onChanges: (ranges: ChangeRange[], doc: string, marksChanged: boolean) => void;
   grammar: GrammarMatch[];
   marks: LineMark[];
+  /** Reviewing an agent run: the text is the agent's version, shown read-only with its changes marked. */
+  review?: ReviewMarks | null;
   onSelection: (from: number, to: number) => void;
   jumpOffset: { pos: number; stamp: number } | null;
   onChange: (text: string) => void;
@@ -142,10 +145,11 @@ export interface EditorApi {
   resolveChanges: (ids: string[] | null, accept: boolean) => void;  // accept or reject suggestions; null means all
 }
 
-export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({ value, visual, settings, completions, collab, comments, changes, suggesting, author, onChanges, grammar, marks, onSelection, jumpOffset, onChange, onSave, onCursorLine, jumpLine, jumpStamp, findRequest }, ref) {
+export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({ value, visual, settings, completions, collab, comments, changes, suggesting, author, onChanges, grammar, marks, review, onSelection, jumpOffset, onChange, onSave, onCursorLine, jumpLine, jumpStamp, findRequest }, ref) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const modeComp = useRef(new Compartment());
+  const readOnlyComp = useRef(new Compartment());
   const collabComp = useRef(new Compartment());
   const prefsComp = useRef(new Compartment());
   const completeComp = useRef(new Compartment());
@@ -188,6 +192,8 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
         collabComp.current.of([]),
         suggestComp.current.of(suggestConfig.of({ on: suggesting, author })),
         trackChanges(),
+        readOnlyComp.current.of([]),
+        reviewField,
         commentField, markField, grammarField, grammarHover,
         keymap.of([
           { key: "Mod-s", run: () => { onSaveRef.current(); return true; } },
@@ -241,6 +247,9 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
   useEffect(() => { view.current?.dispatch({ effects: suggestComp.current.reconfigure(suggestConfig.of({ on: suggesting, author })) }); }, [suggesting, author]);
   useEffect(() => { view.current?.dispatch({ effects: setMarks.of(marks) }); }, [marks, value]);
   useEffect(() => { view.current?.dispatch({ effects: setGrammar.of(grammar) }); }, [grammar]);
+  useEffect(() => {
+    view.current?.dispatch({ effects: readOnlyComp.current.reconfigure(review ? [EditorState.readOnly.of(true), EditorView.editable.of(false), EditorView.editorAttributes.of({ class: "cm-reviewing" })] : []) });
+  }, [!!review]);
 
   useEffect(() => {
     const v = view.current;
@@ -257,6 +266,17 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
     const current = v.state.doc.toString();
     if (current !== value) { loading.current = true; v.dispatch({ changes: { from: 0, to: current.length, insert: value }, selection: { anchor: 0 } }); loading.current = false; v.scrollDOM.scrollTop = 0; }
   }, [value, collab]);
+  // After the document is the agent's version: mark its lines and open on the first change.
+  useEffect(() => {
+    const v = view.current; if (!v) return;
+    v.dispatch({ effects: setReview.of(review ?? null) });
+    if (!review) return;
+    const first = Math.min(...review.inserted.map((r) => r.from), ...review.deleted.map((d) => d.line));
+    if (Number.isFinite(first) && first >= 1) {
+      const pos = v.state.doc.line(Math.min(first, v.state.doc.lines)).from;
+      v.dispatch({ effects: EditorView.scrollIntoView(pos, { y: "center" }) });
+    }
+  }, [review, value]);
   // After the document is current, so ranges resolved against the new text land on the new text.
   useEffect(() => {
     const v = view.current; if (!v) return;

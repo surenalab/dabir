@@ -305,6 +305,25 @@ button { background: none; border: 0; padding: 0; cursor: default; }
 .banner.error { background: var(--diff-del-wash); }
 .banner button { color: var(--ink-3); font-size: var(--text-xs); text-decoration: underline; }
 
+/* Reviewing an agent run in the document */
+.banner.review { justify-content: flex-start; background: var(--accent-wash); }
+.banner.review > svg { width: 14px; height: 14px; color: var(--accent); flex: none; }
+.banner.review .what { color: var(--ink-2); min-width: 0; }
+.banner.review .grow { flex: 1; }
+.banner.review .link { font-size: inherit; color: var(--ink); text-decoration: underline; text-underline-offset: 2px; padding: 0; }
+.banner.review .toggle { text-decoration: none; padding: 0 8px; height: 22px; border-radius: 4px; border: 1px solid var(--line-strong); color: var(--ink-2); font-size: var(--text-xs); background: var(--paper); }
+.banner.review .toggle.on { color: var(--accent); border-color: var(--accent); }
+.banner.review .btn { text-decoration: none; height: 22px; font-size: var(--text-xs); }
+.banner.review .btn.primary { color: var(--paper); }
+.banner.review .btn svg { width: 12px; height: 12px; }
+.editor .cm-reviewing .cm-content { caret-color: transparent; }
+.editor .cm-reviewing .cm-activeLine { background: transparent; }
+.cm-rev-ins { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.cm-rev-edit { background: color-mix(in srgb, var(--accent) 4%, transparent); }
+.cm-rev-ins-w { background: color-mix(in srgb, var(--accent) 14%, transparent); text-decoration: underline; text-decoration-color: var(--accent); text-decoration-thickness: 1.5px; text-underline-offset: 3px; }
+.cm-rev-del-w { color: var(--ink-3); text-decoration: line-through; text-decoration-color: var(--warn); text-decoration-thickness: 1.5px; background: color-mix(in srgb, var(--warn) 8%, transparent); }
+.cm-rev-del { white-space: pre-wrap; color: var(--ink-3); text-decoration: line-through; text-decoration-color: var(--warn); text-decoration-thickness: 1.5px; background: color-mix(in srgb, var(--warn) 8%, transparent); font-family: inherit; }
+
 /* Diagnostics strip and compile log */
 .diagnostics { border-bottom: 1px solid var(--line); background: var(--paper-2); max-height: 160px; overflow: auto; }
 .app.native .diagnostics { background: transparent; }

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Toolbar, type ViewMode } from "./components/Toolbar";
 import { Navigator } from "./components/Navigator";
-import { Document } from "./components/Document";
-import { Inspector } from "./components/Inspector";
+import { Document, type DocReview } from "./components/Document";
+import { Inspector, type ReviewHandle } from "./components/Inspector";
+import { marksFromPatch } from "./lib/review";
 import { ShortcutSheet } from "./components/ShortcutSheet";
 import { CloneSheet } from "./components/CloneSheet";
 import { ShareSheet, type LiveState } from "./components/ShareSheet";
@@ -27,7 +28,7 @@ import { parseBib, type BibEntry, type OutlineItem } from "./lib/latex";
 export type CompileState =
   | { status: "idle" }
   | { status: "running"; startedAt: number }
-  | { status: "done"; result: CompileResult; at: number };
+  | { status: "done"; result: CompileResult; at: number; agent?: string };  // agent: the run's label when the agent's version was compiled
 
 const NAV_W = 232, INSP_W = 380;
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -52,6 +53,10 @@ export default function App() {
   const [jumpStamp, setJumpStamp] = useState(0);
   const [cursorLine, setCursorLine] = useState(1);
   const [compileState, setCompileState] = useState<CompileState>({ status: "idle" });
+  // An agent run under review: the document can show the agent's version and ⌘B compiles it, before anything lands.
+  const [review, setReview] = useState<ReviewHandle | null>(null);
+  const [reviewShowing, setReviewShowing] = useState(true);
+  const [reviewText, setReviewText] = useState<{ file: string; runId: string; text: string } | null>(null);
   const [progress, setProgress] = useState<string | null>(null);
   const [pdfTarget, setPdfTarget] = useState<(PdfPos & { stamp: number }) | null>(null);
   const [showLog, setShowLog] = useState(false);
@@ -190,16 +195,19 @@ export default function App() {
 
   const compile = useCallback(async () => {
     if (!project?.mainTex || compileState.status === "running") return;
-    if (dirty && sourceRef.current != null && file) { try { await writeText(file, sourceRef.current); setDirty(false); } catch (e) { setError(String(e)); return; } }
+    // While reading the agent's version, compile that version from its worktree; nothing lands in the checkout.
+    const agentBuild = review && reviewShowing && !session;
+    const mainTex = agentBuild ? `${review.worktree}/${project.mainTex.slice(project.root.length + 1)}` : project.mainTex;
+    if (!agentBuild && dirty && sourceRef.current != null && file) { try { await writeText(file, sourceRef.current); setDirty(false); } catch (e) { setError(String(e)); return; } }
     setCompileState({ status: "running", startedAt: Date.now() });
     try {
-      const result = await runCompile(project.mainTex);
-      setCompileState({ status: "done", result, at: Date.now() });
+      const result = await runCompile(mainTex);
+      setCompileState({ status: "done", result, at: Date.now(), agent: agentBuild ? review.label : undefined });
       if (result.ok && result.pdf) setMode("pdf");
     } catch (e) {
       setCompileState({ status: "done", at: Date.now(), result: { ok: false, pdf: null, log: String(e), engine: "", millis: 0, diagnostics: [{ severity: "error", category: "other", file: null, line: null, message: String(e), context: null }] } });
     }
-  }, [project, dirty, file, compileState.status]);
+  }, [project, dirty, file, compileState.status, review, reviewShowing, session]);
   compileRef.current = compile;
   const toggleCompileOnSave = useCallback(() => updateSettings({ compileOnSave: !settings.compileOnSave }), [settings.compileOnSave]);
 
@@ -702,6 +710,34 @@ export default function App() {
     }
   }, [refreshGit, reloadProject, file, project, refreshVersions]);
 
+  // Review: the agent's version of the open file, read from its worktree, so the change can be read and compiled before it lands.
+  useEffect(() => {
+    if (!review || !file || !project) { setReviewText(null); return; }
+    const r = file.slice(project.root.length + 1);
+    if (!review.changes.some((c) => c.path === r && !c.binary)) { setReviewText(null); return; }
+    let alive = true;
+    readText(`${review.worktree}/${r}`).then((text) => { if (alive) setReviewText({ file, runId: review.runId, text }); }).catch(() => { if (alive) setReviewText(null); });
+    return () => { alive = false; };
+  }, [review, file, project]);
+  useEffect(() => { setReviewShowing(true); }, [review?.runId]);
+  // The run ended while the PDF still showed the agent's build: rebuild from the checkout.
+  useEffect(() => {
+    if (!review && compileState.status === "done" && compileState.agent && project?.mainTex) compileRef.current();
+  }, [review]); // eslint-disable-line react-hooks/exhaustive-deps
+  const docReview = useMemo<DocReview | null>(() => {
+    if (!review || !project) return null;
+    const r = rel(file);
+    const text = reviewText && reviewText.runId === review.runId && reviewText.file === file ? reviewText.text : null;
+    return {
+      label: review.label, files: review.changes.map((c) => c.path), text,
+      marks: text != null && r ? marksFromPatch(review.patch, r) : null,
+      showing: reviewShowing, canShow: !session, busy: review.busy,
+      onToggle: () => setReviewShowing((v) => !v),
+      onOpenFile: (p) => selectFile(`${project.root}/${p}`),
+      onAccept: review.accept, onReject: review.reject,
+    };
+  }, [review, project, file, rel, reviewText, reviewShowing, session, selectFile]);
+
   const cls = ["app", native ? "native" : "", isMac ? "mac" : "", navOpen ? "" : "nav-hidden", inspectorOpen ? "" : "inspector-hidden", animating ? "animating" : "", focused ? "" : "inactive"].join(" ").trim();
 
   return (
@@ -722,9 +758,9 @@ export default function App() {
         changes={changeRanges} author={me} onChanges={onEditorChanges} onToggleSuggesting={toggleSuggesting}
         settings={settings} grammar={grammar} pins={pins} pdfZoom={pdfZoom} onPdfZoom={setPdfZoom} onOpenSettings={() => setSheet("settings")}
         onPdfComment={onPdfComment} pdfFindRequest={pdfFindRequest} editorRef={editorRef} onFind={() => command("find")} onCommentSelection={() => { if (!inspectorOpen) toggleInspector(); setAskFocus(0); setNote("Type the comment in the People tab; it attaches to your selection."); }} hasSelection={selection.to > selection.from}
-        splitRatio={splitRatio} onSplitRatio={setSplitRatio} onPin={(id) => { const c = allComments.find((x) => x.id === id); if (c) jumpToComment(c); }}
+        review={docReview} splitRatio={splitRatio} onSplitRatio={setSplitRatio} onPin={(id) => { const c = allComments.find((x) => x.id === id); if (c) jumpToComment(c); }}
         completions={{ bib: () => bib, labels: () => (source ? collectLabels(source) : []), files: () => project?.tree ?? [] }} />
-      <Inspector project={project} gitRepo={!!git?.isRepo} askFocus={askFocus} prefill={prefill} onProviderReady={setAgentReady} onChanged={onChanged} onOpenFile={selectFile} onNote={setNote} autoRun={autoRun}
+      <Inspector project={project} gitRepo={!!git?.isRepo} askFocus={askFocus} prefill={prefill} onProviderReady={setAgentReady} onChanged={onChanged} onOpenFile={selectFile} onNote={setNote} autoRun={autoRun} onReview={setReview}
         live={!!live} peers={peers} comments={allComments} currentFile={rel(file)} hasSelection={selection.to > selection.from}
         changes={changeItems} suggesting={settings.suggesting} onToggleSuggesting={toggleSuggesting} onResolveChanges={resolveChange} onJumpChange={jumpToChange}
         onAddComment={(t) => addCommentAtSelection(t)} onResolveComment={resolveAnyComment} onReplyComment={replyAnyComment} onRemoveComment={removeAnyComment} onJumpComment={jumpToComment} onShare={() => setSheet("share")} />
