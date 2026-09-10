@@ -116,6 +116,8 @@ interface Props {
   splitRatio: number;
   onSplitRatio: (r: number) => void;
   review: DocReview | null;
+  dictionary: string[];
+  onAddWord: (word: string) => void;
 }
 
 /** An agent run under review, as the document shows it. */
@@ -201,7 +203,7 @@ export function Document(p: Props) {
       onCursorLine={p.onCursorLine} jumpLine={p.jumpLine} jumpStamp={p.jumpStamp} findRequest={p.findRequest}
       collab={p.collab} comments={p.comments} onSelection={p.onSelection} jumpOffset={p.jumpOffset} marks={editorMarks}
       changes={previewing ? [] : p.changes} suggesting={p.settings.suggesting} author={p.author} onChanges={p.onChanges}
-      review={previewing ? rv!.marks : null}
+      review={previewing ? rv!.marks : null} dictionary={p.dictionary} onAddWord={p.onAddWord}
       settings={p.settings} grammar={p.grammar} completions={p.completions} />
   ) : source != null ? <div className="doc-empty"><div className="card"><p>This file type is not editable in Dabir yet.</p></div></div> : null;
   const pdf = showPdf ? (

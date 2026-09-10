@@ -28,9 +28,18 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
 
         <section className="share-section">
           <h3>Writing</h3>
-          <Row label="Spelling" hint="Uses the system spell checker; misspellings are underlined and right-click offers corrections. LaTeX commands are skipped.">
+          <Row label="Spelling" hint="Dabir's own dictionary works offline and reads LaTeX: commands, maths, keys and paths are never flagged. Hover a word for replacements; Add to Dictionary keeps the word with the paper in .dabir/dictionary.txt. The system checker is the alternative for other languages.">
             <Toggle on={s.spellcheck} onChange={(v) => updateSettings({ spellcheck: v })} label="Spelling" />
           </Row>
+          {s.spellcheck && (
+            <Row label="Dictionary">
+              <select className="sheet-input compact" value={s.spellLanguage} onChange={(e) => updateSettings({ spellLanguage: e.target.value as "en-GB" | "en-US" | "system" })} aria-label="Spelling dictionary">
+                <option value="en-GB">English (UK)</option>
+                <option value="en-US">English (US)</option>
+                <option value="system">System checker</option>
+              </select>
+            </Row>
+          )}
           <Row label="Grammar" hint="Checks the selection or current paragraph on demand (⇧⌘G) through a LanguageTool server. Text is sent to that server, so this is off until you choose one.">
             <select className="sheet-input compact" value={s.grammar} onChange={(e) => updateSettings({ grammar: e.target.value as "off" | "languagetool" })} aria-label="Grammar">
               <option value="off">Off</option>

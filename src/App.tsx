@@ -57,6 +57,8 @@ export default function App() {
   const [review, setReview] = useState<ReviewHandle | null>(null);
   const [reviewShowing, setReviewShowing] = useState(true);
   const [reviewText, setReviewText] = useState<{ file: string; runId: string; text: string } | null>(null);
+  // The paper's own words, one per line in .dabir/dictionary.txt, shared with coauthors through the repository.
+  const [dictionary, setDictionary] = useState<string[]>([]);
   const [progress, setProgress] = useState<string | null>(null);
   const [pdfTarget, setPdfTarget] = useState<(PdfPos & { stamp: number }) | null>(null);
   const [showLog, setShowLog] = useState(false);
@@ -136,6 +138,7 @@ export default function App() {
     // Files shared through the repository are as untrusted as peers: colours are validated before they reach a style.
     readText(`${p.root}/.dabir/comments.json`).then((t) => setLocalComments(t ? (JSON.parse(t) as Comment[]).map((c) => ({ ...c, color: safeColor(c.color), replies: c.replies?.map((r) => ({ ...r, color: safeColor(r.color) })) })) : [])).catch(() => setLocalComments([]));
     readText(`${p.root}/.dabir/changes.json`).then((t) => setLocalChanges(t ? JSON.parse(t) : [])).catch(() => setLocalChanges([]));
+    readText(`${p.root}/.dabir/dictionary.txt`).then((t) => setDictionary(t.split("\n").map((w) => w.trim()).filter(Boolean))).catch(() => setDictionary([]));
     if (p.mainTex) await selectFile(p.mainTex); else { setFile(null); setSource(null); }
   }, [selectFile, loadBib, refreshGit]);
 
@@ -712,6 +715,14 @@ export default function App() {
     }
   }, [refreshGit, reloadProject, file, project, refreshVersions]);
 
+  const addWord = useCallback((word: string) => {
+    if (!project) return;
+    const w = word.trim(); if (!w || dictionary.includes(w)) return;
+    const next = [...dictionary, w].sort((a, b) => a.localeCompare(b));
+    setDictionary(next);
+    writeText(`${project.root}/.dabir/dictionary.txt`, next.join("\n") + "\n").catch((e) => setNote(String(e)));
+  }, [project, dictionary]);
+
   // Review: the agent's version of the open file, read from its worktree, so the change can be read and compiled before it lands.
   useEffect(() => {
     if (!review || !file || !project) { setReviewText(null); return; }
@@ -760,7 +771,7 @@ export default function App() {
         changes={changeRanges} author={me} onChanges={onEditorChanges} onToggleSuggesting={toggleSuggesting}
         settings={settings} grammar={grammar} pins={pins} pdfZoom={pdfZoom} onPdfZoom={setPdfZoom} onOpenSettings={() => setSheet("settings")}
         onPdfComment={onPdfComment} pdfFindRequest={pdfFindRequest} editorRef={editorRef} onFind={() => command("find")} onCommentSelection={() => { if (!inspectorOpen) toggleInspector(); setAskFocus(0); setNote("Type the comment in the People tab; it attaches to your selection."); }} hasSelection={selection.to > selection.from}
-        review={docReview} splitRatio={splitRatio} onSplitRatio={setSplitRatio} onPin={(id) => { const c = allComments.find((x) => x.id === id); if (c) jumpToComment(c); }}
+        review={docReview} dictionary={dictionary} onAddWord={addWord} splitRatio={splitRatio} onSplitRatio={setSplitRatio} onPin={(id) => { const c = allComments.find((x) => x.id === id); if (c) jumpToComment(c); }}
         completions={{ bib: () => bib, labels: () => (source ? collectLabels(source) : []), files: () => project?.tree ?? [] }} />
       <Inspector project={project} gitRepo={!!git?.isRepo} askFocus={askFocus} prefill={prefill} onProviderReady={setAgentReady} onChanged={onChanged} onOpenFile={selectFile} onNote={setNote} autoRun={autoRun} onReview={setReview}
         live={!!live} peers={peers} comments={allComments} currentFile={rel(file)} hasSelection={selection.to > selection.from}

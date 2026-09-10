@@ -17,6 +17,7 @@ import type { Settings } from "../lib/settings";
 import { prediction } from "../lib/predict";
 import { trackChanges, suggestConfig, setChanges, changesIn, resolveChanges, type ChangeRange } from "../lib/changes";
 import { reviewField, setReview, type ReviewMarks } from "../lib/review";
+import { spelling, spellConfig } from "../lib/spell";
 
 const highlight = HighlightStyle.define([
   { tag: [tags.keyword, tags.controlKeyword, tags.function(tags.variableName), tags.macroName], class: "tok-cmd" },
@@ -121,6 +122,9 @@ interface Props {
   marks: LineMark[];
   /** Reviewing an agent run: the text is the agent's version, shown read-only with its changes marked. */
   review?: ReviewMarks | null;
+  /** The paper's own words (.dabir/dictionary.txt) and how to add one. */
+  dictionary: string[];
+  onAddWord: (word: string) => void;
   onSelection: (from: number, to: number) => void;
   jumpOffset: { pos: number; stamp: number } | null;
   onChange: (text: string) => void;
@@ -145,11 +149,14 @@ export interface EditorApi {
   resolveChanges: (ids: string[] | null, accept: boolean) => void;  // accept or reject suggestions; null means all
 }
 
-export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({ value, visual, settings, completions, collab, comments, changes, suggesting, author, onChanges, grammar, marks, review, onSelection, jumpOffset, onChange, onSave, onCursorLine, jumpLine, jumpStamp, findRequest }, ref) {
+export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({ value, visual, settings, completions, collab, comments, changes, suggesting, author, onChanges, grammar, marks, review, dictionary, onAddWord, onSelection, jumpOffset, onChange, onSave, onCursorLine, jumpLine, jumpStamp, findRequest }, ref) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const modeComp = useRef(new Compartment());
   const readOnlyComp = useRef(new Compartment());
+  const spellComp = useRef(new Compartment());
+  const onAddWordRef = useRef(onAddWord); onAddWordRef.current = onAddWord;
+  const spellCfg = (s: Settings, words: string[]) => spellConfig.of({ on: s.spellcheck && s.spellLanguage !== "system", lang: s.spellLanguage === "system" ? "en-GB" : s.spellLanguage, words, onAddWord: (w) => onAddWordRef.current(w) });
   const collabComp = useRef(new Compartment());
   const prefsComp = useRef(new Compartment());
   const completeComp = useRef(new Compartment());
@@ -164,7 +171,7 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
   const loading = useRef(false);
 
   const prefs = (s: Settings) => [
-    EditorView.contentAttributes.of({ spellcheck: s.spellcheck ? "true" : "false", autocorrect: "off", autocapitalize: "off" }),
+    EditorView.contentAttributes.of({ spellcheck: s.spellcheck && s.spellLanguage === "system" ? "true" : "false", autocorrect: "off", autocapitalize: "off" }),
     s.lineWrap ? EditorView.lineWrapping : [],
     EditorView.theme({ "&": { "--doc-size": `${s.fontSize}px`, "--mono-size": `${s.monoSize}px` } }),
     s.prediction ? prediction() : [],
@@ -194,6 +201,7 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
         trackChanges(),
         readOnlyComp.current.of([]),
         reviewField, remoteCursorsField,
+        spellComp.current.of(spellCfg(settings, dictionary)), spelling(),
         commentField, markField, grammarField, grammarHover,
         keymap.of([
           { key: "Mod-s", run: () => { onSaveRef.current(); return true; } },
@@ -227,6 +235,7 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
 
   useEffect(() => { view.current?.dispatch({ effects: modeComp.current.reconfigure(visual ? visualExtensions() : sourceOnly()) }); }, [visual]);
   useEffect(() => { view.current?.dispatch({ effects: [prefsComp.current.reconfigure(prefs(settings)), completeComp.current.reconfigure(completionExt(settings))] }); }, [settings]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { view.current?.dispatch({ effects: spellComp.current.reconfigure(spellCfg(settings, dictionary)) }); }, [settings, dictionary]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const v = view.current;
