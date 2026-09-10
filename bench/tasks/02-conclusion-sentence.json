@@ -1,0 +1,1 @@
+{"id":"02-conclusion-sentence","kind":"revision","prompt":"In main.tex Conclusion, add one short sentence after the first sentence saying future work will study adaptive kappa schedules. Keep the rest unchanged.","expect_files":["main.tex"],"expect_contains":[{"file":"main.tex","text":"adaptive"}],"timeout_secs":180}

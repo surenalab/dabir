@@ -1,0 +1,1 @@
+{"id":"12-abstract-bold-trim","kind":"revision","prompt":"In the abstract of main.tex, remove the \\textbf wrappers around 'Diffusion posterior' and 'a single scalar' so those phrases are plain text. Keep wording identical.","expect_files":["main.tex"],"expect_absent":[{"file":"main.tex","text":"\\textbf{Diffusion posterior}"}],"timeout_secs":180}

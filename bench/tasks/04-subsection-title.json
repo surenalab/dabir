@@ -1,0 +1,1 @@
+{"id":"04-subsection-title","kind":"revision","prompt":"Rename the subsection titled 'Score anchoring' to 'Anchored guidance' in main.tex. Do not change labels or equation content.","expect_files":["main.tex"],"expect_contains":[{"file":"main.tex","text":"Anchored guidance"}],"expect_absent":[{"file":"main.tex","text":"\\subsection{Score anchoring}"}],"timeout_secs":180}

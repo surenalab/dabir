@@ -37,3 +37,6 @@ src-tauri/binaries/
 
 # Bundled relay is built from relay/server.mjs
 relay/dist/
+
+# Agent benchmark outputs
+bench/results/

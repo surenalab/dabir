@@ -730,11 +730,13 @@ fn agent_reject(root: String, run_id: String) -> Result<(), String> { git::workt
 
 /// Accept without a commit: the changes land in the checkout (autosaved, snapshotted), the user commits when they like.
 #[tauri::command]
-fn agent_apply(root: String, run_id: String, picks: Option<Vec<git::Pick>>, prompt: Option<String>) -> Result<Vec<String>, String> {
+fn agent_apply(root: String, run_id: String, picks: Option<Vec<git::Pick>>, prompt: Option<String>, provider: Option<String>) -> Result<Vec<String>, String> {
     let root_p = PathBuf::from(&root);
     let applied = git::worktree_apply(&root_p, &run_id, picks)?;
-    let label = prompt.map(|p| p.chars().take(72).collect::<String>()).unwrap_or_else(|| "agent change".into());
-    let _ = git::checkpoint(&root_p, &format!("Agent: {}", label));
+    let label = prompt.as_deref().unwrap_or("agent change");
+    memory::log_run(&root_p, provider.as_deref().unwrap_or("agent"), label, &applied);
+    let short: String = label.chars().take(72).collect();
+    let _ = git::checkpoint(&root_p, &format!("Agent: {}", short));
     Ok(applied)
 }
 
@@ -1151,6 +1153,137 @@ mod tests {
         assert!(fs::read_to_string(dir.join("main.tex")).unwrap().contains("1.8 dB PSNR margin"));
         assert!(!wt.exists());
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Twenty-task agent benchmark. Reuses the live worktree pipeline.
+    ///   DABIR_LIVE_PROVIDER=claude cargo test agent_bench -- --ignored --nocapture
+    ///   DABIR_BENCH_TASK=01-strong-baselines … to run one task.
+    #[test]
+    #[ignore]
+    fn agent_bench() {
+        #[derive(serde::Deserialize)]
+        struct Expect { file: String, text: String }
+        #[derive(serde::Deserialize)]
+        struct Mutate { file: String, find: String, replace: String }
+        #[derive(serde::Deserialize)]
+        struct Task {
+            id: String,
+            prompt: String,
+            #[serde(default)] mutate: Vec<Mutate>,
+            #[serde(default)] expect_files: Vec<String>,
+            #[serde(default)] expect_contains: Vec<Expect>,
+            #[serde(default)] expect_absent: Vec<Expect>,
+            #[serde(default = "default_timeout")] timeout_secs: u64,
+        }
+        fn default_timeout() -> u64 { 180 }
+
+        let provider = std::env::var("DABIR_LIVE_PROVIDER").unwrap_or_else(|_| "claude".into());
+        let only = std::env::var("DABIR_BENCH_TASK").ok();
+        let tasks_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../bench/tasks");
+        let results_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../bench/results");
+        fs::create_dir_all(&results_dir).unwrap();
+        let mut paths: Vec<_> = fs::read_dir(&tasks_dir).unwrap().filter_map(|e| e.ok()).map(|e| e.path())
+            .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("json")).collect();
+        paths.sort();
+        let src = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples/score-anchor");
+        let mut report = serde_json::json!({ "provider": provider, "at": chrono_like(), "tasks": [] });
+        let mut passed = 0usize;
+        let mut total = 0usize;
+
+        for path in paths {
+            let task: Task = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+            if let Some(ref id) = only { if &task.id != id { continue; } }
+            total += 1;
+            eprintln!("\n=== {} ===", task.id);
+            let dir = std::env::temp_dir().join(format!("dabir-bench-{}-{}-{}", provider, task.id, std::process::id()));
+            let _ = fs::remove_dir_all(&dir);
+            fs::create_dir_all(&dir).unwrap();
+            for f in ["main.tex", "refs.bib", "dabir.toml", "AGENTS.md", "CLAUDE.md", ".gitignore"] { let _ = fs::copy(src.join(f), dir.join(f)); }
+            for d in ["code", "tables", "figures", ".dabir", ".dabir/memory", ".dabir/skills"] { fs::create_dir_all(dir.join(d)).unwrap(); }
+            for f in ["code/sweep.py", "tables/psnr-sweep.tex", "figures/psnr-vs-noise.pdf", ".dabir/PROJECT.md", ".dabir/provenance.json", ".dabir/memory/reviewer-2-anchor-ratio.md"] { let _ = fs::copy(src.join(f), dir.join(f)); }
+            // Copy skills so compile-and-fix etc. are discoverable.
+            if let Ok(skills) = fs::read_dir(src.join(".dabir/skills")) {
+                for sk in skills.flatten() {
+                    let name = sk.file_name();
+                    let dest = dir.join(".dabir/skills").join(&name);
+                    let _ = fs::create_dir_all(&dest);
+                    let skill_md = sk.path().join("SKILL.md");
+                    if skill_md.exists() { let _ = fs::copy(&skill_md, dest.join("SKILL.md")); }
+                }
+            }
+            for m in &task.mutate {
+                let p = dir.join(&m.file);
+                let body = fs::read_to_string(&p).unwrap_or_default();
+                assert!(body.contains(&m.find), "{}: mutate find missed in {}", task.id, m.file);
+                fs::write(&p, body.replacen(&m.find, &m.replace, 1)).unwrap();
+            }
+            git::init(&dir).unwrap();
+            git::commit(&dir, "seed", None).unwrap();
+            let run_id = format!("bench-{}", task.id);
+            let wt = git::worktree_add(&dir, &run_id).unwrap();
+            let (tx, rx) = std::sync::mpsc::channel::<agents::AgentEvent>();
+            let started = std::time::Instant::now();
+            let launch = agents::run_with(provider.clone(), task.prompt.clone(), wt.clone(), run_id.clone(), move |e| { let _ = tx.send(e); });
+            let mut ok_agent = false;
+            let mut err = String::new();
+            if let Err(e) = launch { err = e; }
+            else {
+                while let Ok(e) = rx.recv_timeout(std::time::Duration::from_secs(task.timeout_secs)) {
+                    if e.kind == "done" { ok_agent = e.ok.unwrap_or(false); break; }
+                    if e.kind == "error" { err = e.text; break; }
+                }
+                if !ok_agent && err.is_empty() { err = "timeout or incomplete".into(); }
+            }
+            let mut ok = ok_agent;
+            let mut detail = String::new();
+            if ok_agent {
+                match git::worktree_diff(&dir, &run_id) {
+                    Ok(d) => {
+                        for f in &task.expect_files {
+                            if !d.changes.iter().any(|c| &c.path == f) {
+                                ok = false; detail = format!("missing change to {f}"); break;
+                            }
+                        }
+                        if ok {
+                            let picks: Vec<git::Pick> = d.changes.iter().map(|c| git::Pick { path: c.path.clone(), hunks: None }).collect();
+                            if let Err(e) = git::worktree_apply(&dir, &run_id, Some(picks)) {
+                                ok = false; detail = e;
+                            } else {
+                                let _ = git::worktree_remove(&dir, &run_id);
+                                for ex in &task.expect_contains {
+                                    let body = fs::read_to_string(dir.join(&ex.file)).unwrap_or_default();
+                                    if !body.contains(&ex.text) { ok = false; detail = format!("{} missing {:?}", ex.file, ex.text); break; }
+                                }
+                                for ex in &task.expect_absent {
+                                    let body = fs::read_to_string(dir.join(&ex.file)).unwrap_or_default();
+                                    if body.contains(&ex.text) { ok = false; detail = format!("{} still has {:?}", ex.file, ex.text); break; }
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => { ok = false; detail = e; }
+                }
+            } else { detail = err; let _ = git::worktree_remove(&dir, &run_id); }
+            let secs = started.elapsed().as_secs_f64();
+            if ok { passed += 1; eprintln!("PASS {} ({:.1}s)", task.id, secs); }
+            else { eprintln!("FAIL {} ({:.1}s): {}", task.id, secs, detail); }
+            report["tasks"].as_array_mut().unwrap().push(serde_json::json!({
+                "id": task.id, "ok": ok, "secs": secs, "detail": detail,
+            }));
+            let _ = fs::remove_dir_all(&dir);
+        }
+
+        report["passed"] = passed.into();
+        report["total"] = total.into();
+        report["rate"] = if total == 0 { 0.0.into() } else { ((passed as f64) / (total as f64)).into() };
+        let out = results_dir.join(format!("{provider}.json"));
+        fs::write(&out, serde_json::to_string_pretty(&report).unwrap()).unwrap();
+        eprintln!("\n{passed}/{total} passed → {}", out.display());
+        assert!(total > 0, "no tasks ran");
+        // Soft: do not fail the cargo test on a low rate; the JSON is the artifact.
+        fn chrono_like() -> String {
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs().to_string()).unwrap_or_default()
+        }
     }
 
     #[test]

@@ -441,7 +441,16 @@ export function buildDecorations(state: EditorState): DecorationSet {
 // Block widgets must come from a state field, not a view plugin.
 const visualField = StateField.define<DecorationSet>({
   create: (state) => buildDecorations(state),
-  update: (deco, tr) => (tr.docChanged || tr.selection ? buildDecorations(tr.state) : deco),
+  update: (deco, tr) => {
+    if (tr.docChanged) return buildDecorations(tr.state);
+    if (!tr.selection) return deco;
+    // Skip a full rebuild when the caret stays on the same line(s); widgets only reveal on line intersection.
+    const a = tr.startState.selection.main, b = tr.state.selection.main;
+    const sameLine = tr.startState.doc.lineAt(a.head).number === tr.state.doc.lineAt(b.head).number
+      && tr.startState.doc.lineAt(a.anchor).number === tr.state.doc.lineAt(b.anchor).number
+      && a.empty === b.empty;
+    return sameLine ? deco : buildDecorations(tr.state);
+  },
   provide: (f) => EditorView.decorations.from(f),
 });
 
