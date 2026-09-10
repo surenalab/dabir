@@ -1,0 +1,1 @@
+{"id":"15-bib-title-case","kind":"revision","prompt":"In refs.bib, in the morales2023 entry only, change 'diffusion guidance' to 'Diffusion guidance' in the title. Touch nothing else.","expect_files":["refs.bib"],"expect_contains":[{"file":"refs.bib","text":"Diffusion guidance"}],"timeout_secs":180}

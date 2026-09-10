@@ -1,0 +1,1 @@
+{"id":"17-emdash-intro","kind":"revision","prompt":"In the Introduction of main.tex, replace the colon after 'We ask a narrow question' with an em dash (---). One character-level change.","expect_files":["main.tex"],"expect_contains":[{"file":"main.tex","text":"We ask a narrow question---"}],"timeout_secs":180}

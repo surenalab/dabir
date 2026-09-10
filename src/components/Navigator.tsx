@@ -54,6 +54,7 @@ interface Props {
 
 export function Navigator({ project, current, outline, git, commitFocus, busy, onSelect, onJump, onInitGit, onCommit, draftMessage, versions, onRestore }: Props) {
   const [showVersions, setShowVersions] = useState(false);
+  const [versionLimit, setVersionLimit] = useState(12);
   const ref = useRef<HTMLElement>(null);
   const commitInput = useRef<HTMLInputElement>(null);
   const [message, setMessage] = useState("");
@@ -149,12 +150,17 @@ export function Navigator({ project, current, outline, git, commitFocus, busy, o
             </button>
             {showVersions && (
               <div className="version-list">
-                {versions.slice(0, 12).map((v) => (
+                {versions.slice(0, versionLimit).map((v) => (
                   <div className="commit-row version" key={v.id} title={`${v.id} · ${new Date(v.at * 1000).toLocaleString()}`}>
                     <span className="id">{v.id}</span><span className="summary">{v.message}</span><span className="when">{ago(v.at * 1000)}</span>
-                    <button className="restore" onClick={() => onRestore?.(v.id)} disabled={busy}>Restore</button>
+                    <button className="restore" onClick={() => onRestore?.(v.id)} disabled={busy} title="Restore this snapshot. The current state is kept as a snapshot first, so you can undo.">Restore</button>
                   </div>
                 ))}
+                {versions.length > versionLimit && (
+                  <button className="versions-more" onClick={() => setVersionLimit((n) => Math.min(n + 12, versions.length))}>
+                    Show {Math.min(12, versions.length - versionLimit)} more
+                  </button>
+                )}
               </div>
             )}
           </div>

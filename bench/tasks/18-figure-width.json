@@ -1,0 +1,1 @@
+{"id":"18-figure-width","kind":"revision","prompt":"In main.tex, change the includegraphics width from \\linewidth to 0.95\\linewidth. Touch only that option.","expect_files":["main.tex"],"expect_contains":[{"file":"main.tex","text":"width=0.95\\linewidth"}],"timeout_secs":180}

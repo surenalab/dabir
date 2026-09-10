@@ -1,0 +1,1 @@
+{"id":"06-psnr-margin-wording","kind":"revision","prompt":"In main.tex Sampler subsection, change 'holds a 1.8 dB margin' to 'maintains a 1.8 dB margin'. Do not change the number.","expect_files":["main.tex"],"expect_contains":[{"file":"main.tex","text":"maintains a 1.8 dB margin"}],"timeout_secs":180}

@@ -8,11 +8,13 @@ The full plan with the design brief and architecture is rendered at [docs/plan.h
 
 **2026-09-10, agent surface and saving.** The agent panel shows a transcript: thinking folded into "Thought for n s" (live while running), the agent's prose in full, tool calls as compact rows with a verb (Read, Edited, Ran, Compiled, Searched), the target and the time since start, grouped in bursts; a result card with duration, files, +/− and whether it compiled; Accept now lands the changes in the checkout and takes a snapshot without a commit, with Accept and Commit and Open Pull Request under a disclosure. Autosave writes the file about a second after typing stops (toolbar shows Saving…/Saved), compile-on-save becomes compile-after-changes-settle, and snapshots go to `refs/dabir/checkpoints` every five minutes and after each accepted agent change; Versions in the sidebar restores any of them, and restoring snapshots the state it replaces. The user's branch and index are never touched by snapshots.
 
+**2026-09-10, harden and bench.** Accept without commit now logs to `.dabir/memory/runs.md` and forces a buffer reload (cancelling a pending autosave so a dirty editor cannot overwrite the applied patch). Live thinking shows “Thought for n s…”; streamed prose and thought coalesce; review copy matches Accept-without-commit. Versions lists all snapshots via Show more. Bundle split: PdfView lazy-loads, pdf.js / KaTeX / Yjs / CodeMirror are separate chunks (main JS ≈ 353 KB gzip 111 KB, down from a single 1.8 MB chunk). Visual decorations skip a full rebuild when the caret stays on the same line. `bench/` holds twenty repair and revision tasks on score-anchor plus `./bench/run.sh <provider> [task]`; smoke with Grok passed `01-strong-baselines` in 12.8 s.
+
 **Next, in order:**
 1. Owner resets `APPLE_ID` and `APPLE_PASSWORD`; re-run tag v0.1.1 for signed, notarised DMGs.
 2. Owner tests the Windows installer and the Linux AppImage against docs/TESTING.md; fix what breaks (expect font fallbacks, menu chords, path handling).
 3. Two-machine live session: host on the Mac, joiner on Windows, mirror flow and direct mode.
-4. Benchmark: `bench/` with twenty real LaTeX repair and revision tasks, a runner reusing the live agent test, published pass rates per vendor. This is the artifact that matters for the owner's goal.
+4. Run `./bench/run.sh` for each signed-in vendor; publish pass rates. Tighten tasks that flake.
 5. Track changes for coauthors who will not use Git (suggesting mode on the Yjs document, per-author colour, accept per change, persisted in `.dabir`).
 6. Remote cursors in Visual view; offline LaTeX-aware spell dictionary; Typst visual layer; local retrieval index.
 7. Public launch: MIT LICENSE and CONTRIBUTING.md in place, repository public, draft release published, site product page restored, launch post.
