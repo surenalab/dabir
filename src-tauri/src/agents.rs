@@ -117,9 +117,153 @@ pub fn detect() -> Vec<Provider> {
         .collect()
 }
 
-fn args_for(id: &str, prompt: &str, cwd: &Path) -> Vec<String> {
-    let cwd_s = cwd.to_string_lossy().to_string();
+/// How a run is steered: which model and how hard it should think. Empty strings mean the CLI's own default.
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+pub struct Steer {
+    pub model: Option<String>,
+    pub effort: Option<String>,
+}
+
+impl Steer {
+    fn model(&self) -> Option<&str> {
+        self.model
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+    }
+    fn effort(&self) -> Option<&str> {
+        self.effort
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+    }
+}
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelChoice {
+    pub id: String,
+    pub label: String,
+}
+
+/// What the user can choose for one provider: the models its CLI knows, the effort levels it accepts,
+/// and what "default" currently means. `custom` says a model id may be typed in.
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelOptions {
+    pub models: Vec<ModelChoice>,
+    pub efforts: Vec<&'static str>,
+    pub default_model: Option<String>,
+    pub custom: bool,
+}
+
+fn cli_lines(bin: &str, args: &[&str]) -> Vec<String> {
+    let Some(path) = find_bin(bin) else {
+        return vec![];
+    };
+    let mut cmd = Command::new(path);
+    cmd.args(args).stdin(Stdio::null());
+    for k in SCRUB_ENV {
+        cmd.env_remove(k);
+    }
+    match cmd.output() {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
+            .lines()
+            .map(|l| l.to_string())
+            .collect(),
+        _ => vec![],
+    }
+}
+
+pub fn models(id: &str) -> ModelOptions {
+    let choice = |id: &str, label: &str| ModelChoice {
+        id: id.into(),
+        label: label.into(),
+    };
     match id {
+        "claude" => ModelOptions {
+            models: vec![
+                choice("opus", "Opus"),
+                choice("sonnet", "Sonnet"),
+                choice("haiku", "Haiku"),
+            ],
+            efforts: vec!["low", "medium", "high", "xhigh", "max"],
+            default_model: None,
+            custom: true,
+        },
+        "codex" => {
+            // Codex has no model listing; the default comes from its own config.
+            let home = std::env::var("HOME").unwrap_or_default();
+            let cfg =
+                std::fs::read_to_string(format!("{}/.codex/config.toml", home)).unwrap_or_default();
+            let default_model = cfg.lines().find_map(|l| {
+                let l = l.trim();
+                let rest = l.strip_prefix("model")?.trim_start().strip_prefix('=')?;
+                Some(rest.trim().trim_matches('"').to_string())
+            });
+            ModelOptions {
+                models: vec![],
+                efforts: vec!["low", "medium", "high", "xhigh"],
+                default_model,
+                custom: true,
+            }
+        }
+        "cursor" => {
+            // `id - Label` lines; effort is part of the model id here, so no separate control.
+            let models = cli_lines("cursor-agent", &["--list-models"])
+                .into_iter()
+                .filter_map(|l| {
+                    let (id, label) = l.split_once(" - ")?;
+                    let id = id.trim();
+                    if id.is_empty() || id.contains(' ') || id == "auto" {
+                        return None;
+                    }
+                    Some(choice(id, label.trim()))
+                })
+                .collect();
+            ModelOptions {
+                models,
+                efforts: vec![],
+                default_model: Some("auto".into()),
+                custom: true,
+            }
+        }
+        "grok" => {
+            let mut default_model = None;
+            let models = cli_lines("grok", &["models"])
+                .into_iter()
+                .filter_map(|l| {
+                    let t = l.trim();
+                    let (marker, rest) = t.split_once(' ')?;
+                    if marker != "*" && marker != "-" {
+                        return None;
+                    }
+                    let id = rest.split_whitespace().next()?;
+                    if rest.contains("(default)") {
+                        default_model = Some(id.to_string());
+                    }
+                    Some(choice(id, id))
+                })
+                .collect();
+            ModelOptions {
+                models,
+                efforts: vec!["low", "medium", "high", "xhigh"],
+                default_model,
+                custom: true,
+            }
+        }
+        _ => ModelOptions {
+            models: vec![],
+            efforts: vec![],
+            default_model: None,
+            custom: true,
+        },
+    }
+}
+
+fn args_for(id: &str, prompt: &str, cwd: &Path, steer: &Steer) -> Vec<String> {
+    let cwd_s = cwd.to_string_lossy().to_string();
+    let mut args: Vec<String> = match id {
         "claude" => vec![
             "-p".into(),
             prompt.into(),
@@ -136,7 +280,6 @@ fn args_for(id: &str, prompt: &str, cwd: &Path) -> Vec<String> {
             "--dangerously-bypass-approvals-and-sandbox".into(),
             "-C".into(),
             cwd_s,
-            prompt.into(),
         ],
         "cursor" => vec![
             "-p".into(),
@@ -146,7 +289,6 @@ fn args_for(id: &str, prompt: &str, cwd: &Path) -> Vec<String> {
             "--trust".into(),
             "--workspace".into(),
             cwd_s,
-            prompt.into(),
         ],
         "grok" => vec![
             "-p".into(),
@@ -158,13 +300,54 @@ fn args_for(id: &str, prompt: &str, cwd: &Path) -> Vec<String> {
             "--cwd".into(),
             cwd_s,
         ],
-        _ => vec![
-            "run".into(),
-            "--format".into(),
-            "json".into(),
-            prompt.into(),
-        ],
+        _ => vec!["run".into(), "--format".into(), "json".into()],
+    };
+    // Steering flags go before the positional prompt where the CLI takes one.
+    match id {
+        "claude" => {
+            if let Some(m) = steer.model() {
+                args.extend(["--model".into(), m.into()]);
+            }
+            if let Some(e) = steer.effort() {
+                args.extend(["--effort".into(), e.into()]);
+            }
+        }
+        "codex" => {
+            if let Some(m) = steer.model() {
+                args.extend(["-m".into(), m.into()]);
+            }
+            if let Some(e) = steer.effort() {
+                args.extend(["-c".into(), format!("model_reasoning_effort=\"{}\"", e)]);
+            }
+            args.push(prompt.into());
+        }
+        "cursor" => {
+            if let Some(m) = steer.model() {
+                args.extend(["--model".into(), m.into()]);
+            }
+            args.push(prompt.into());
+        }
+        "grok" => {
+            if let Some(m) = steer.model() {
+                args.extend(["--model".into(), m.into()]);
+            }
+            if let Some(e) = steer.effort() {
+                args.extend(["--reasoning-effort".into(), e.into()]);
+            }
+        }
+        _ => {
+            if let Some(m) = steer.model() {
+                args.extend(["--model".into(), m.into()]);
+            }
+            args.push(prompt.into());
+        }
     }
+    args
+}
+
+#[cfg(test)]
+pub fn args_for_test(id: &str, prompt: &str, cwd: &Path, steer: &Steer) -> Vec<String> {
+    args_for(id, prompt, cwd, steer)
 }
 
 fn short(v: &Value) -> String {
@@ -396,9 +579,10 @@ pub fn run(
     prompt: String,
     cwd: PathBuf,
     run_id: String,
+    steer: Steer,
 ) -> Result<(), String> {
     let rid = run_id.clone();
-    run_with(provider, prompt, cwd, run_id, move |ev| {
+    run_with(provider, prompt, cwd, run_id, steer, move |ev| {
         let _ = app.emit(
             "agent-event",
             AgentEvent {
@@ -433,6 +617,7 @@ pub fn run_with<F>(
     prompt: String,
     cwd: PathBuf,
     run_id: String,
+    steer: Steer,
     emit_raw: F,
 ) -> Result<(), String>
 where
@@ -448,7 +633,7 @@ where
             p.label, p.bin
         ));
     };
-    let args = args_for(&provider, &prompt, &cwd);
+    let args = args_for(&provider, &prompt, &cwd, &steer);
     let mut cmd = Command::new(&bin);
     cmd.args(&args).current_dir(&cwd).env("DABIR", "1");
     for k in SCRUB_ENV {

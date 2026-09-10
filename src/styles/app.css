@@ -387,6 +387,19 @@ button { background: none; border: 0; padding: 0; cursor: default; }
   font-size: var(--text-md); font-weight: 500; color: var(--ink);
 }
 .provider .hint { font-size: var(--text-xs); color: var(--ink-3); margin-left: auto; }
+/* Model and effort, one quiet row under the agent */
+.steer { display: flex; align-items: center; gap: var(--space-2); margin-top: -2px; }
+.steer > label { font-size: var(--text-xs); color: var(--ink-3); }
+.steer > label + select { margin-right: var(--space-2); }
+.steer select {
+  appearance: none; -webkit-appearance: none;
+  height: 22px; padding: 0 20px 0 7px; min-width: 0; max-width: 170px; overflow: hidden; text-overflow: ellipsis;
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--paper) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='8' height='12' viewBox='0 0 8 12'><path d='M1 4.5l3-3 3 3M1 7.5l3 3 3-3' fill='none' stroke='%23676a74' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/></svg>") no-repeat right 6px center;
+  font-size: var(--text-xs); color: var(--ink-2);
+}
+.steer select:disabled { color: var(--ink-4); }
+.run .prompt .steer-tag { font-weight: 400; color: var(--ink-3); }
 
 .composer { border: 1px solid var(--line-strong); border-radius: var(--radius-lg); background: var(--raised); box-shadow: var(--shadow-raised); display: flex; flex-direction: column; transition: border-color var(--dur-fast), box-shadow var(--dur-fast); }
 .composer:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--focus); }
