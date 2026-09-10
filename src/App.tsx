@@ -789,7 +789,7 @@ export default function App() {
     return {
       label: review.label, files: review.changes.map((c) => c.path), text,
       marks: text != null && r ? marksFromPatch(review.patch, r) : null,
-      showing: reviewShowing, canShow: !session, busy: review.busy,
+      showing: reviewShowing, canShow: !session, busy: review.busy, working: review.working,
       onToggle: () => setReviewShowing((v) => !v),
       onOpenFile: (p) => selectFile(`${project.root}/${p}`),
       onAccept: review.accept, onReject: review.reject,
