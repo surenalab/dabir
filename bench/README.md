@@ -30,7 +30,18 @@ Pass rates per vendor are the artifact that matters; publish them with a release
 
 Running several providers at once is fine (each task works in its own temp copy), but build the test binary once first (`cargo test --no-run`) and start the runs from that binary, or the second `cargo test` will wait on the build lock and may rewrite the binary under the first.
 
-## Results, 2026-09-10
+## Results, 2026-09-10, second run
+
+After the run path changed (worktrees seeded from the working copy; Accept applies to the working tree with a plain `git apply`, three-way as a fallback), all four providers ran in parallel from one test binary. Every task passed on the first attempt; no reruns.
+
+| Provider | Passed | Mean per task | Slowest | Suite |
+|---|---|---|---|---|
+| Grok | 20/20 | 24 s | 79 s (05-cite-add) | 7.9 min |
+| Codex | 20/20 | 33 s | 41 s | 11.1 min |
+| Claude Code | 20/20 | 35 s | 159 s (20-compile-and-fix-skill) | 11.6 min |
+| Cursor | 20/20 | 44 s | 101 s | 14.6 min |
+
+## Results, 2026-09-10, first run
 
 | Provider | Passed | Mean per task | Notes |
 |---|---|---|---|
