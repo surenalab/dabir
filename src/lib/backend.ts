@@ -5,7 +5,7 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { SAMPLE_FILES, SAMPLE_PROJECT } from "./sample";
 import { applyPatch } from "./review";
 
@@ -37,6 +37,18 @@ export const native = isTauri();
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // ---------------------------------------------------------------- project and files
+
+/** Where to write an export; null when the user cancels. */
+export async function pickSavePath(defaultPath: string, filterName: string, extensions: string[]): Promise<string | null> {
+  if (!native) return `/Users/ada/Desktop/${defaultPath}`;
+  const picked = await saveDialog({ defaultPath, filters: [{ name: filterName, extensions }], title: "Export" });
+  return typeof picked === "string" ? picked : null;
+}
+export async function revealPath(path: string): Promise<void> {
+  if (!native) return;
+  const { revealItemInDir } = await import("@tauri-apps/plugin-opener");
+  await revealItemInDir(path);
+}
 
 export async function pickFolder(title = "Open a paper"): Promise<string | null> {
   if (!native) return SAMPLE_PROJECT.root;
@@ -170,6 +182,23 @@ export async function newPaper(parent: string, name: string, template: string): 
   }
   return invoke<string>("new_paper", { parent, name, template });
 }
+// ---------------------------------------------------------------- export
+
+export type ExportKind = "pdf" | "arxiv" | "source" | "docx" | "html" | "md";
+export interface ExportReport { path: string; files: number; bytes: number; notes: string[] }
+export async function exportTools(): Promise<{ pandoc: string | null }> {
+  if (!native) return { pandoc: null };
+  return invoke("export_tools");
+}
+export async function exportPaper(root: string, main: string, dest: string, kind: ExportKind): Promise<ExportReport> {
+  if (!native) {
+    await wait(700);
+    if (kind === "docx" || kind === "html" || kind === "md") throw new Error("pandoc is not installed. Install it with `brew install pandoc` (or from pandoc.org), then export again.");
+    return { path: dest, files: kind === "pdf" ? 1 : 14, bytes: kind === "pdf" ? 412_000 : 2_300_000, notes: kind === "arxiv" ? ["3 files under code/ left out; arXiv only needs what compiles."] : [] };
+  }
+  return invoke("export_paper", { root, main, dest, kind });
+}
+
 export interface TemplateProgress { template: string; message: string }
 let templateHandlers: ((p: TemplateProgress) => void)[] = [];
 export function onTemplateProgress(handler: (p: TemplateProgress) => void): () => void {

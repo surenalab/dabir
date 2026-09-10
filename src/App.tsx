@@ -8,6 +8,7 @@ import { ShortcutSheet } from "./components/ShortcutSheet";
 import { CloneSheet } from "./components/CloneSheet";
 import { ShareSheet, type LiveState } from "./components/ShareSheet";
 import { NewPaperSheet } from "./components/NewPaperSheet";
+import { ExportSheet } from "./components/ExportSheet";
 import { SettingsSheet } from "./components/SettingsSheet";
 import type { EditorApi } from "./components/SourceEditor";
 import { useSettings, updateSettings } from "./lib/settings";
@@ -65,7 +66,7 @@ export default function App() {
   const [focused, setFocused] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  const [sheet, setSheet] = useState<"shortcuts" | "clone" | "share" | "new" | "settings" | null>(null);
+  const [sheet, setSheet] = useState<"shortcuts" | "clone" | "share" | "new" | "settings" | "export" | null>(null);
   // The template the New Paper chooser opens on, when a welcome-card starter was clicked.
   const [newTemplate, setNewTemplate] = useState<string | null>(null);
   const [starters, setStarters] = useState<{ id: string; label: string }[]>([]);
@@ -225,6 +226,21 @@ export default function App() {
     }
   }, [project, dirty, file, compileState.status, review, reviewShowing, session]);
   compileRef.current = compile;
+  /** For Export: the checked-in paper's PDF exists, compiling it now if it does not. */
+  const ensurePdf = useCallback(async (): Promise<boolean> => {
+    if (!project?.mainTex) return false;
+    if (compileState.status === "done" && compileState.result.pdf && !compileState.agent) return true;
+    if (dirty && sourceRef.current != null && file) { try { await writeText(file, sourceRef.current); setDirty(false); } catch (e) { setError(String(e)); return false; } }
+    setCompileState({ status: "running", startedAt: Date.now() });
+    try {
+      const result = await runCompile(project.mainTex);
+      setCompileState({ status: "done", result, at: Date.now() });
+      return result.ok && !!result.pdf;
+    } catch (e) {
+      setCompileState({ status: "done", at: Date.now(), result: { ok: false, pdf: null, log: String(e), engine: "", millis: 0, diagnostics: [{ severity: "error", category: "other", file: null, line: null, message: String(e), context: null }] } });
+      return false;
+    }
+  }, [project, compileState, dirty, file]);
   const toggleCompileOnSave = useCallback(() => updateSettings({ compileOnSave: !settings.compileOnSave }), [settings.compileOnSave]);
 
   const showInPdf = useCallback(async () => {
@@ -588,6 +604,7 @@ export default function App() {
       case "import-overleaf": importFromOverleaf(); break;
       case "clone": setSheet("clone"); break;
       case "share": setSheet("share"); break;
+      case "export": setSheet("export"); break;
       case "save": save(); break;
       case "compile": compile(); break;
       case "show-log": setShowLog((v) => !v); break;
@@ -645,6 +662,7 @@ export default function App() {
       const shifted: Record<string, string> = { g: "check-grammar", b: "fmt-bold", i: "fmt-italic", e: "fmt-emph", m: "fmt-math", c: "fmt-cite", r: "fmt-ref", l: "show-log", j: "sync-pdf", s: "share", o: "clone" };
       if (e.shiftKey && !e.altKey && shifted[k]) { e.preventDefault(); command(shifted[k]); return; }
       if (e.altKey && k === "c") { e.preventDefault(); command("commit"); return; }
+      if (e.altKey && (k === "e" || e.code === "KeyE")) { e.preventDefault(); command("export"); return; }
       if (k === "=" || k === "+") { e.preventDefault(); command("zoom-in"); return; }
       if (k === "-") { e.preventDefault(); command("zoom-out"); return; }
       if (k === "0") { e.preventDefault(); command("zoom-fit"); return; }
@@ -834,8 +852,9 @@ export default function App() {
       {sheet === "share" && (
         <ShareSheet projectName={project?.name ?? "Dabir"} live={live} overleafUrl={overleafUrl} busy={liveBusy} onClose={() => setSheet(null)}
           onStart={startSession} onJoin={joinSession} onStop={stopSession} onSetOverleaf={setOverleaf} onPull={pullOverleaf} onPush={pushOverleaf}
-          onZotero={importZotero} onBibFile={importBib} signalingUrl={settings.signalingUrl} direct={directApi} />
+          onZotero={importZotero} onBibFile={importBib} onExport={() => setSheet("export")} signalingUrl={settings.signalingUrl} direct={directApi} />
       )}
+      {sheet === "export" && project && <ExportSheet project={project} onClose={() => setSheet(null)} ensurePdf={ensurePdf} onNote={setNote} />}
       {sheet === "new" && <NewPaperSheet onClose={() => setSheet(null)} onCreate={createPaper} initial={newTemplate} />}
       {sheet === "settings" && <SettingsSheet onClose={() => setSheet(null)} />}
     </div>

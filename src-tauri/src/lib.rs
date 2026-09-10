@@ -5,6 +5,7 @@
 //! not ask for, except the build directory under `.dabir/build`.
 
 mod agents;
+mod export;
 mod git;
 mod memory;
 mod relay;
@@ -721,7 +722,14 @@ fn compile(app: AppHandle, main_tex: String) -> Result<CompileResult, String> {
     let started = std::time::Instant::now();
     let child = Command::new(&tectonic)
         .current_dir(root)
-        .args(["-X", "compile", "--keep-logs", "--synctex", "--outdir"])
+        .args([
+            "-X",
+            "compile",
+            "--keep-logs",
+            "--keep-intermediates",
+            "--synctex",
+            "--outdir",
+        ])
         .arg(&outdir)
         .arg(&main)
         .stdout(std::process::Stdio::piped())
@@ -849,6 +857,41 @@ fn templates_cache(app: &AppHandle) -> PathBuf {
         .join("templates");
     let _ = fs::create_dir_all(&dir);
     dir
+}
+
+// ---------------------------------------------------------------- export
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ExportTools {
+    pandoc: Option<String>,
+}
+
+#[tauri::command]
+fn export_tools() -> ExportTools {
+    ExportTools {
+        pandoc: export::pandoc_version(),
+    }
+}
+
+/// `kind`: pdf · arxiv · source · docx · html · md. `dest` is the file the user chose.
+#[tauri::command]
+fn export_paper(
+    root: String,
+    main: String,
+    dest: String,
+    kind: String,
+) -> Result<export::Report, String> {
+    let root = PathBuf::from(&root);
+    let main = PathBuf::from(&main);
+    let dest = PathBuf::from(&dest);
+    match kind.as_str() {
+        "pdf" => export::pdf(&main, &dest),
+        "arxiv" => export::arxiv_zip(&root, &main, &dest),
+        "source" => export::source_zip(&root, &dest),
+        "docx" | "html" | "md" => export::via_pandoc(&root, &main, &dest, &kind),
+        _ => Err(format!("Unknown export {}", kind)),
+    }
 }
 
 #[tauri::command]
@@ -1615,6 +1658,15 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
                 .accelerator("CmdOrCtrl+Shift+S")
                 .build(app)?,
         )
+        .item(
+            &MenuItemBuilder::with_id("export", "Export…")
+                .accelerator(if cfg!(target_os = "macos") {
+                    "Alt+Cmd+E"
+                } else {
+                    "CmdOrCtrl+Alt+E"
+                })
+                .build(app)?,
+        )
         .separator()
         .close_window()
         .build()?;
@@ -1841,6 +1893,8 @@ pub fn run() {
             compile_cancel,
             import_overleaf_zip,
             templates_list,
+            export_tools,
+            export_paper,
             new_paper,
             bib_import_file,
             zotero_import,
