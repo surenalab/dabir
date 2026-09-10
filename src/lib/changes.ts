@@ -35,11 +35,16 @@ interface FieldState { items: ChangeRange[]; deco: DecorationSet; marks: number;
 
 function newId() { return Math.random().toString(36).slice(2, 10); }
 
+/** Colours arrive from peers and from files on disk; only a hex colour may reach a style attribute. */
+export function safeColor(color: string): string {
+  return /^#[0-9a-fA-F]{3,8}$/.test(color) ? color : "var(--warn)";
+}
+
 function build(items: ChangeRange[]): DecorationSet {
   const sorted = [...items].sort((a, b) => a.from - b.from || a.to - b.to);
   return Decoration.set(sorted.map((c) => Decoration.mark({
     class: `cm-sugg ${c.kind === "insert" ? "ins" : "del"}`,
-    attributes: { "data-change": c.id, style: `--sugg-color:${c.color}` },
+    attributes: { "data-change": c.id, style: `--sugg-color:${safeColor(c.color)}` },
   }).range(c.from, c.to)), true);
 }
 
@@ -169,7 +174,7 @@ const changeHover = hoverTooltip((view, pos) => {
     create() {
       const dom = document.createElement("div");
       dom.className = "grammar-card change-card";
-      dom.style.setProperty("--sugg-color", c.color);
+      dom.style.setProperty("--sugg-color", safeColor(c.color));
       const msg = document.createElement("div"); msg.className = "gc-msg";
       const who = document.createElement("b"); who.textContent = c.author; msg.appendChild(who);
       msg.appendChild(document.createTextNode(` suggests ${c.kind === "insert" ? "inserting" : "deleting"} this`));
