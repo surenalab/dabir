@@ -198,7 +198,7 @@ function mathBody(env: string, inner: string): string {
 function citeLabel(key: string): string {
   const e = ctx.bib[key];
   if (e) return e.label;
-  const m = /^([a-zA-Z\-]+?)(\d{4})?[a-z]*$/.exec(key);
+  const m = /^([a-zA-Z-]+?)(\d{4})?[a-z]*$/.exec(key);
   if (!m) return key;
   const name = m[1].charAt(0).toUpperCase() + m[1].slice(1);
   return m[2] ? `${name} ${m[2]}` : name;

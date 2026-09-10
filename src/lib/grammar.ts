@@ -29,7 +29,7 @@ export function toPlain(src: string): Plain {
       const dropArg = ["cite", "citep", "citet", "ref", "eqref", "label", "includegraphics", "input", "include", "usepackage", "documentclass", "bibliography", "bibliographystyle", "begin", "end", "autoref", "cref"].includes(name);
       if (src[i] === "{") {
         if (keepArg) { i++; continue; } // fall through: the content is prose
-        if (dropArg || true) {
+        { // every other argument is dropped: it is a key, a path or a length, not prose
           let depth = 0; const start = i;
           while (i < src.length) { if (src[i] === "{") depth++; else if (src[i] === "}") { depth--; if (depth === 0) { i++; break; } } i++; }
           if (dropArg && /cite|ref/.test(name)) push("X", start);
