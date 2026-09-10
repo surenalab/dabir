@@ -551,6 +551,14 @@ button { background: none; border: 0; padding: 0; cursor: default; }
 .vz-fold.vz-sugg { flex-wrap: wrap; }
 .vz-fold.vz-sugg::before { flex-basis: 100%; margin: 0; }
 
+/* A coauthor's caret inside a widget's hidden source: their name in their colour, where the caret would be. */
+.vz-peers { position: relative; }
+.vz-peer-tags { position: absolute; top: -0.9em; right: 6px; display: inline-flex; gap: 4px; pointer-events: none; z-index: 2; }
+.vz-math.vz-peers .vz-peer-tags, .vz-chip.vz-peers .vz-peer-tags { top: -1.25em; right: auto; left: 0; }
+.vz-peer { font-family: var(--font-ui); font-size: 10px; line-height: 14px; font-weight: 500; color: var(--paper); background: var(--peer-color); border-radius: 3px 3px 3px 0; padding: 0 5px; white-space: nowrap; }
+.vz-math.vz-peers, .vz-chip.vz-peers { box-shadow: inset 0 -1.5px 0 var(--peer-color, var(--ink-3)); }
+.vz-eq.vz-peers, .vz-figure.vz-peers, .vz-fold.vz-peers { box-shadow: 0 0 0 1px color-mix(in srgb, var(--peer-color, var(--ink-3)) 45%, transparent); border-radius: var(--radius-md); }
+
 /* PDF pages and SyncTeX marker */
 .pdf-page { position: relative; box-shadow: var(--shadow-raised); background: #fff; cursor: crosshair; }
 .pdf-page canvas { display: block; }
