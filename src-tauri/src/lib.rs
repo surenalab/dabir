@@ -1163,10 +1163,23 @@ fn agent_run(
     let cont = follow_up.and_then(|f| git::worktree_cwd(&root_p, &f.run_id).map(|cwd| (f, cwd)));
     let (run_id, wt, full) = match cont {
         Some((f, cwd)) => {
+            // Edits the author saved since the run started come along, so the agent sees the paper as it is now.
+            let carried = git::sync_working_copy(&root_p, &f.run_id).unwrap_or_default();
+            let (_, prefix) = git::repo_prefix(&root_p).unwrap_or_default();
+            let carried: Vec<String> = carried
+                .iter()
+                .map(|p| {
+                    p.strip_prefix(&prefix)
+                        .unwrap_or(p)
+                        .trim_start_matches('/')
+                        .to_string()
+                })
+                .collect();
             let ask = format!(
-                "This request continues your previous one in this same working copy. Earlier request: {}\nYour report then: {}\nThe files still hold the changes you made; the author has not accepted them yet and now asks for the following on top of them. Do not undo your earlier work unless asked.\n\n{}",
+                "This request continues your previous one in this same working copy. Earlier request: {}\nYour report then: {}\nThe files still hold the changes you made; the author has not accepted them yet and now asks for the following on top of them. Do not undo your earlier work unless asked.{}\n\n{}",
                 f.prompt.trim(),
                 if f.reply.trim().is_empty() { "(none)" } else { f.reply.trim() },
+                if carried.is_empty() { String::new() } else { format!("\nSince then the author edited {} by hand; those edits are already in the files.", carried.join(", ")) },
                 prompt
             );
             let full = agent_preamble(&root_p, &cwd, &ask);
@@ -1982,6 +1995,55 @@ mod tests {
     }
 
     #[test]
+    fn follow_up_carries_the_authors_edits_but_not_over_the_agents() {
+        let dir = std::env::temp_dir().join(format!("dabir-follow-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("main.tex"), "\\documentclass{article}\nbody\n").unwrap();
+        fs::write(dir.join("notes.tex"), "notes\n").unwrap();
+        git::init(&dir).unwrap();
+        git::commit(&dir, "init", None).unwrap();
+        let wt = git::worktree_add(&dir, "f1").unwrap();
+        // The agent changes main.tex; meanwhile the author edits notes.tex, adds refs.bib, and also
+        // touches main.tex in the checkout.
+        fs::write(wt.join("main.tex"), "\\documentclass{article}\nagent\n").unwrap();
+        fs::write(dir.join("notes.tex"), "author notes\n").unwrap();
+        fs::write(dir.join("refs.bib"), "@article{a}\n").unwrap();
+        fs::write(
+            dir.join("main.tex"),
+            "\\documentclass{article}\nbody\nauthor\n",
+        )
+        .unwrap();
+        let carried = git::sync_working_copy(&dir, "f1").unwrap();
+        assert_eq!(
+            carried,
+            vec!["notes.tex".to_string(), "refs.bib".to_string()]
+        );
+        assert_eq!(
+            fs::read_to_string(wt.join("notes.tex")).unwrap(),
+            "author notes\n"
+        );
+        assert!(wt.join("refs.bib").exists());
+        assert_eq!(
+            fs::read_to_string(wt.join("main.tex")).unwrap(),
+            "\\documentclass{article}\nagent\n",
+            "the agent's file is left alone"
+        );
+        // The run's diff is still the agent's work alone.
+        let d = git::worktree_diff(&dir, "f1").unwrap();
+        assert_eq!(
+            d.changes
+                .iter()
+                .map(|c| c.path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["main.tex"]
+        );
+        // A second sync with nothing new carries nothing.
+        assert!(git::sync_working_copy(&dir, "f1").unwrap().is_empty());
+        let _ = git::worktree_remove(&dir, "f1");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn nested_paper_worktree_round_trip() {
         // A paper inside a larger repository: the agent works in the paper's folder of the worktree,
         // paths are reported relative to the paper, and accept lands in the paper's folder.
@@ -1998,6 +2060,12 @@ mod tests {
             "agent cwd is the paper inside the worktree: {:?}",
             wt
         );
+        // A follow-up finds the same folder while the run is under review, and nothing once it is gone.
+        assert_eq!(
+            git::worktree_cwd(&paper, "n1").as_deref(),
+            Some(wt.as_path())
+        );
+        assert!(git::worktree_cwd(&paper, "missing").is_none());
         fs::write(wt.join("main.tex"), "changed\n").unwrap();
         let d = git::worktree_diff(&paper, "n1").unwrap();
         assert_eq!(d.changes.len(), 1);
@@ -2018,6 +2086,10 @@ mod tests {
             "changed\n"
         );
         assert!(!git::worktree_dir(&paper, "n1").exists());
+        assert!(
+            git::worktree_cwd(&paper, "n1").is_none(),
+            "accept removes the run's worktree"
+        );
         let _ = fs::remove_dir_all(&repo);
     }
 

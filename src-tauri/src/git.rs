@@ -377,6 +377,123 @@ pub fn worktree_add(root: &Path, run_id: &str) -> Result<PathBuf, String> {
     Ok(cwd)
 }
 
+/// Repository-relative paths that differ between a working tree and a commit: tracked edits and
+/// deletions against `against`, plus untracked files.
+fn changed_paths(dir: &Path, against: &str) -> Result<Vec<String>, String> {
+    let split = |out: std::process::Output| -> Vec<String> {
+        out.stdout
+            .split(|b| *b == 0)
+            .filter(|s| !s.is_empty())
+            .map(|s| String::from_utf8_lossy(s).to_string())
+            .collect()
+    };
+    let tracked = Command::new("git")
+        .current_dir(dir)
+        .args(["diff", "--name-only", "-z", against])
+        .output()
+        .map_err(|e| e.to_string())?;
+    let untracked = Command::new("git")
+        .current_dir(dir)
+        .args(["ls-files", "--others", "--exclude-standard", "-z"])
+        .output()
+        .map_err(|e| e.to_string())?;
+    let mut all = split(tracked);
+    all.extend(split(untracked));
+    all.sort();
+    all.dedup();
+    Ok(all)
+}
+
+/// Before a follow-up request, carry the author's edits made since the run started into the run's
+/// worktree, so the agent builds on the paper as it is now. Files the agent itself changed are left
+/// alone (Accept resolves those three-way). The carried files are committed on the run branch so the
+/// run's diff stays the agent's work alone. Returns the paths carried, relative to the repository.
+pub fn sync_working_copy(root: &Path, run_id: &str) -> Result<Vec<String>, String> {
+    let wt = worktree_dir(root, run_id);
+    let (workdir, _) = repo_prefix(root)?;
+    let seed = Command::new("git")
+        .current_dir(&wt)
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !seed.status.success() {
+        return Err(String::from_utf8_lossy(&seed.stderr).to_string());
+    }
+    let seed = String::from_utf8_lossy(&seed.stdout).trim().to_string();
+    let agent: std::collections::HashSet<String> =
+        changed_paths(&wt, "HEAD")?.into_iter().collect();
+    let mut carried = Vec::new();
+    for rel in changed_paths(&workdir, &seed)? {
+        if agent.contains(&rel) || rel.contains(".dabir/") {
+            continue;
+        }
+        let src = workdir.join(&rel);
+        let dst = wt.join(&rel);
+        if src.is_file() {
+            // An untracked file in the checkout shows up on every pass; carry it once.
+            if dst.is_file() && std::fs::read(&src).ok() == std::fs::read(&dst).ok() {
+                continue;
+            }
+            if let Some(p) = dst.parent() {
+                std::fs::create_dir_all(p).map_err(|e| e.to_string())?;
+            }
+            std::fs::copy(&src, &dst).map_err(|e| format!("{}: {}", rel, e))?;
+        } else if dst.exists() {
+            std::fs::remove_file(&dst).map_err(|e| format!("{}: {}", rel, e))?;
+        } else {
+            continue;
+        }
+        carried.push(rel);
+    }
+    if carried.is_empty() {
+        return Ok(carried);
+    }
+    let out = Command::new("git")
+        .current_dir(&wt)
+        .args(["add", "-A", "--"])
+        .args(&carried)
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).to_string());
+    }
+    let mut commit = Command::new("git");
+    commit.current_dir(&wt);
+    if !has_identity(&wt) {
+        commit.args(["-c", "user.name=Dabir", "-c", "user.email=dabir@localhost"]);
+    }
+    let out = commit
+        .args([
+            "commit",
+            "-q",
+            "--no-verify",
+            "--only",
+            "-m",
+            "Author's edits between requests",
+            "--",
+        ])
+        .args(&carried)
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        return Err(format!(
+            "Could not carry your recent edits into the run: {}{}",
+            String::from_utf8_lossy(&out.stderr),
+            String::from_utf8_lossy(&out.stdout)
+        ));
+    }
+    Ok(carried)
+}
+
+fn has_identity(dir: &Path) -> bool {
+    Command::new("git")
+        .current_dir(dir)
+        .args(["config", "user.email"])
+        .output()
+        .map(|o| o.status.success() && !o.stdout.is_empty())
+        .unwrap_or(false)
+}
+
 /// Copy the checkout's uncommitted state (tracked edits and untracked files) into a fresh worktree
 /// and commit it there. No-op when the checkout is clean.
 fn seed_working_copy(workdir: &Path, wt: &Path) -> Result<(), String> {
@@ -437,15 +554,9 @@ fn seed_working_copy(workdir: &Path, wt: &Path) -> Result<(), String> {
             .output();
     }
     // The owner's identity when configured; a local fallback only so the seed commit can exist at all.
-    let has_identity = Command::new("git")
-        .current_dir(wt)
-        .args(["config", "user.email"])
-        .output()
-        .map(|o| o.status.success() && !o.stdout.is_empty())
-        .unwrap_or(false);
     let mut commit = Command::new("git");
     commit.current_dir(wt);
-    if !has_identity {
+    if !has_identity(wt) {
         commit.args(["-c", "user.name=Dabir", "-c", "user.email=dabir@localhost"]);
     }
     let out = commit

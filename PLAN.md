@@ -22,6 +22,8 @@ The full plan with the design brief and architecture is rendered at [docs/plan.h
 
 **2026-09-10, run memory.** Runs were stateless: each CLI invocation started fresh, so "now make it a plot" after "add a figure" had no referent. The preamble now ends with what happened before the request: the last three runs from `.dabir/memory/runs.md` (date, agent, request, files, accepted or rejected, and the agent's own closing report, which Accept and Reject now log), and the last six History steps with their files, so the agent knows what it did, whether the author kept it, and what the author changed by hand since.
 
+**2026-09-10, follow-ups.** The owner's next test: asking again while the agent's changes were under review started a fresh worktree, so the unaccepted work vanished and the transcript was replaced; it looked like the agent had no memory. A second request now continues the run under review: same worktree, and the preamble tells the agent what it was asked, what it reported and that the author has not accepted it yet, so it builds on its work instead of redoing it. The panel keeps every earlier request and reply above the current one; Accept, Reject and the run log cover the whole conversation ("add a figure → make it a plot"). While the follow-up works, the agent's version stays on screen with Accept and Reject held and the banner saying so, rather than snapping back to the author's text until the new run lands. Settings shows the commit and day the running copy was built from, since one report came from an older copy in /Applications. Edits the author saves between two turns are carried into the run's worktree before the follow-up starts (files the agent changed are left to it; the carried files are committed on the run branch so the run's diff stays the agent's work), and the preamble names them.
+
 **Harness (2026-09-10):** CONTRIBUTING.md, docs/REVIEW.md, `npm run check`, `npm run review` (own review bot on local agent subscriptions), ESLint, clippy and fmt in CI, pull request template, pre-push hook, optional Claude review workflow on the owner's subscription.
 
 **Next, in order:**
@@ -149,11 +151,3 @@ Built once the Windows and Linux builds started running. Every joiner rebuilds t
 - The working folder is literally named `Open Source ` with a trailing space. It works, but some tools may trip on it.
 - The `.dabir/build` output folder must exist before Tectonic runs; the compile command creates it.
 - In the browser preview (`npm run dev`) compile and PDF are mocked because there is no TeX engine in the browser.
-
-### Follow-ups on a reviewed run
-
-Asking again while the agent's changes were under review used to start a fresh worktree, which silently
-dropped those changes and replaced the transcript. Now a second request continues the same run: same
-worktree, the agent is told what it did and that the author has not accepted it yet, and the panel keeps
-each earlier request and reply above the new one. Accept, Reject and the memory log cover the whole
-conversation. Settings shows the commit and day the running copy was built from.
