@@ -11,7 +11,7 @@ import { applyPatch } from "./review";
 
 export type EntryKind = "dir" | "tex" | "bib" | "code" | "figure" | "data" | "other";
 export interface Entry { name: string; path: string; kind: EntryKind; children: Entry[] }
-export interface Project { root: string; name: string; mainTex: string | null; hasGit: boolean; hasMemory: boolean; tree: Entry[] }
+export interface Project { root: string; name: string; mainTex: string | null; hasGit: boolean; hasMemory: boolean; tree: Entry[]; treeTruncated?: boolean }
 
 export interface Diagnostic { severity: "error" | "warning" | "info"; category: string; file: string | null; line: number | null; message: string; context: string | null }
 export interface CompileResult { ok: boolean; pdf: string | null; log: string; diagnostics: Diagnostic[]; engine: string; millis: number }

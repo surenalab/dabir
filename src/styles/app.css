@@ -298,7 +298,7 @@ button { background: none; border: 0; padding: 0; cursor: default; }
 .btn.danger:hover { border-color: var(--diff-del); }
 .btn svg { width: 15px; height: 15px; stroke-width: 1.75; }
 .doc-empty .hint { font-size: var(--text-sm); color: var(--ink-3); margin-top: var(--space-4); }
-.doc-empty .hint code { font-family: var(--font-mono); background: var(--paper-2); padding: 1px 5px; border-radius: 3px; }
+.doc-empty code { font-family: var(--font-mono); font-size: .92em; background: var(--paper-2); padding: 1px 5px; border-radius: 3px; }
 
 /* Errors from the backend, non-modal */
 .banner { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-2) var(--space-4); background: var(--warn-wash); color: var(--ink); border-bottom: 1px solid var(--line); font-size: var(--text-sm); }
