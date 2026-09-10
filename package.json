@@ -14,7 +14,8 @@
     "lint": "eslint .",
     "check": "sh scripts/check.sh",
     "test:rust": "cd src-tauri && CARGO_TARGET_DIR=target/test cargo test",
-    "review": "node scripts/review.mjs"
+    "review": "node scripts/review.mjs",
+    "test:review": "node --test scripts/review.test.mjs"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",
@@ -63,4 +64,4 @@
     "vite": "^8.0.16",
     "ws": "^8.21.3"
   }
-}
+}\n

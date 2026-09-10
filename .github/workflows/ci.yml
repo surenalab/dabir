@@ -18,6 +18,15 @@ jobs:
       - run: npm ci
       - name: Tectonic sidecar (the Rust build checks it exists)
         run: node scripts/fetch-tectonic.mjs
-      - run: npx tsc --noEmit -p tsconfig.json
-      - run: npx vite build
-      - run: cargo test --manifest-path src-tauri/Cargo.toml
+      - name: TypeScript
+        run: npx tsc --noEmit -p tsconfig.json
+      - name: ESLint
+        run: npx eslint .
+      - name: Production build
+        run: npx vite build --logLevel warn
+      - name: cargo fmt
+        run: cargo fmt --check --manifest-path src-tauri/Cargo.toml
+      - name: cargo clippy
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+      - name: cargo test
+        run: cargo test --manifest-path src-tauri/Cargo.toml --quiet
