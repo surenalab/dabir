@@ -14,39 +14,81 @@
 // read-only. It must answer as JSON, which this script renders and, if asked, posts with gh.
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync, mkdtempSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
 
-const args = Object.fromEntries(process.argv.slice(2).map((a, i, all) => (a.startsWith("--") ? [a.slice(2), all[i + 1]?.startsWith("--") || all[i + 1] == null ? "1" : all[i + 1]] : [])).filter((x) => x.length));
-const provider = args.provider ?? "claude";
-const base = args.base ?? "main";
-const pr = args.pr && args.pr !== "1" ? args.pr : null;
-const post = args.post === "1";
-const out = args.out ?? null;
-const root = execFileSync("git", ["rev-parse", "--show-toplevel"]).toString().trim();
-const sh = (cmd, a, opts = {}) => execFileSync(cmd, a, { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, ...opts });
+export function parseArgs(argv) {
+  const out = {};
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]; if (!a.startsWith("--")) continue;
+    const next = argv[i + 1];
+    if (next == null || next.startsWith("--")) out[a.slice(2)] = true; else { out[a.slice(2)] = next; i++; }
+  }
+  return out;
+}
+export const isSource = (f) => /\.(ts|tsx|rs|mjs|js|css|toml|json|md|yml)$/.test(f) && !/(^|\/)(package-lock\.json|Cargo\.lock|skills-lock\.json)$/.test(f);
+/** Find the reviewer's JSON object in free text: fenced block first, then the last balanced object containing "verdict". */
+export function extractJson(text) {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/g) || [];
+  const candidates = fenced.map((b) => b.replace(/```(?:json)?\s*|```$/g, ""));
+  for (let i = text.length - 1; i >= 0; i--) {
+    if (text[i] !== "}") continue;
+    let depth = 0;
+    for (let j = i; j >= 0; j--) {
+      if (text[j] === "}") depth++; else if (text[j] === "{") { depth--; if (depth === 0) { candidates.push(text.slice(j, i + 1)); break; } }
+    }
+    if (candidates.length > 6) break;
+  }
+  for (const c of candidates) { try { const o = JSON.parse(c); if (o && typeof o === "object" && "verdict" in o) return o; } catch { /* next candidate */ } }
+  return null;
+}
 
-// ---- what changed
-let head = "HEAD";
-if (pr) { sh("gh", ["pr", "checkout", pr]); head = "HEAD"; }
-const mergeBase = sh("git", ["merge-base", base, head]).trim();
+const isMain = process.argv[1] && /review\.mjs$/.test(process.argv[1]);
+if (isMain) main();
+
+function fail(msg, code = 1) { console.error(msg); process.exit(code); }
+
+function main() {
+const args = parseArgs(process.argv.slice(2));
+const provider = typeof args.provider === "string" ? args.provider : "claude";
+const pr = typeof args.pr === "string" ? args.pr : null;
+const post = args.post === true;
+if (post && !pr) fail("--post needs --pr <number>; nothing was posted.");
+if (args.out === true) fail("--out needs a file path.");
+const out = typeof args.out === "string" ? args.out : null;
+let root;
+try { root = execFileSync("git", ["rev-parse", "--show-toplevel"]).toString().trim(); } catch { fail("Not inside a Git repository."); }
+const sh = (cmd, a, opts = {}) => execFileSync(cmd, a, { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"], ...opts });
+
+// ---- what changed. A pull request is fetched into a ref; HEAD and the working tree are never moved.
+let head = "HEAD", base = typeof args.base === "string" ? args.base : "main";
+if (pr) {
+  try { sh("git", ["fetch", "-q", "origin", `pull/${pr}/head:refs/dabir/review/pr-${pr}`]); head = `refs/dabir/review/pr-${pr}`; }
+  catch { fail(`Could not fetch pull request ${pr} from origin. Is the remote named origin and gh signed in?`); }
+  try { const b = JSON.parse(sh("gh", ["pr", "view", pr, "--json", "baseRefName"])).baseRefName; if (b && !(typeof args.base === "string")) base = `origin/${b}`; } catch { /* keep base */ }
+}
+let mergeBase;
+try { mergeBase = sh("git", ["merge-base", base, head]).trim(); }
+catch { fail(`No branch or ref named ${base} here. Pass --base origin/main (or the branch the change targets).`); }
 const diff = sh("git", ["diff", `${mergeBase}...${head}`, "--", ".", ":(exclude)package-lock.json", ":(exclude)Cargo.lock", ":(exclude)*.png", ":(exclude)*.jpg"]);
-if (!diff.trim()) { console.error(`Nothing to review: no changes between ${base} and ${head}.`); process.exit(2); }
+if (!diff.trim()) fail(`Nothing to review: no changes between ${base} and ${pr ? "pull request " + pr : head}.`, 2);
 const files = sh("git", ["diff", "--name-only", `${mergeBase}...${head}`]).trim().split("\n").filter(Boolean);
-const srcFiles = files.filter((f) => /\.(ts|tsx|rs|mjs|js|css|toml|json|md|yml)$/.test(f) && !/lock|\.png|\.jpg/.test(f) && existsSync(join(root, f)));
+const show = (f) => { try { return sh("git", ["show", `${head}:${f}`]); } catch { return null; } };
+const srcFiles = files.filter(isSource).filter((f) => show(f) != null);
 
 // ---- codebase awareness without a service: exported symbols touched by the change, and where they are used
 const symbols = new Set();
 for (const f of srcFiles.filter((x) => /\.(ts|tsx|rs)$/.test(x))) {
-  const text = readFileSync(join(root, f), "utf8");
+  const text = show(f) ?? "";
   for (const m of text.matchAll(/export (?:async )?(?:function|const|class|interface|type) ([A-Za-z_][A-Za-z0-9_]*)/g)) symbols.add(m[1]);
   for (const m of text.matchAll(/pub (?:async )?fn ([a-z_][a-z0-9_]*)/g)) symbols.add(m[1]);
 }
 let usages = "";
 if (symbols.size) {
   const pattern = [...symbols].slice(0, 60).join("|");
-  const r = spawnSync("git", ["grep", "-n", "-E", `\\b(${pattern})\\b`, "--", "src", "src-tauri/src", ":(exclude)*.lock"], { cwd: root, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
+  const r = spawnSync("git", ["grep", "-n", "-E", `\\b(${pattern})\\b`, head, "--", "src", "src-tauri/src"], { cwd: root, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
+  if (r.stdout) r.stdout = r.stdout.replace(new RegExp(`^${head.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}:`, "gm"), "");
   usages = (r.stdout || "").split("\n").filter((l) => l && !files.some((f) => l.startsWith(f + ":"))).slice(0, 400).join("\n");
 }
 
@@ -56,7 +98,7 @@ const rubric = read("docs/REVIEW.md"), rules = read("CONTRIBUTING.md");
 const design = (read("DESIGN.md").match(/## Do not[\s\S]*?(?=\n## |$)/) || [""])[0];
 let budget = 180_000; // characters of source we include in full; the agent can read the rest itself
 const sources = [];
-for (const f of srcFiles) { const t = readFileSync(join(root, f), "utf8"); if (t.length > budget) continue; budget -= t.length; sources.push(`===== ${f}\n${t}`); }
+for (const f of srcFiles) { const t = show(f) ?? ""; if (t.length > budget) continue; budget -= t.length; sources.push(`===== ${f}\n${t}`); }
 
 const prompt = `You are reviewing a change to Dabir, a local-first desktop editor for scientific papers (Tauri, React, Rust).
 Work through the rubric completely. Report only real findings; do not restate the diff; do not praise.
@@ -89,7 +131,8 @@ ${usages || "(none found)"}
 const home = homedir();
 const env = { ...process.env }; delete env.ANTHROPIC_BASE_URL; for (const k of Object.keys(env)) if (k.startsWith("CLAUDE_CODE_")) delete env[k];
 const tmp = mkdtempSync(join(tmpdir(), "dabir-review-"));
-const promptFile = join(tmp, "prompt.md"); writeFileSync(promptFile, prompt);
+const cleanup = () => { try { rmSync(tmp, { recursive: true, force: true }); } catch { /* best effort */ } };
+process.on("exit", cleanup);
 const bins = {
   claude: [existsSync(join(home, ".local/bin/claude")) ? join(home, ".local/bin/claude") : "claude", ["-p", "--output-format", "text", "--permission-mode", "plan", "--allowedTools", "Read,Grep,Glob"]],
   codex: ["/Applications/ChatGPT.app/Contents/Resources/codex", ["exec", "--sandbox", "read-only", "--skip-git-repo-check", "-C", root]],
@@ -101,11 +144,10 @@ const stdinProviders = new Set(["codex", "cursor", "claude"]);
 const runArgs = stdinProviders.has(provider) ? extra : [...extra.slice(0, 1), prompt, ...extra.slice(1)];
 console.error(`Reviewing ${files.length} files against ${base} with ${provider}…`);
 const r = spawnSync(bin, runArgs, { cwd: root, env, encoding: "utf8", input: stdinProviders.has(provider) ? prompt : undefined, maxBuffer: 64 * 1024 * 1024, timeout: 15 * 60 * 1000 });
-if (r.error) { console.error(`Could not start ${provider}: ${r.error.message}`); process.exit(1); }
+if (r.error) fail(`Could not start ${provider} (${bin}): ${r.error.message}. Install its CLI and sign in, or pick another --provider.`);
 const raw = (r.stdout || "") + (r.stderr && !r.stdout ? r.stderr : "");
-const jsonText = (raw.match(/\{[\s\S]*"verdict"[\s\S]*\}/) || [null])[0];
-let review;
-try { review = JSON.parse(jsonText); } catch { console.error(`The reviewer did not answer with JSON. Raw output:\n${raw.slice(0, 4000)}`); process.exit(1); }
+const review = extractJson(raw);
+if (!review) fail(`The reviewer did not answer with JSON. Raw output:\n${raw.slice(0, 4000)}`);
 
 // ---- render
 const sev = { blocking: "Blocking", should: "Should fix", nit: "Nit" };
@@ -124,6 +166,8 @@ if (post && pr) {
   const event = review.verdict === "approve" ? "--approve" : review.verdict === "request_changes" ? "--request-changes" : "--comment";
   const body = join(tmp, "review.md"); writeFileSync(body, md);
   try { sh("gh", ["pr", "review", pr, event, "--body-file", body]); console.error(`Posted as a ${verdictWord} review on #${pr}.`); }
-  catch (e) { console.error(`gh could not post the review (${e.message}); the text is above.`); process.exit(1); }
+  catch (e) { fail(`gh could not post the review (${e.message.split("\n")[0]}); the text is above. Sign in with gh auth login and try again.`); }
 }
-process.exit(review.verdict === "request_changes" && findings.some((f) => f.severity === "blocking") ? 3 : 0);
+// A blocking finding fails the run whatever the verdict says, so this can gate a merge.
+process.exit(findings.some((f) => f.severity === "blocking") ? 3 : 0);
+}

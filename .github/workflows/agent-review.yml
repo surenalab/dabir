@@ -9,9 +9,9 @@ on:
     types: [opened, synchronize, reopened]
 jobs:
   review:
-    if: ${{ vars.AGENT_REVIEW == 'on' }}
+    if: ${{ vars.AGENT_REVIEW == 'on' && github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: ubuntu-latest
-    permissions: { contents: read, pull-requests: write, issues: write, id-token: write }
+    permissions: { contents: read, pull-requests: write, issues: write }
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }

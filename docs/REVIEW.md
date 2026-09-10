@@ -16,7 +16,7 @@ branch  ->  npm run check (local gate)  ->  pull request  ->  CI gate  ->  revie
 
 ## The review bot: `npm run review`
 
-`scripts/review.mjs` is Dabir's own codebase-aware reviewer, the open alternative to hosted services such as Greptile. It runs on the coding-agent subscriptions already on the machine and sends nothing to a third party.
+`scripts/review.mjs` is Dabir's own codebase-aware reviewer, the open alternative to hosted services such as Greptile. It runs on the coding-agent subscriptions already on the machine instead of a hosted review service; the diff and the changed files go to the model vendor of the provider you choose, and nowhere else. Do not run it on a repository whose contents may not leave the machine.
 
 ```bash
 npm run review                          # this branch against main, with Claude Code
@@ -24,7 +24,7 @@ npm run review -- --provider codex      # second opinion from another vendor (al
 npm run review -- --pr 12 --post        # review pull request 12 and post it as a PR review through gh
 ```
 
-It gives the reviewer this rubric and CONTRIBUTING.md, the diff, the full text of every changed file, and every place in the repository that uses a symbol the change touched, then lets Claude Code or Codex read any other file read-only. The answer is strict JSON, rendered to Markdown with findings ordered by severity, and the exit code is non-zero when a blocking finding exists, so it can gate a merge. In CI the same review runs through `.github/workflows/agent-review.yml` once the owner stores a Claude Code OAuth token as a secret.
+It gives the reviewer this rubric and CONTRIBUTING.md, the diff, the full text of every changed file, and every place in the repository that uses a symbol the change touched, then lets Claude Code or Codex read any other file read-only. The answer is strict JSON, rendered to Markdown with findings ordered by severity; the exit code is 3 whenever a blocking finding exists, whatever the verdict says, so it can gate a merge. A pull request is fetched into `refs/dabir/review/pr-N`; your branch and working tree are never moved. In CI the same review runs through `.github/workflows/agent-review.yml` once the owner stores a Claude Code OAuth token as a secret.
 
 ## How an agent runs a review by hand
 

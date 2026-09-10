@@ -17,7 +17,7 @@ fi
 DETECT="$HOME/.claude/skills/impeccable/scripts/impeccable"
 if [ -x "$DETECT" ]; then
   step "Design detector"
-  n="$("$DETECT" detect --json src index.html 2>/dev/null | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
+  n="$("$DETECT" detect --json src index.html 2>/dev/null | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s||"[]").length))')"
   if [ "$n" != "0" ]; then "$DETECT" detect src index.html 2>/dev/null | head -40; echo "design detector: $n finding(s)"; exit 1; fi
   echo "0 findings"
 else
