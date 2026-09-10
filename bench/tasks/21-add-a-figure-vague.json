@@ -1,0 +1,1 @@
+{"id":"21-add-a-figure-vague","kind":"vague","prompt":"add a figure","expect_files":["main.tex"],"expect_count":[{"file":"main.tex","text":"\\begin{figure}","min":2}],"timeout_secs":150}
