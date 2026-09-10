@@ -2,10 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUp, Check, Loader2, Paperclip, RefreshCw, Square, X, FileText, Pencil, Terminal, Search, Wrench, Brain, FileDiff, PenLine } from "lucide-react";
 import {
   agentAccept, agentApply, agentCancel, agentDiff, agentProviders, agentPullRequest, agentReject, agentRun, memoryRead, memorySetup,
-  onAgentEvent, provenanceRerun, type Artefact, type Memory, type Pick, type Project, type Provider, type WorktreeDiff,
+  onAgentEvent, provenanceRerun, agentModels, type Artefact, type Memory, type ModelOptions, type Pick, type Project, type Provider, type WorktreeDiff,
 } from "../lib/backend";
 import { Segmented } from "./Segmented";
 import { renderMarkdown } from "../lib/md";
+import { updateSettings, useSettings } from "../lib/settings";
 import type { Comment, Peer } from "../lib/collab";
 
 type Tab = "agent" | "memory" | "people";
@@ -24,6 +25,8 @@ function toolFace(name: string | null | undefined, detail: string): { verb: stri
   if (/grep|glob|search|find|ls|list/.test(n)) return { verb: "Searched", icon: <Search />, kind: "search" };
   return { verb: name ? name.replace(/ToolCall$/, "") : "Used a tool", icon: <Wrench />, kind: "tool" };
 }
+
+const EFFORT_LABEL: Record<string, string> = { low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max" };
 
 function fmtElapsed(ms: number): string { const s = Math.max(0, Math.round(ms / 1000)); return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${s % 60} s`; }
 
@@ -103,8 +106,8 @@ function Transcript({ steps, running, started, root }: { steps: Step[]; running:
 }
 type Run =
   | { phase: "idle" }
-  | { phase: "running"; runId: string; worktree: string; prompt: string; steps: Step[]; provider: string; started: number }
-  | { phase: "review"; runId: string; worktree: string; prompt: string; steps: Step[]; provider: string; ok: boolean; summary: string; diff: WorktreeDiff | null; error?: string; started: number; finished: number }
+  | { phase: "running"; runId: string; worktree: string; prompt: string; steps: Step[]; provider: string; steer?: string; started: number }
+  | { phase: "review"; runId: string; worktree: string; prompt: string; steps: Step[]; provider: string; steer?: string; ok: boolean; summary: string; diff: WorktreeDiff | null; error?: string; started: number; finished: number }
   | { phase: "done"; text: string };
 
 interface Hunk { header: string; lines: string[] }
@@ -247,11 +250,11 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
       let diff: WorktreeDiff | null = null, error: string | undefined;
       if (project) { try { diff = await agentDiff(project.root, r.runId); } catch (err) { error = String(err); } }
       const summary = e.text || r.steps.filter((s) => s.kind === "text").map((s) => s.text).join("\n");
-      setRun({ phase: "review", runId: r.runId, worktree: r.worktree, prompt: r.prompt, steps: r.steps, provider: r.provider, ok: e.ok ?? true, summary, diff, error, started: r.started, finished: Date.now() });
+      setRun({ phase: "review", runId: r.runId, worktree: r.worktree, prompt: r.prompt, steps: r.steps, provider: r.provider, steer: r.steer, ok: e.ok ?? true, summary, diff, error, started: r.started, finished: Date.now() });
       setMessage(r.prompt.length > 72 ? r.prompt.slice(0, 69) + "…" : r.prompt);
       setExcluded(new Set());
     } else if (e.kind === "error") {
-      setRun({ phase: "review", runId: r.runId, worktree: r.worktree, prompt: r.prompt, steps: r.steps, provider: r.provider, ok: false, summary: e.text, diff: null, started: r.started, finished: Date.now() });
+      setRun({ phase: "review", runId: r.runId, worktree: r.worktree, prompt: r.prompt, steps: r.steps, provider: r.provider, steer: r.steer, ok: false, summary: e.text, diff: null, started: r.started, finished: Date.now() });
     } else if (e.kind === "thinking") {
       const last = r.steps[r.steps.length - 1];
       // Keep the original `at` so "Thought for n s" measures the whole burst, not the last chunk.
@@ -269,12 +272,28 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
   const current = providers.find((p) => p.id === provider);
   const finishedRun = run.phase === "review";
 
+  // Which model and how much thinking, per provider; remembered on this machine.
+  const settings = useSettings();
+  const model = settings.agentModel[provider] ?? "";
+  const effort = settings.agentEffort[provider] ?? "";
+  const setModel = (m: string) => updateSettings({ agentModel: { ...settings.agentModel, [provider]: m } });
+  const setEffort = (e: string) => updateSettings({ agentEffort: { ...settings.agentEffort, [provider]: e } });
+  const [modelOpts, setModelOpts] = useState<ModelOptions | null>(null);
+  useEffect(() => {
+    if (!current?.installed) { setModelOpts(null); return; }
+    let alive = true;
+    setModelOpts(null);
+    agentModels(provider).then((o) => { if (alive) setModelOpts(o); }).catch(() => { if (alive) setModelOpts({ models: [], efforts: [], defaultModel: null, custom: true }); });
+    return () => { alive = false; };
+  }, [provider, current?.installed]);
+  const steerLabel = [model ? (modelOpts?.models.find((m) => m.id === model)?.label ?? model) : null, effort ? (EFFORT_LABEL[effort] ?? effort).toLowerCase() + " effort" : null].filter(Boolean).join(" · ");
+
   const send = async () => {
     const prompt = draft.trim();
     if (!prompt || !project || run.phase === "running") return;
     try {
-      const started = await agentRun(project.root, provider, prompt);
-      setRun({ phase: "running", runId: started.runId, worktree: started.worktree, prompt, steps: [], provider, started: Date.now() });
+      const started = await agentRun(project.root, provider, prompt, model, effort);
+      setRun({ phase: "running", runId: started.runId, worktree: started.worktree, prompt, steps: [], provider, steer: steerLabel || undefined, started: Date.now() });
       setDraft("");
     } catch (e) { onNote(String(e)); }
   };
@@ -370,6 +389,31 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
             </select>
             {current && !current.installed && <span className="hint">Install the {current.bin} CLI and sign in</span>}
           </div>
+          {current?.installed && (
+            <div className="steer">
+              <label htmlFor="agent-model">Model</label>
+              <select id="agent-model" value={modelOpts && (model === "" || modelOpts.models.some((m) => m.id === model)) ? model : "__custom"} disabled={!modelOpts}
+                onChange={(e) => {
+                  if (e.target.value === "__other") { const id = window.prompt(`Model id for ${current.label}:`, model)?.trim(); if (id != null) setModel(id); return; }
+                  if (e.target.value !== "__custom") setModel(e.target.value);
+                }}
+                title={model ? `Passed to the ${current.bin} CLI as its model` : "The CLI's own default model"}>
+                <option value="">{modelOpts?.defaultModel ? `Default (${modelOpts.defaultModel})` : "Default"}</option>
+                {modelOpts?.models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+                {model && modelOpts && !modelOpts.models.some((m) => m.id === model) && <option value="__custom">{model}</option>}
+                {modelOpts?.custom && <option value="__other">Other…</option>}
+              </select>
+              {modelOpts && modelOpts.efforts.length > 0 && (
+                <>
+                  <label htmlFor="agent-effort">Effort</label>
+                  <select id="agent-effort" value={effort} onChange={(e) => setEffort(e.target.value)} title="How hard the model thinks; higher is slower and costs more">
+                    <option value="">Default</option>
+                    {modelOpts.efforts.map((e) => <option key={e} value={e}>{EFFORT_LABEL[e] ?? e}</option>)}
+                  </select>
+                </>
+              )}
+            </div>
+          )}
 
           <div className="composer">
             <textarea ref={textarea}
@@ -385,7 +429,7 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
 
           {(run.phase === "running" || run.phase === "review") && (
             <div className="run">
-              <div className="prompt"><b>You asked {providers.find((p) => p.id === run.provider)?.label ?? run.provider}</b>{run.prompt}</div>
+              <div className="prompt"><b>You asked {providers.find((p) => p.id === run.provider)?.label ?? run.provider}{run.steer ? <span className="steer-tag"> · {run.steer}</span> : null}</b>{run.prompt}</div>
               <Transcript steps={run.steps} running={run.phase === "running"} started={run.started} root={project?.root ?? null} />
               {run.phase === "running" && <div className="actions"><button className="btn" onClick={cancel}><Square /> Stop</button></div>}
               {run.steps.some((s) => s.kind === "log") && (
