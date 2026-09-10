@@ -1,0 +1,25 @@
+# Automated review on every pull request by Claude Code, through the official action, on the owner's
+# Claude subscription rather than API billing: run `claude setup-token` locally and store the result as the
+# repository secret CLAUDE_CODE_OAUTH_TOKEN, then set the repository variable AGENT_REVIEW to "on".
+# The rubric it applies is docs/REVIEW.md. For a review from a different vendor, or offline, use
+# `npm run review -- --provider codex|cursor|grok` (scripts/review.mjs), which is the same rubric.
+name: Agent review
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+jobs:
+  review:
+    if: ${{ vars.AGENT_REVIEW == 'on' }}
+    runs-on: ubuntu-latest
+    permissions: { contents: read, pull-requests: write, issues: write, id-token: write }
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            Review this pull request against docs/REVIEW.md and CONTRIBUTING.md in this repository.
+            Report findings most severe first, each with file, line, a one-sentence claim and a concrete failure scenario.
+            Do not restate the diff or praise. End with one verdict: Approve, Request changes, or Comment.
+          claude_args: "--max-turns 12"
