@@ -999,3 +999,25 @@ input[type="range"] { accent-color: var(--accent); width: 140px; }
 .doc-empty .starters button { height: 26px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--raised); color: var(--ink); font-size: var(--text-sm); font-weight: 500; }
 .doc-empty .starters button:hover { border-color: var(--ink-4); }
 .doc-empty .starters button.more { border-style: dashed; color: var(--ink-2); font-weight: 400; }
+
+/* ---------- Export sheet ---------- */
+.sheet.export { width: 520px; }
+.export-rows { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--radius-md); overflow: hidden; }
+.export-row { display: flex; gap: var(--space-3); padding: var(--space-2) var(--space-3); border-top: 1px solid var(--line); cursor: default; }
+.export-row:first-child { border-top: 0; }
+.export-row.on { background: var(--accent-wash); }
+.export-row input { margin: 3px 0 0; accent-color: var(--accent); flex: none; }
+.export-row .text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.export-row .name { font-size: var(--text-md); font-weight: 600; color: var(--ink); }
+.export-row .name .via { font-weight: 400; color: var(--ink-3); font-size: var(--text-xs); }
+.export-row .detail { font-size: var(--text-xs); color: var(--ink-2); line-height: 1.45; }
+.export-row .detail.missing { color: var(--ink-3); }
+.export-row .detail code { font-family: var(--font-mono); font-size: 10.5px; background: var(--paper-2); padding: 0 4px; border-radius: 3px; }
+.export-row.missing .name { color: var(--ink-3); }
+.export-hint { margin: var(--space-2) 0 0; font-size: var(--text-xs); color: var(--ink-3); line-height: 1.5; }
+.export-hint code { font-family: var(--font-mono); font-size: 10.5px; background: var(--paper-2); padding: 0 4px; border-radius: 3px; }
+.export-done { display: flex; gap: 6px; align-items: flex-start; margin: var(--space-3) 0 0; font-size: var(--text-sm); color: var(--ink-2); line-height: 1.5; }
+.export-done svg { width: 14px; height: 14px; color: var(--ok); flex: none; margin-top: 3px; }
+.export-done code { font-family: var(--font-mono); font-size: var(--text-xs); user-select: text; }
+.export-done .note { color: var(--ink-3); }
+.export-done .link { color: var(--accent); padding: 0 0 0 6px; font-size: inherit; }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Copy, Radio, Square, Upload, Download, Link2, BookMarked } from "lucide-react";
+import { FileDown, Copy, Radio, Square, Upload, Download, Link2, BookMarked } from "lucide-react";
 import { parseShareLink, shareLink, userName, setUserName, type Transport } from "../lib/collab";
 
 export type LiveState = { url: string; lanUrl: string; room: string; host: boolean; transport: Transport; password?: string } | null;
@@ -20,6 +20,7 @@ interface Props {
   onPush: () => Promise<void>;
   onZotero: () => Promise<void>;
   onBibFile: () => Promise<void>;
+  onExport: () => void;
 }
 
 export function ShareSheet(p: Props) {
@@ -138,6 +139,12 @@ export function ShareSheet(p: Props) {
             <button className="btn" onClick={wrap(p.onZotero)} disabled={!!p.busy}>{p.busy === "zotero" ? "Importing…" : "Import from Zotero"}</button>
             <button className="btn" onClick={wrap(p.onBibFile)} disabled={!!p.busy}>Import .bib File…</button>
           </div>
+        </section>
+
+        <section className="share-section">
+          <h3><FileDown aria-hidden /> Export</h3>
+          <p className="memory-note">The compiled PDF, the sources arXiv needs, a zip for Overleaf or a journal's submission system, or Word and HTML through pandoc.</p>
+          <div className="actions"><button className="btn" onClick={p.onExport}>Export…</button></div>
         </section>
 
         {error && <p className="composer-note" role="alert">{error}</p>}
