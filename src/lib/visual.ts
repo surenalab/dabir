@@ -76,7 +76,7 @@ export abstract class VzWidget extends WidgetType {
 }
 
 const katexCache = new Map<string, string>();
-function renderMath(tex: string, display: boolean): string {
+export function renderMath(tex: string, display: boolean): string {
   const key = (display ? "D" : "I") + tex;
   let html = katexCache.get(key);
   if (!html) {
@@ -86,7 +86,7 @@ function renderMath(tex: string, display: boolean): string {
   return html;
 }
 
-class MathWidget extends VzWidget {
+export class MathWidget extends VzWidget {
   constructor(readonly tex: string, readonly display: boolean, readonly tag: string, readonly from: number) { super(); }
   eq(o: MathWidget) { return this.sameBadges(o) && o.tex === this.tex && o.display === this.display && o.tag === this.tag; }
   render() {
@@ -116,7 +116,7 @@ export class FoldWidget extends VzWidget {
 }
 
 /** Rendered preview shown under an equation while its source is open for editing. */
-class PreviewWidget extends WidgetType {
+export class PreviewWidget extends WidgetType {
   constructor(readonly tex: string) { super(); }
   eq(o: PreviewWidget) { return o.tex === this.tex; }
   toDOM() {
@@ -229,7 +229,7 @@ export class FigureWidget extends VzWidget {
 }
 
 /** Small inline renderer for captions inside widgets. */
-function inlineHtml(src: string): string {
+export function inlineHtml(src: string): string {
   return src
     .replace(/&/g, "&amp;").replace(/</g, "&lt;")
     .replace(/\$([^$]+)\$/g, (_, t) => renderMath(t, false))
