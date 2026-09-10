@@ -5,22 +5,30 @@
 import { Facet, StateEffect, StateField, type Extension } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, hoverTooltip, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 
-export type SpellLanguage = "en-GB" | "en-US";
+/** A dictionary id from public/dict/index.json, such as "en-GB" or "de". */
+export type SpellLanguage = string;
 
 export interface Speller { correct(word: string): boolean; suggest(word: string): string[] }
+export interface Dictionary { id: SpellLanguage; label: string }
 
 const engines = new Map<string, Promise<Speller>>();
+let manifest: Promise<Dictionary[]> | null = null;
+
+/** The dictionaries shipped with the app: drop a Hunspell pair into public/dict and list it in index.json. */
+export function dictionaries(): Promise<Dictionary[]> {
+  if (!manifest) {
+    manifest = fetch("/dict/index.json").then((r) => r.json() as Promise<Dictionary[]>).catch(() => [{ id: "en-GB", label: "English (UK)" }, { id: "en-US", label: "English (US)" }]);
+  }
+  return manifest;
+}
 
 /** The dictionary for one language, loaded once from the app's own files. */
 export function loadSpeller(lang: SpellLanguage): Promise<Speller> {
   let p = engines.get(lang);
   if (!p) {
     p = (async () => {
-      const [{ default: nspell }, aff, dic] = await Promise.all([
-        import("nspell"),
-        fetch(`/dict/${lang}.aff`).then((r) => r.text()),
-        fetch(`/dict/${lang}.dic`).then((r) => r.text()),
-      ]);
+      const file = async (ext: string) => { const r = await fetch(`/dict/${lang}.${ext}`); if (!r.ok) throw new Error(`No ${lang} dictionary`); return r.text(); };
+      const [{ default: nspell }, aff, dic] = await Promise.all([import("nspell"), file("aff"), file("dic")]);
       const engine = nspell(aff, dic);
       return { correct: (w) => engine.correct(w), suggest: (w) => rank(w, engine) };
     })();
@@ -162,6 +170,19 @@ export function checkable(word: string): boolean {
   return true;
 }
 
+/** A word passes when the dictionary knows it, or its lowercase form at a sentence start, or, for elisions
+ *  such as l'image and dell'acqua, both halves around the apostrophe. */
+function accept(sp: Speller, word: string): boolean {
+  if (sp.correct(word)) return true;
+  if (word[0] === word[0].toUpperCase() && sp.correct(word.toLowerCase())) return true;
+  const cut = word.indexOf("'");
+  if (cut > 0 && cut < word.length - 1) {
+    const a = word.slice(0, cut + 1), b = word.slice(cut + 1);
+    return (sp.correct(a) || sp.correct(a.toLowerCase()) || sp.correct(a.slice(0, -1)) || sp.correct(a.slice(0, -1).toLowerCase())) && (sp.correct(b) || sp.correct(b.toLowerCase()));
+  }
+  return false;
+}
+
 // ---------------------------------------------------------------- editor extension
 
 export interface SpellConfig {
@@ -215,7 +236,7 @@ const checker = ViewPlugin.fromClass(class {
       const word = w.word.replace(/’/g, "'");
       if (!checkable(word) || own.has(word.toLowerCase()) || ignored.has(word.toLowerCase())) continue;
       let ok = this.cache.get(word);
-      if (ok === undefined) { ok = sp.correct(word) || (word[0] === word[0].toUpperCase() && sp.correct(word.toLowerCase())); this.cache.set(word, ok); }
+      if (ok === undefined) { ok = accept(sp, word); this.cache.set(word, ok); }
       if (!ok) bad.push({ from: w.from, to: w.to });
     }
     this.view.dispatch({ effects: setMisspellings.of(bad) });
