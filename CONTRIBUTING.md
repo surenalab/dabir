@@ -4,7 +4,7 @@ These rules apply to everyone who changes this repository: the owner, human cont
 
 ## The shape of a change
 
-1. **One branch per change.** Never commit to `main` directly. Branch names: `feat/<topic>`, `fix/<topic>`, `design/<topic>`, `docs/<topic>`, or `agent/<vendor>/<topic>` when an agent starts the work.
+1. **One branch per change, one worktree per agent.** Never commit to `main` directly, and never work in a checkout another person or agent is using; `git worktree add ../dabir-<name> -b <branch>` gives you your own. Branch names: `feat/<topic>`, `fix/<topic>`, `design/<topic>`, `docs/<topic>`, or `agent/<vendor>/<topic>` when an agent starts the work.
 2. **Small and whole.** A change does one thing and is complete: code, tests, docs, and a line in CHANGELOG.md under Unreleased. Split anything that needs the word "and" in its title into two branches.
 3. **Green before review.** Run the gate and fix everything it reports before opening a pull request:
    ```bash

@@ -15,6 +15,12 @@ Read PRODUCT.md and DESIGN.md before touching UI. Tokens live in src/styles/toke
 - Do not touch `src-tauri/**` while the owner is using the dev app: `tauri dev` rebuilds and restarts the app on any Rust change and loses their in-progress review. Ask, or batch Rust edits.
 - The bundled sample `examples/score-anchor` lives inside this repository, so agent worktrees for it are worktrees of this repo; `git::repo_prefix` handles the nesting. Vite ignores `.dabir` and `examples` for that reason; keep it so.
 
+## Several agents at once
+- Never share this checkout with another agent. Start from your own worktree on your own branch:
+  `git worktree add "../dabir-<vendor>" -b agent/<vendor>/<topic>` then work there. Commits go to that branch; open a pull request; the owner merges.
+- Before touching a file, `git status` and `git log -3`: if the tree has changes you did not make, you are in someone else's checkout. Stop and move to a worktree.
+- Rust builds in a shared checkout fight over the target directory and restart the owner's dev app. In your worktree use `CARGO_TARGET_DIR=target/<vendor>`.
+
 ## Contract and review
 - CONTRIBUTING.md is the contract: branch per change, `npm run check` green, pull request template filled, one or two reviews, squash-merge. docs/REVIEW.md is the rubric and the pipeline.
 - `npm run review` is the review bot (scripts/review.mjs): codebase-aware, runs on the local agent subscriptions, posts with `--pr N --post`. Ask a different vendor than the author for the second review.
