@@ -77,7 +77,7 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
           <Row label="Citations, labels and files" hint="Keys from your .bib inside \cite, labels inside \ref, and project files inside \input and \includegraphics.">
             <Toggle on={s.citeComplete} onChange={(v) => updateSettings({ citeComplete: v })} label="Project completion" />
           </Row>
-          <Row label="Predictive text" hint="Grey text after the cursor finishes the word or phrase from this paper's own wording. Tab accepts all of it, ⌘→ one word, Escape dismisses. Nothing leaves the machine.">
+          <Row label="Predictive text" hint="Grey text after the cursor finishes the word or phrase from this paper's own wording. Tab accepts all of it, ⌘→ one word, Escape dismisses. Nothing leaves the machine. For a whole sentence from the chosen agent, press ⇧⌘Space at any point; that one request goes to the agent's CLI.">
             <Toggle on={s.prediction} onChange={(v) => updateSettings({ prediction: v })} label="Predictive text" />
           </Row>
         </section>

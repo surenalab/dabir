@@ -19,7 +19,7 @@ import { addComment as yAddComment, connect as yConnect, decodeRange, disconnect
 import type { CommentRange } from "./components/SourceEditor";
 import { safeColor, type Change, type ChangeRange } from "./lib/changes";
 import {
-  bibImportFile, checkForUpdates, projectSnapshot, sessionMaterialize, checkpoint, checkpoints, checkpointRestore, type Checkpoint, newPaper, zoteroImport, compile as runCompile, compileCancel, gitClone, gitPull, gitPush, gitRemoteAdd, gitRemoteUrl, isMac, onCompileProgress, relayStart, relayStop, gitCommit, gitInit, gitStatus, importOverleaf, native, onMenu, onWindowFocus,
+  bibImportFile, agentComplete, checkForUpdates, projectSnapshot, sessionMaterialize, checkpoint, checkpoints, checkpointRestore, type Checkpoint, newPaper, zoteroImport, compile as runCompile, compileCancel, gitClone, gitPull, gitPush, gitRemoteAdd, gitRemoteUrl, isMac, onCompileProgress, relayStart, relayStop, gitCommit, gitInit, gitStatus, importOverleaf, native, onMenu, onWindowFocus,
   openProject, pickFolder, readText, setWindowTitle, synctexForward, synctexInverse, writeText,
   type CompileResult, type GitStatus, type PdfPos, type Project,
 } from "./lib/backend";
@@ -585,6 +585,7 @@ export default function App() {
       case "view-source": setMode("source"); break;
       case "view-pdf": setMode("pdf"); break;
       case "view-split": setMode("split"); break;
+      case "agent-continue": editorRef.current?.continueSentence(); break;
       case "fmt-bold": editorRef.current?.wrap("\\textbf{", "}"); break;
       case "fmt-italic": editorRef.current?.wrap("\\textit{", "}"); break;
       case "fmt-emph": editorRef.current?.wrap("\\emph{", "}"); break;
@@ -715,6 +716,16 @@ export default function App() {
     }
   }, [refreshGit, reloadProject, file, project, refreshVersions]);
 
+  // ⇧⌘Space: the chosen agent writes the next sentence as ghost text; Tab keeps it.
+  const continueWithAgent = useCallback(async (before: string): Promise<string | null> => {
+    if (!project || !file) return null;
+    if (!agentReady) { setNote("No agent is signed in. Choose one in the Agent tab."); return null; }
+    const provider = settings.agentProvider;
+    try {
+      return await agentComplete(project.root, provider, file.replace(project.root + "/", ""), before, settings.agentModel[provider] ?? "", settings.agentEffort[provider] ?? "");
+    } catch (e) { setNote(String(e)); return null; }
+  }, [project, file, agentReady, settings]);
+
   const addWord = useCallback((word: string) => {
     if (!project) return;
     const w = word.trim(); if (!w || dictionary.includes(w)) return;
@@ -771,7 +782,7 @@ export default function App() {
         changes={changeRanges} author={me} onChanges={onEditorChanges} onToggleSuggesting={toggleSuggesting}
         settings={settings} grammar={grammar} pins={pins} pdfZoom={pdfZoom} onPdfZoom={setPdfZoom} onOpenSettings={() => setSheet("settings")}
         onPdfComment={onPdfComment} pdfFindRequest={pdfFindRequest} editorRef={editorRef} onFind={() => command("find")} onCommentSelection={() => { if (!inspectorOpen) toggleInspector(); setAskFocus(0); setNote("Type the comment in the People tab; it attaches to your selection."); }} hasSelection={selection.to > selection.from}
-        review={docReview} dictionary={dictionary} onAddWord={addWord} splitRatio={splitRatio} onSplitRatio={setSplitRatio} onPin={(id) => { const c = allComments.find((x) => x.id === id); if (c) jumpToComment(c); }}
+        review={docReview} dictionary={dictionary} onAddWord={addWord} onContinue={continueWithAgent} splitRatio={splitRatio} onSplitRatio={setSplitRatio} onPin={(id) => { const c = allComments.find((x) => x.id === id); if (c) jumpToComment(c); }}
         completions={{ bib: () => bib, labels: () => (source ? collectLabels(source) : []), files: () => project?.tree ?? [] }} />
       <Inspector project={project} gitRepo={!!git?.isRepo} askFocus={askFocus} prefill={prefill} onProviderReady={setAgentReady} onChanged={onChanged} onOpenFile={selectFile} onNote={setNote} autoRun={autoRun} onReview={setReview}
         live={!!live} peers={peers} comments={allComments} currentFile={rel(file)} hasSelection={selection.to > selection.from}

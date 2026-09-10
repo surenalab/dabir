@@ -19,6 +19,7 @@ const ROWS: [string, string[]][] = [
   ["Ask the Agent", ["⌘", "J"]],
   ["Link", ["⌘", "K"]],
   ["Send to Agent", ["⌘", "↩"]],
+  ["Continue Sentence with Agent", ["⇧", "⌘", "Space"]],
   ["Find in Source", ["⌘", "F"]],
   ["Keyboard Shortcuts", ["⌘", "/"]],
 ];

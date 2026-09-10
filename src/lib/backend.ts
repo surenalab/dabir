@@ -216,6 +216,12 @@ export async function agentModels(provider: string): Promise<ModelOptions> {
   return invoke<ModelOptions>("agent_models", { provider });
 }
 
+/** One sentence to continue the prose at the cursor, from the chosen agent. Nothing is written to the checkout. */
+export async function agentComplete(root: string, provider: string, file: string, context: string, model = "", effort = ""): Promise<string> {
+  if (!native) { await wait(900); return "The anchor keeps every guided step inside the region where the prior score is still trustworthy, so the sampler cannot be pulled off the data manifold."; }
+  return invoke<string>("agent_complete", { root, provider, file, context, model: model || null, effort: effort || null });
+}
+
 export async function agentRun(root: string, provider: string, prompt: string, model = "", effort = ""): Promise<{ runId: string; worktree: string }> {
   if (!native) {
     const runId = Math.random().toString(16).slice(2, 10);

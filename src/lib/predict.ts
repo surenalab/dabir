@@ -8,23 +8,37 @@ import { EditorView, Decoration, WidgetType, keymap, ViewPlugin, type Decoration
 import { completionStatus } from "@codemirror/autocomplete";
 
 class GhostWidget extends WidgetType {
-  constructor(readonly text: string) { super(); }
-  eq(o: GhostWidget) { return o.text === this.text; }
-  toDOM() { const el = document.createElement("span"); el.className = "cm-ghost"; el.textContent = this.text; el.setAttribute("aria-hidden", "true"); return el; }
+  constructor(readonly text: string, readonly pending: boolean) { super(); }
+  eq(o: GhostWidget) { return o.text === this.text && o.pending === this.pending; }
+  toDOM() {
+    const el = document.createElement("span");
+    el.className = this.pending ? "cm-ghost pending" : "cm-ghost";
+    el.textContent = this.text;
+    el.setAttribute("aria-hidden", "true");
+    if (this.pending) el.title = "Asking the agent…";
+    return el;
+  }
   ignoreEvent() { return true; }
 }
 
-const setGhost = StateEffect.define<{ pos: number; text: string } | null>();
+/** Ghost text after the caret. `pending` marks a placeholder while the agent is asked; `source` says who wrote it. */
+export interface Ghost { pos: number; text: string; pending?: boolean; source?: "paper" | "agent" }
 
-const ghostField = StateField.define<{ pos: number; text: string } | null>({
+const setGhost = StateEffect.define<Ghost | null>();
+
+const ghostField = StateField.define<Ghost | null>({
   create: () => null,
   update(v, tr) {
     for (const e of tr.effects) if (e.is(setGhost)) return e.value;
     if (tr.docChanged || tr.selection) return null;
     return v;
   },
-  provide: (f) => EditorView.decorations.from(f, (v): DecorationSet => v ? Decoration.set([Decoration.widget({ widget: new GhostWidget(v.text), side: 1 }).range(v.pos)]) : Decoration.none),
+  provide: (f) => EditorView.decorations.from(f, (v): DecorationSet => v ? Decoration.set([Decoration.widget({ widget: new GhostWidget(v.text, !!v.pending), side: 1 }).range(v.pos)]) : Decoration.none),
 });
+
+/** Show, replace or clear ghost text from outside the predictor (the agent continuation). */
+export function setGhostText(view: EditorView, ghost: Ghost | null) { view.dispatch({ effects: setGhost.of(ghost) }); }
+export function currentGhost(view: EditorView): Ghost | null { return view.state.field(ghostField, false) ?? null; }
 
 // ---------------------------------------------------------------- the model
 
@@ -134,20 +148,22 @@ const predictor = ViewPlugin.fromClass(class {
     if (!this.model || (Date.now() - this.model.built > 2000 && doc.length !== this.model.length)) this.model = buildModel(doc.toString());
     const line = doc.lineAt(sel.head);
     const text = predictAt(this.model, line.text, sel.head - line.from);
-    v.dispatch({ effects: setGhost.of(text ? { pos: sel.head, text } : null) });
+    const cur = v.state.field(ghostField, false);
+    if (cur && cur.source === "agent") return;  // the agent's sentence stays until the caret or text moves
+    v.dispatch({ effects: setGhost.of(text ? { pos: sel.head, text, source: "paper" } : null) });
   }
   destroy() { if (this.timer) clearTimeout(this.timer); }
 });
 
 export function acceptPrediction(view: EditorView): boolean {
   const g = view.state.field(ghostField, false);
-  if (!g) return false;
+  if (!g || g.pending) return false;
   view.dispatch({ changes: { from: g.pos, insert: g.text }, selection: { anchor: g.pos + g.text.length }, userEvent: "input.complete" });
   return true;
 }
 export function acceptPredictionWord(view: EditorView): boolean {
   const g = view.state.field(ghostField, false);
-  if (!g) return false;
+  if (!g || g.pending) return false;
   const word = /^\S*\s?/.exec(g.text)?.[0] ?? g.text;
   const rest = g.text.slice(word.length);
   view.dispatch({ changes: { from: g.pos, insert: word }, selection: { anchor: g.pos + word.length }, effects: rest ? setGhost.of({ pos: g.pos + word.length, text: rest }) : setGhost.of(null), userEvent: "input.complete" });
@@ -155,9 +171,10 @@ export function acceptPredictionWord(view: EditorView): boolean {
 }
 export function hasPrediction(view: EditorView): boolean { return !!view.state.field(ghostField, false); }
 
-export function prediction() {
+/** The ghost text field and its keys, without the statistical predictor; the agent continuation needs these on their own. */
+export function ghostText() {
   return [
-    ghostField, predictor,
+    ghostField,
     Prec.highest(keymap.of([
       { key: "Tab", run: acceptPrediction },
       { key: "Mod-ArrowRight", run: acceptPredictionWord },
@@ -166,3 +183,6 @@ export function prediction() {
     EditorView.domEventHandlers({ blur: (_, v) => { if (hasPrediction(v)) v.dispatch({ effects: setGhost.of(null) }); return false; } }),
   ];
 }
+
+/** Predictive text from the paper itself, on top of the ghost field. */
+export function prediction() { return [predictor]; }
