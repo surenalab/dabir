@@ -1,0 +1,7 @@
+[
+  { "id": "en-GB", "label": "English (UK)" },
+  { "id": "en-US", "label": "English (US)" },
+  { "id": "de", "label": "Deutsch" },
+  { "id": "es", "label": "Español" },
+  { "id": "fr", "label": "Français" }
+]

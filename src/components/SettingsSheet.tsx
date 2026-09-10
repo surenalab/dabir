@@ -1,5 +1,6 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { DEFAULTS, resetSettings, updateSettings, useSettings } from "../lib/settings";
+import { dictionaries, type Dictionary } from "../lib/spell";
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -16,6 +17,8 @@ function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) =
 
 export function SettingsSheet({ onClose }: { onClose: () => void }) {
   const s = useSettings();
+  const [dicts, setDicts] = useState<Dictionary[]>([{ id: "en-GB", label: "English (UK)" }, { id: "en-US", label: "English (US)" }]);
+  useEffect(() => { dictionaries().then(setDicts); }, []);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
@@ -28,14 +31,13 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
 
         <section className="share-section">
           <h3>Writing</h3>
-          <Row label="Spelling" hint="Dabir's own dictionary works offline and reads LaTeX: commands, maths, keys and paths are never flagged. Hover a word for replacements; Add to Dictionary keeps the word with the paper in .dabir/dictionary.txt. The system checker is the alternative for other languages.">
+          <Row label="Spelling" hint="Dabir's own dictionary works offline and reads LaTeX: commands, maths, keys and paths are never flagged. Hover a word for replacements; Add to Dictionary keeps the word with the paper in .dabir/dictionary.txt. Dictionaries for English (UK and US), German, Spanish and French ship with the app; the system checker covers other languages.">
             <Toggle on={s.spellcheck} onChange={(v) => updateSettings({ spellcheck: v })} label="Spelling" />
           </Row>
           {s.spellcheck && (
             <Row label="Dictionary">
-              <select className="sheet-input compact" value={s.spellLanguage} onChange={(e) => updateSettings({ spellLanguage: e.target.value as "en-GB" | "en-US" | "system" })} aria-label="Spelling dictionary">
-                <option value="en-GB">English (UK)</option>
-                <option value="en-US">English (US)</option>
+              <select className="sheet-input compact" value={s.spellLanguage} onChange={(e) => updateSettings({ spellLanguage: e.target.value })} aria-label="Spelling dictionary">
+                {dicts.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
                 <option value="system">System checker</option>
               </select>
             </Row>
