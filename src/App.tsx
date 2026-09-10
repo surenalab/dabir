@@ -133,7 +133,8 @@ export default function App() {
     loadBib(p);
     refreshGit(p);
     gitRemoteUrl(p.root, "overleaf").then(setOverleafUrl).catch(() => setOverleafUrl(null));
-    readText(`${p.root}/.dabir/comments.json`).then((t) => setLocalComments(t ? JSON.parse(t) : [])).catch(() => setLocalComments([]));
+    // Files shared through the repository are as untrusted as peers: colours are validated before they reach a style.
+    readText(`${p.root}/.dabir/comments.json`).then((t) => setLocalComments(t ? (JSON.parse(t) as Comment[]).map((c) => ({ ...c, color: safeColor(c.color), replies: c.replies?.map((r) => ({ ...r, color: safeColor(r.color) })) })) : [])).catch(() => setLocalComments([]));
     readText(`${p.root}/.dabir/changes.json`).then((t) => setLocalChanges(t ? JSON.parse(t) : [])).catch(() => setLocalChanges([]));
     if (p.mainTex) await selectFile(p.mainTex); else { setFile(null); setSource(null); }
   }, [selectFile, loadBib, refreshGit]);
@@ -277,11 +278,12 @@ export default function App() {
     setHostAway(false);
     persist(sess).then((u) => { unpersist.current = u; }).catch(() => {});
     const refresh = () => {
-      setPeers(yPeers(sess));
+      // Colours arrive from peers and end up in style attributes: only a hex colour gets through.
+      setPeers(yPeers(sess).map((p) => ({ ...p, color: safeColor(p.color) })));
       if (!sess.host) { const here = hostPresent(sess); if (here) seenHost.current = true; setHostAway(seenHost.current && !here); }
     };
     sess.awareness.on("change", refresh);
-    const onComments = () => setComments(sess.comments.toArray());
+    const onComments = () => setComments(sess.comments.toArray().map((c) => ({ ...c, color: safeColor(c.color), replies: c.replies?.map((r) => ({ ...r, color: safeColor(r.color) })) })));
     sess.comments.observe(onComments);
     const onChanges = () => setSessChanges(sess.changes.toArray());
     sess.changes.observe(onChanges);
