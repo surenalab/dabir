@@ -1739,6 +1739,48 @@ mod tests {
     }
 
     #[test]
+    fn worktree_starts_from_the_working_copy() {
+        // Uncommitted edits and new files are what the agent sees; the run's diff is only its own work,
+        // and accepting lands onto the same edits without a conflict.
+        let dir = std::env::temp_dir().join(format!("dabir-seed-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("main.tex"), "one\ntwo\nthree\n").unwrap();
+        git::init(&dir).unwrap();
+        git::commit(&dir, "init", None).unwrap();
+        fs::write(dir.join("main.tex"), "one\ntwo edited\nthree\n").unwrap();
+        fs::write(dir.join("notes.tex"), "new file\n").unwrap();
+        let wt = git::worktree_add(&dir, "s1").unwrap();
+        assert_eq!(
+            fs::read_to_string(wt.join("main.tex")).unwrap(),
+            "one\ntwo edited\nthree\n"
+        );
+        assert_eq!(
+            fs::read_to_string(wt.join("notes.tex")).unwrap(),
+            "new file\n"
+        );
+        let d = git::worktree_diff(&dir, "s1").unwrap();
+        assert!(
+            d.changes.is_empty(),
+            "seed is not part of the run's diff: {:?}",
+            d.changes
+        );
+        fs::write(wt.join("main.tex"), "one\ntwo edited\nthree\nfour\n").unwrap();
+        let d = git::worktree_diff(&dir, "s1").unwrap();
+        assert_eq!(d.changes.len(), 1);
+        assert!(d.patch.contains("+four") && !d.patch.contains("+two edited"));
+        git::worktree_apply(&dir, "s1", None).unwrap();
+        assert_eq!(
+            fs::read_to_string(dir.join("main.tex")).unwrap(),
+            "one\ntwo edited\nthree\nfour\n"
+        );
+        assert_eq!(
+            fs::read_to_string(dir.join("notes.tex")).unwrap(),
+            "new file\n"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn cursor_tool_call_names() {
         let line = r#"{"type":"tool_call","subtype":"started","tool_call":{"readToolCall":{"args":{"path":"/p/main.tex"}},"hookAdditionalContexts":[],"toolCallId":"x","startedAtMs":"1"}}"#;
         let evs = agents::parse_line_for_test("cursor", line);
