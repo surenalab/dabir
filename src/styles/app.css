@@ -305,6 +305,18 @@ button { background: none; border: 0; padding: 0; cursor: default; }
 .banner.error { background: var(--diff-del-wash); }
 .banner button { color: var(--ink-3); font-size: var(--text-xs); text-decoration: underline; }
 
+/* Spelling: a wavy line under the word, a small card on hover */
+.cm-misspelled { text-decoration: underline wavy var(--diff-del); text-decoration-skip-ink: none; text-underline-offset: 3px; }
+.cm-visual .cm-misspelled { text-decoration-thickness: 1px; }
+.spell-card { display: flex; flex-direction: column; gap: 6px; padding: 8px; min-width: 160px; max-width: 280px; font-family: var(--font-ui); font-size: var(--text-sm); }
+.spell-suggestions { display: flex; flex-wrap: wrap; gap: 4px; }
+.spell-fix { padding: 2px 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); font-size: var(--text-sm); }
+.spell-fix:hover { border-color: var(--accent); color: var(--accent); }
+.spell-none { color: var(--ink-3); font-size: var(--text-xs); }
+.spell-actions { display: flex; gap: 10px; border-top: 1px solid var(--line); padding-top: 6px; }
+.spell-act { color: var(--ink-2); font-size: var(--text-xs); }
+.spell-act:hover { color: var(--ink); text-decoration: underline; }
+
 /* Reviewing an agent run in the document */
 .banner.review { justify-content: flex-start; background: var(--accent-wash); }
 .banner.review > svg { width: 14px; height: 14px; color: var(--accent); flex: none; }
