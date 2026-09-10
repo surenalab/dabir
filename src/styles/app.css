@@ -516,6 +516,9 @@ button { background: none; border: 0; padding: 0; cursor: default; }
 .vz-chip.vz-note { background: transparent; color: var(--accent); padding: 0 .1em; vertical-align: super; font-size: .7em; cursor: help; }
 .vz-chip.vz-link { background: transparent; color: var(--accent); padding: 0; text-decoration: underline; text-underline-offset: 2px; font-family: inherit; font-size: inherit; }
 .cm-ghost { color: var(--ink-4); pointer-events: none; }
+.cm-ghost.pending { letter-spacing: .12em; animation: ghost-wait 1.2s ease-in-out infinite; }
+@keyframes ghost-wait { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .cm-ghost.pending { animation: none; } }
 .editor.visual .cm-ghost { font-style: italic; }
 .vz-scaffold { font-family: var(--font-mono); font-size: 12px; color: var(--ink-4); }
 .vz-hidden { font-size: 4px; line-height: 6px; }
