@@ -76,7 +76,9 @@ interface Props {
   onOpen: () => void;
   onImport: () => void;
   onClone: () => void;
-  onNew: () => void;
+  onNew: (template?: string) => void;
+  /** Featured templates for the welcome card, label and id. */
+  starters?: { id: string; label: string }[];
   onJoin: () => void;
   hostAway: boolean;
   onOutline: (o: ReturnType<typeof parseDocument>["outline"]) => void;
@@ -183,7 +185,7 @@ export function Document(p: Props) {
             <p>Dabir looked for <code>main.tex</code>, <code>main.typ</code> or a <code>.tex</code> file with <code>\documentclass</code>, here and one folder down, and found none.{project.treeTruncated ? " This folder is large; the sidebar lists its first few thousand files." : ""}</p>
             <div className="actions">
               <button className="btn primary" onClick={p.onOpen}><FolderOpen /> Open the Paper's Folder…</button>
-              <button className="btn" onClick={p.onNew} title="Start from a journal template"><FilePlus /> New Paper…</button>
+              <button className="btn" onClick={() => p.onNew()} title="Start from a journal template"><FilePlus /> New Paper…</button>
             </div>
             <div className="hint">Or pick any text file in the sidebar to edit it.</div>
           </div>
@@ -203,11 +205,20 @@ export function Document(p: Props) {
             <p>Dabir works on a folder: your manuscript, its figures, and the code that made them. Nothing is uploaded, nothing is converted.</p>
             <div className="actions">
               <button className="btn primary" onClick={p.onOpen}><FolderOpen /> Open Folder…</button>
-              <button className="btn" onClick={p.onNew} title="Start from a journal template"><FilePlus /> New Paper…</button>
+              <button className="btn" onClick={() => p.onNew()} title="Start from a journal template"><FilePlus /> New Paper…</button>
               <button className="btn" onClick={p.onImport} title="Unpack an Overleaf source zip into a folder"><Upload /> Import from Overleaf…</button>
               <button className="btn" onClick={p.onClone}><GitBranch /> Clone from GitHub…</button>
               <button className="btn" onClick={p.onJoin} title="Paste a coauthor's link or invite code; their paper is mirrored here"><Radio /> Join a Live Session…</button>
             </div>
+            {p.starters && p.starters.length > 0 && (
+              <div className="starters">
+                <p>Or start from a venue's template</p>
+                <div className="row">
+                  {p.starters.map((s) => <button key={s.id} onClick={() => p.onNew(s.id)}>{s.label}</button>)}
+                  <button className="more" onClick={() => p.onNew()}>All templates…</button>
+                </div>
+              </div>
+            )}
             <div className="hint">Try the bundled sample at <code>examples/score-anchor</code>. Press <kbd>⌘/</kbd> for shortcuts.</div>
           </div>
         </div>

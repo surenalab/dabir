@@ -19,7 +19,7 @@ import { addComment as yAddComment, connect as yConnect, decodeRange, disconnect
 import type { CommentRange } from "./components/SourceEditor";
 import { safeColor, type Change, type ChangeRange } from "./lib/changes";
 import {
-  bibImportFile, agentComplete, checkForUpdates, projectSnapshot, sessionMaterialize, checkpoint, checkpoints, checkpointRestore, checkpointUndo, gitDiscard, type Checkpoint, newPaper, zoteroImport, compile as runCompile, compileCancel, gitClone, gitPull, gitPush, gitRemoteAdd, gitRemoteUrl, isMac, onCompileProgress, relayStart, relayStop, gitCommit, gitInit, gitStatus, importOverleaf, native, onMenu, onWindowFocus,
+  bibImportFile, agentComplete, checkForUpdates, projectSnapshot, sessionMaterialize, checkpoint, checkpoints, checkpointRestore, checkpointUndo, gitDiscard, type Checkpoint, newPaper, templatesList, zoteroImport, compile as runCompile, compileCancel, gitClone, gitPull, gitPush, gitRemoteAdd, gitRemoteUrl, isMac, onCompileProgress, relayStart, relayStop, gitCommit, gitInit, gitStatus, importOverleaf, native, onMenu, onWindowFocus,
   openProject, pickFolder, readText, setWindowTitle, synctexForward, synctexInverse, writeText,
   type CompileResult, type GitStatus, type PdfPos, type Project,
 } from "./lib/backend";
@@ -66,6 +66,11 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [sheet, setSheet] = useState<"shortcuts" | "clone" | "share" | "new" | "settings" | null>(null);
+  // The template the New Paper chooser opens on, when a welcome-card starter was clicked.
+  const [newTemplate, setNewTemplate] = useState<string | null>(null);
+  const [starters, setStarters] = useState<{ id: string; label: string }[]>([]);
+  useEffect(() => { templatesList().then((l) => setStarters(l.templates.filter((t) => t.featured).map((t) => ({ id: t.id, label: t.label })))).catch(() => {}); }, []);
+  const openNew = useCallback((template?: string) => { setNewTemplate(template ?? null); setSheet("new"); }, []);
   const settings = useSettings();
   const [grammar, setGrammar] = useState<GrammarMatch[]>([]);
   const [localComments, setLocalComments] = useState<Comment[]>([]);
@@ -808,7 +813,7 @@ export default function App() {
       <Document project={project} file={file} source={source} bib={bib} mode={mode} jumpLine={jumpLine} jumpStamp={jumpStamp}
         compileState={compileState} progress={progress} showLog={showLog} onToggleLog={() => setShowLog((v) => !v)} findRequest={findRequest}
         error={error ?? note} onDismissError={() => { setError(null); setNote(null); }} pdfTarget={pdfTarget}
-        onOpen={open} onImport={importFromOverleaf} onClone={() => setSheet("clone")} onNew={() => setSheet("new")} onJoin={() => setSheet("share")} hostAway={hostAway} onOutline={setOutline}
+        onOpen={open} onImport={importFromOverleaf} onClone={() => setSheet("clone")} onNew={openNew} starters={starters} onJoin={() => setSheet("share")} hostAway={hostAway} onOutline={setOutline}
         onSourceChange={onSourceChange} onSave={save} onCursorLine={setCursorLine} onSelectFile={selectFile} onJump={jumpTo} onPdfClick={onPdfClick}
         compileOnSave={compileOnSave} onToggleCompileOnSave={toggleCompileOnSave}
         agentReady={agentReady} onJumpFile={jumpToFile} onFix={fixWithAgent}
@@ -831,7 +836,7 @@ export default function App() {
           onStart={startSession} onJoin={joinSession} onStop={stopSession} onSetOverleaf={setOverleaf} onPull={pullOverleaf} onPush={pushOverleaf}
           onZotero={importZotero} onBibFile={importBib} signalingUrl={settings.signalingUrl} direct={directApi} />
       )}
-      {sheet === "new" && <NewPaperSheet onClose={() => setSheet(null)} onCreate={createPaper} />}
+      {sheet === "new" && <NewPaperSheet onClose={() => setSheet(null)} onCreate={createPaper} initial={newTemplate} />}
       {sheet === "settings" && <SettingsSheet onClose={() => setSheet(null)} />}
     </div>
   );
