@@ -722,6 +722,22 @@ pub fn worktree_accept(
 // branch, index and history untouched. Nothing is created when nothing changed.
 
 const CHECKPOINT_REF: &str = "refs/dabir/checkpoints";
+/// Trailer that marks a snapshot commit. The first snapshot has the branch commit it grew from as its
+/// parent, so every step (including the first) has a "before" to diff against; the walk stops at the
+/// first commit without the trailer.
+const CHECKPOINT_MARK: &str = "\n\nDabir-Snapshot: 1";
+
+fn snapshot_message(c: &git2::Commit) -> Option<String> {
+    let m = c.message()?;
+    m.strip_suffix(CHECKPOINT_MARK.trim_start_matches('\n'))
+        .map(|s| s.trim().to_string())
+        .or_else(|| {
+            m.split("\n\nDabir-Snapshot:")
+                .next()
+                .filter(|_| m.contains("Dabir-Snapshot:"))
+                .map(|s| s.trim().to_string())
+        })
+}
 
 #[derive(Serialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -729,7 +745,12 @@ pub struct Checkpoint {
     pub id: String,
     pub message: String,
     pub at: i64,
+    /// What this step changed against the step before it, paths relative to the paper.
+    pub files: Vec<Change>,
 }
+
+/// Snapshots by the author within this window are folded into one entry, so a typing session is one step.
+pub const COALESCE_SECS: i64 = 180;
 
 fn checkpoint_tree(repo: &Repository, prefix: &str) -> Result<git2::Oid, String> {
     let mut index = repo.index().map_err(|e| e.to_string())?;
@@ -767,14 +788,25 @@ fn checkpoint_tree(repo: &Repository, prefix: &str) -> Result<git2::Oid, String>
 
 /// Snapshot the working tree. Returns the short id, or None when nothing changed since the last snapshot.
 pub fn checkpoint(root: &Path, message: &str) -> Result<Option<String>, String> {
+    checkpoint_with(root, message, false)
+}
+
+/// Like `checkpoint`, but when `coalesce` is set and the newest snapshot carries the same message and is
+/// younger than `COALESCE_SECS`, that snapshot is replaced rather than chained: one entry per session of
+/// edits, not one per autosave.
+pub fn checkpoint_with(
+    root: &Path,
+    message: &str,
+    coalesce: bool,
+) -> Result<Option<String>, String> {
     let repo = Repository::discover(root).map_err(|e| e.to_string())?;
     let (_, prefix) = repo_prefix(root)?;
     let tree_id = checkpoint_tree(&repo, &prefix)?;
-    let parent = repo
+    let tip = repo
         .find_reference(CHECKPOINT_REF)
         .ok()
         .and_then(|r| r.peel_to_commit().ok());
-    if let Some(p) = &parent {
+    if let Some(p) = &tip {
         if p.tree_id() == tree_id {
             return Ok(None);
         }
@@ -783,13 +815,114 @@ pub fn checkpoint(root: &Path, message: &str) -> Result<Option<String>, String> 
             return Ok(None);
         }
     }
+    let now = git2::Time::new(chrono_now(), 0).seconds();
+    let fold = coalesce
+        && tip.as_ref().is_some_and(|t| {
+            snapshot_message(t).as_deref() == Some(message)
+                && now - t.time().seconds() < COALESCE_SECS
+        });
+    // Folding replaces the tip with a snapshot that has the tip's own parents. The first snapshot
+    // grows from the branch commit, so it too has a "before".
+    let parent = if fold {
+        tip.as_ref().and_then(|t| t.parent(0).ok())
+    } else if tip.is_some() {
+        tip
+    } else {
+        repo.head().ok().and_then(|h| h.peel_to_commit().ok())
+    };
+    if fold {
+        if let Some(p) = &parent {
+            if p.tree_id() == tree_id {
+                // Edits undone by hand: the folded step would be empty, so drop it.
+                repo.reference(CHECKPOINT_REF, p.id(), true, "fold")
+                    .map_err(|e| e.to_string())?;
+                return Ok(None);
+            }
+        }
+    }
     let tree = repo.find_tree(tree_id).map_err(|e| e.to_string())?;
     let s = sig(&repo)?;
     let parents: Vec<&git2::Commit> = parent.iter().collect();
     let oid = repo
-        .commit(Some(CHECKPOINT_REF), &s, &s, message, &tree, &parents)
+        .commit(
+            None,
+            &s,
+            &s,
+            &format!("{}{}", message, CHECKPOINT_MARK),
+            &tree,
+            &parents,
+        )
+        .map_err(|e| e.to_string())?;
+    repo.reference(CHECKPOINT_REF, oid, true, message)
         .map_err(|e| e.to_string())?;
     Ok(Some(oid.to_string()[..7].to_string()))
+}
+
+fn chrono_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+/// Per-file line counts between two trees, restricted to the paper and named relative to it.
+fn tree_changes(
+    repo: &Repository,
+    from: Option<&git2::Tree>,
+    to: &git2::Tree,
+    prefix: &str,
+) -> Vec<Change> {
+    let mut opts = git2::DiffOptions::new();
+    if !prefix.is_empty() {
+        opts.pathspec(prefix.trim_end_matches('/'));
+    }
+    let Ok(diff) = repo.diff_tree_to_tree(from, Some(to), Some(&mut opts)) else {
+        return vec![];
+    };
+    let rel = |p: Option<&Path>| -> String {
+        let s = p
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default();
+        s.strip_prefix(prefix).unwrap_or(&s).to_string()
+    };
+    // Two passes over one shared map: file records first, then line counts.
+    let out = std::cell::RefCell::new(Vec::<Change>::new());
+    let _ = diff.foreach(
+        &mut |d, _| {
+            let path = rel(d.new_file().path().or(d.old_file().path()));
+            if path.starts_with(".dabir/") {
+                return true;
+            }
+            out.borrow_mut().push(Change {
+                path,
+                status: match d.status() {
+                    git2::Delta::Added => "added",
+                    git2::Delta::Deleted => "deleted",
+                    git2::Delta::Renamed => "renamed",
+                    _ => "modified",
+                }
+                .into(),
+                add: 0,
+                del: 0,
+                binary: d.new_file().is_binary() || d.old_file().is_binary(),
+            });
+            true
+        },
+        None,
+        None,
+        Some(&mut |d, _, l| {
+            let path = rel(d.new_file().path().or(d.old_file().path()));
+            if let Some(c) = out.borrow_mut().iter_mut().find(|c| c.path == path) {
+                match l.origin() {
+                    '+' => c.add += 1,
+                    '-' => c.del += 1,
+                    _ => {}
+                }
+            }
+            true
+        }),
+    );
+    out.into_inner()
 }
 
 /// The most recent snapshots, newest first.
@@ -802,20 +935,174 @@ pub fn checkpoints(root: &Path, limit: usize) -> Result<Vec<Checkpoint>, String>
     else {
         return Ok(vec![]);
     };
+    let (_, prefix) = repo_prefix(root)?;
     let mut out = vec![];
+    // Chains from before the trailer existed are walked to their root, as before.
+    let legacy = snapshot_message(&head).is_none();
     let mut cur = Some(head);
     while let Some(c) = cur {
         if out.len() >= limit {
             break;
         }
+        let message = match snapshot_message(&c) {
+            Some(m) => m,
+            None if legacy => c.message().unwrap_or("").trim().to_string(),
+            None => break,
+        };
+        let parent = c.parent(0).ok();
+        let parent_tree = parent.as_ref().and_then(|p| p.tree().ok());
+        let files = match c.tree() {
+            Ok(t) => tree_changes(&repo, parent_tree.as_ref(), &t, &prefix),
+            Err(_) => vec![],
+        };
         out.push(Checkpoint {
             id: c.id().to_string()[..7].to_string(),
-            message: c.message().unwrap_or("").trim().to_string(),
+            message,
             at: c.time().seconds(),
+            files,
         });
-        cur = c.parent(0).ok();
+        cur = parent;
     }
     Ok(out)
+}
+
+/// The unified diff of one step against the step before it, paths relative to the paper.
+pub fn checkpoint_patch(root: &Path, id: &str) -> Result<String, String> {
+    let repo = Repository::discover(root).map_err(|e| e.to_string())?;
+    let (_, prefix) = repo_prefix(root)?;
+    let obj = repo
+        .revparse_single(id)
+        .map_err(|_| format!("No snapshot {}", id))?;
+    let commit = obj.peel_to_commit().map_err(|e| e.to_string())?;
+    let tree = commit.tree().map_err(|e| e.to_string())?;
+    let parent_tree = commit.parent(0).ok().and_then(|p| p.tree().ok());
+    let mut opts = git2::DiffOptions::new();
+    if !prefix.is_empty() {
+        opts.pathspec(prefix.trim_end_matches('/'));
+    }
+    let diff = repo
+        .diff_tree_to_tree(parent_tree.as_ref(), Some(&tree), Some(&mut opts))
+        .map_err(|e| e.to_string())?;
+    let mut text = String::new();
+    diff.print(git2::DiffFormat::Patch, |_, _, l| {
+        let body = String::from_utf8_lossy(l.content());
+        match l.origin() {
+            '+' | '-' | ' ' => text.push(l.origin()),
+            _ => {}
+        }
+        text.push_str(&body);
+        true
+    })
+    .map_err(|e| e.to_string())?;
+    if !prefix.is_empty() {
+        text = text
+            .replace(&format!(" a/{}", prefix), " a/")
+            .replace(&format!(" b/{}", prefix), " b/");
+    }
+    Ok(text)
+}
+
+/// Take one step out of the working tree: the step's diff is applied in reverse, leaving later edits in
+/// place. The current state is snapshotted first. Fails, touching nothing, when later edits overlap it.
+pub fn checkpoint_undo(root: &Path, id: &str) -> Result<(), String> {
+    let repo = Repository::discover(root).map_err(|e| e.to_string())?;
+    let (workdir, prefix) = repo_prefix(root)?;
+    let obj = repo
+        .revparse_single(id)
+        .map_err(|_| format!("No snapshot {}", id))?;
+    let commit = obj.peel_to_commit().map_err(|e| e.to_string())?;
+    let parent = commit
+        .parent(0)
+        .map(|p| p.id().to_string())
+        .unwrap_or_else(|_| {
+            repo.head()
+                .and_then(|h| h.peel_to_commit())
+                .map(|c| c.id().to_string())
+                .unwrap_or_default()
+        });
+    let mut args = vec![
+        "diff".to_string(),
+        "--binary".into(),
+        commit.id().to_string(),
+        parent.clone(),
+    ];
+    if !prefix.is_empty() {
+        args.push("--".into());
+        args.push(prefix.trim_end_matches('/').to_string());
+    }
+    let reverse = Command::new("git")
+        .current_dir(&workdir)
+        .args(&args)
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !reverse.status.success() {
+        return Err(String::from_utf8_lossy(&reverse.stderr).to_string());
+    }
+    let check = apply_bytes(&workdir, &reverse.stdout, true)?;
+    if !check.status.success() {
+        return Err("Later edits overlap this change, so it cannot be taken out on its own. Restore the version before it instead.".into());
+    }
+    let label = snapshot_message(&commit)
+        .unwrap_or_else(|| commit.message().unwrap_or("").trim().to_string());
+    checkpoint(root, &format!("Before undoing: {}", label))?;
+    let out = apply_bytes(&workdir, &reverse.stdout, false)?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).to_string());
+    }
+    checkpoint(root, &format!("Undid: {}", label))?;
+    Ok(())
+}
+
+fn apply_bytes(workdir: &Path, patch: &[u8], check: bool) -> Result<std::process::Output, String> {
+    let mut args = vec!["apply", "--whitespace=nowarn"];
+    if check {
+        args.push("--check");
+    }
+    args.push("-");
+    let mut child = Command::new("git")
+        .current_dir(workdir)
+        .args(&args)
+        .stdin(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    use std::io::Write;
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(patch)
+        .map_err(|e| e.to_string())?;
+    child.wait_with_output().map_err(|e| e.to_string())
+}
+
+/// Put one file back as it is in HEAD (or delete it when untracked). Snapshotted first, so reversible.
+pub fn discard(root: &Path, path: &str) -> Result<(), String> {
+    let repo = Repository::discover(root).map_err(|e| e.to_string())?;
+    let (workdir, prefix) = repo_prefix(root)?;
+    let repo_path = format!("{}{}", prefix, path);
+    checkpoint(root, &format!("Before discarding changes to {}", path))?;
+    let in_head = repo
+        .head()
+        .ok()
+        .and_then(|h| h.peel_to_tree().ok())
+        .map(|t| t.get_path(Path::new(&repo_path)).is_ok())
+        .unwrap_or(false);
+    if in_head {
+        let out = Command::new("git")
+            .current_dir(&workdir)
+            .args(["checkout", "HEAD", "--"])
+            .arg(&repo_path)
+            .output()
+            .map_err(|e| e.to_string())?;
+        if !out.status.success() {
+            return Err(String::from_utf8_lossy(&out.stderr).to_string());
+        }
+    } else {
+        std::fs::remove_file(workdir.join(&repo_path)).map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 /// Put the paper's files back as they were in a snapshot. The current state is snapshotted first, so
@@ -834,7 +1121,10 @@ pub fn checkpoint_restore(root: &Path, id: &str) -> Result<(), String> {
         cb.path(format!("{}*", prefix));
     }
     repo.checkout_tree(tree.as_object(), Some(&mut cb))
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    // The restored state becomes the newest step, so later steps diff against it.
+    checkpoint(root, &format!("Restored {}", id))?;
+    Ok(())
 }
 
 pub fn worktree_remove(root: &Path, run_id: &str) -> Result<(), String> {

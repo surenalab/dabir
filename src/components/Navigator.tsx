@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronRight, FileText, BookMarked, Code2, Image, Database, File, Folder, GitCommitHorizontal } from "lucide-react";
+import { ChevronRight, FileText, BookMarked, Code2, Image, Database, File, Folder, GitCommitHorizontal, Undo2, History as HistoryIcon } from "lucide-react";
 import type { Entry, GitStatus, Project } from "../lib/backend";
 import type { OutlineItem } from "../lib/latex";
 
@@ -48,13 +48,14 @@ interface Props {
   onInitGit: () => void;
   onCommit: (message: string) => Promise<void>;
   draftMessage?: string;
-  versions?: { id: string; message: string; at: number }[];
-  onRestore?: (id: string) => void;
+  /** Put one uncommitted file back to its committed state; History keeps a step first. */
+  onDiscard: (path: string) => void;
+  /** Open the History tab in the inspector. */
+  onHistory: () => void;
+  historyCount: number;
 }
 
-export function Navigator({ project, current, outline, git, commitFocus, busy, onSelect, onJump, onInitGit, onCommit, draftMessage, versions, onRestore }: Props) {
-  const [showVersions, setShowVersions] = useState(false);
-  const [versionLimit, setVersionLimit] = useState(12);
+export function Navigator({ project, current, outline, git, commitFocus, busy, onSelect, onJump, onInitGit, onCommit, draftMessage, onDiscard, onHistory, historyCount }: Props) {
   const ref = useRef<HTMLElement>(null);
   const commitInput = useRef<HTMLInputElement>(null);
   const [message, setMessage] = useState("");
@@ -124,6 +125,7 @@ export function Navigator({ project, current, outline, git, commitFocus, busy, o
                   <span className="meta"><span>{c.status}</span>
                     <span className="stat">{c.binary ? <span className="add">binary</span> : <><span className="add">+{c.add}</span><span className="del">−{c.del}</span></>}</span>
                   </span>
+                  <button className="discard" onClick={() => onDiscard(c.path)} disabled={busy} title={`Discard the uncommitted changes to ${c.path}. History keeps a step first, so this can be undone.`} aria-label={`Discard changes to ${c.path}`}><Undo2 aria-hidden /></button>
                 </div>
               ))}
             </div>
@@ -143,27 +145,10 @@ export function Navigator({ project, current, outline, git, commitFocus, busy, o
             ))}
           </div>
         )}
-        {versions && versions.length > 0 && (
-          <div className="versions">
-            <button className="versions-toggle" onClick={() => setShowVersions((v) => !v)} aria-expanded={showVersions} title="Snapshots taken by autosave and after agent changes. Restoring is itself snapshotted, so it can be undone.">
-              Versions <span className="count">{versions.length}</span>
-            </button>
-            {showVersions && (
-              <div className="version-list">
-                {versions.slice(0, versionLimit).map((v) => (
-                  <div className="commit-row version" key={v.id} title={`${v.id} · ${new Date(v.at * 1000).toLocaleString()}`}>
-                    <span className="id">{v.id}</span><span className="summary">{v.message}</span><span className="when">{ago(v.at * 1000)}</span>
-                    <button className="restore" onClick={() => onRestore?.(v.id)} disabled={busy} title="Restore this snapshot. The current state is kept as a snapshot first, so you can undo.">Restore</button>
-                  </div>
-                ))}
-                {versions.length > versionLimit && (
-                  <button className="versions-more" onClick={() => setVersionLimit((n) => Math.min(n + 12, versions.length))}>
-                    Show {Math.min(12, versions.length - versionLimit)} more
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
+        {git?.isRepo && (
+          <button className="versions-toggle" onClick={onHistory} title="Every save and every accepted agent change, readable and reversible, without commits.">
+            <HistoryIcon aria-hidden /> History{historyCount > 0 && <span className="count">{historyCount}</span>}
+          </button>
         )}
       </section>
     </aside>

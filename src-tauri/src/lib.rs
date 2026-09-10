@@ -1385,13 +1385,37 @@ fn agent_apply(
         &applied,
     );
     let short: String = label.chars().take(72).collect();
-    let _ = git::checkpoint(&root_p, &format!("Agent: {}", short));
+    let who = match provider.as_deref() {
+        Some("claude") => "Claude Code",
+        Some("codex") => "Codex",
+        Some("cursor") => "Cursor",
+        Some("grok") => "Grok",
+        Some(other) => other,
+        None => "Agent",
+    };
+    let _ = git::checkpoint(&root_p, &format!("{}: {}", who, short));
     Ok(applied)
 }
 
 #[tauri::command]
-fn checkpoint(root: String, message: String) -> Result<Option<String>, String> {
-    git::checkpoint(Path::new(&root), &message)
+fn checkpoint(
+    root: String,
+    message: String,
+    coalesce: Option<bool>,
+) -> Result<Option<String>, String> {
+    git::checkpoint_with(Path::new(&root), &message, coalesce.unwrap_or(false))
+}
+#[tauri::command]
+fn checkpoint_patch(root: String, id: String) -> Result<String, String> {
+    git::checkpoint_patch(Path::new(&root), &id)
+}
+#[tauri::command]
+fn checkpoint_undo(root: String, id: String) -> Result<(), String> {
+    git::checkpoint_undo(Path::new(&root), &id)
+}
+#[tauri::command]
+fn git_discard(root: String, path: String) -> Result<(), String> {
+    git::discard(Path::new(&root), &path)
 }
 #[tauri::command]
 fn checkpoints(root: String) -> Result<Vec<git::Checkpoint>, String> {
@@ -1729,6 +1753,9 @@ pub fn run() {
             session_materialize,
             agent_apply,
             checkpoint,
+            checkpoint_patch,
+            checkpoint_undo,
+            git_discard,
             checkpoints,
             checkpoint_restore,
             agent_providers,
@@ -2125,9 +2152,59 @@ mod tests {
         assert_eq!(fs::read_to_string(dir.join("main.tex")).unwrap(), "two\n");
         assert_eq!(
             git::checkpoints(&dir, 10).unwrap().len(),
-            2,
-            "restoring first snapshots the state it replaces"
+            3,
+            "restoring snapshots the state it replaces, then the restored state"
         );
+        // Each step knows what it changed, and its diff can be read.
+        let list = git::checkpoints(&dir, 10).unwrap();
+        assert_eq!(list[2].files.len(), 1);
+        assert_eq!(
+            (
+                list[2].files[0].path.as_str(),
+                list[2].files[0].add,
+                list[2].files[0].del
+            ),
+            ("main.tex", 1, 1)
+        );
+        assert!(git::checkpoint_patch(&dir, &id).unwrap().contains("+two"));
+        // Author snapshots within the window fold into one entry; a different message starts a new one.
+        fs::write(dir.join("main.tex"), "four\n").unwrap();
+        let a = git::checkpoint_with(&dir, "You edited main.tex", true)
+            .unwrap()
+            .unwrap();
+        fs::write(dir.join("main.tex"), "five\n").unwrap();
+        let b = git::checkpoint_with(&dir, "You edited main.tex", true)
+            .unwrap()
+            .unwrap();
+        assert_ne!(a, b);
+        let list = git::checkpoints(&dir, 10).unwrap();
+        assert_eq!(
+            list.len(),
+            4,
+            "folded: {:?}",
+            list.iter().map(|c| &c.message).collect::<Vec<_>>()
+        );
+        assert_eq!(list[0].message, "You edited main.tex");
+        // Undo one step in the middle, leaving a later, non-overlapping edit in place.
+        fs::write(dir.join("notes.txt"), "later\n").unwrap();
+        git::checkpoint(&dir, "You edited notes.txt")
+            .unwrap()
+            .unwrap();
+        git::checkpoint_undo(&dir, &b).unwrap();
+        assert_eq!(
+            fs::read_to_string(dir.join("main.tex")).unwrap(),
+            "two\n",
+            "the step's edit is gone"
+        );
+        assert!(dir.join("notes.txt").exists(), "the later edit stays");
+        assert!(git::checkpoints(&dir, 10).unwrap()[0]
+            .message
+            .starts_with("Undid:"));
+        // Discard puts a file back to HEAD and is itself snapshotted.
+        git::discard(&dir, "main.tex").unwrap();
+        assert_eq!(fs::read_to_string(dir.join("main.tex")).unwrap(), "one\n");
+        git::discard(&dir, "notes.txt").unwrap();
+        assert!(!dir.join("notes.txt").exists());
         let _ = fs::remove_dir_all(&dir);
     }
 
