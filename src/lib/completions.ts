@@ -55,7 +55,7 @@ export function projectCompletions(src: CompletionSources) {
       const wantsGraphics = /includegraphics/.test(m[0]);
       const files = flatten(src.files()).filter((f) => (wantsGraphics ? /\.(pdf|png|jpe?g|eps|svg)$/i.test(f) : /\.(tex|bib|txt|py)$/i.test(f)));
       const options = files.map((f) => ({ label: f.replace(/\.tex$/, ""), detail: f.split("/").pop(), type: "text" as const }));
-      return { from, options, validFor: /^[\w/.\-]*$/ };
+      return { from, options, validFor: /^[\w/.-]*$/ };
     }
     return null;
   };
