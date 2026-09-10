@@ -338,6 +338,63 @@ fn detect_env(root: &Path) -> Detected {
 }
 
 /// One line per code file: path and its first docstring or comment line.
+/// Every file of the paper (not Dabir's own state, not caches), relative, with sizes: what an agent
+/// needs to act without listing directories first. Capped so a stray data folder cannot flood the prompt.
+pub fn file_map(root: &Path, cap: usize) -> Vec<String> {
+    let mut out = vec![];
+    fn walk(dir: &Path, root: &Path, out: &mut Vec<String>, depth: usize, cap: usize) {
+        if depth > 4 || out.len() >= cap {
+            return;
+        }
+        let Ok(rd) = fs::read_dir(dir) else { return };
+        let mut entries: Vec<PathBuf> = rd.flatten().map(|e| e.path()).collect();
+        entries.sort();
+        for p in entries {
+            if out.len() >= cap {
+                return;
+            }
+            let name = p
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            if name.starts_with('.')
+                || [
+                    "node_modules",
+                    "target",
+                    "__pycache__",
+                    "venv",
+                    ".venv",
+                    "build",
+                    "dist",
+                ]
+                .contains(&name.as_str())
+            {
+                continue;
+            }
+            if p.is_dir() {
+                walk(&p, root, out, depth + 1, cap);
+                continue;
+            }
+            let rel = p
+                .strip_prefix(root)
+                .unwrap_or(&p)
+                .to_string_lossy()
+                .replace('\\', "/");
+            let size = fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
+            let human = if size < 1024 {
+                format!("{size} B")
+            } else if size < 1024 * 1024 {
+                format!("{} KB", size / 1024)
+            } else {
+                format!("{:.1} MB", size as f64 / 1048576.0)
+            };
+            out.push(format!("{rel} ({human})"));
+        }
+    }
+    walk(root, root, &mut out, 0, cap);
+    out
+}
+
 fn repo_map(root: &Path) -> Vec<String> {
     let mut out = vec![];
     fn walk(dir: &Path, root: &Path, out: &mut Vec<String>, depth: usize) {

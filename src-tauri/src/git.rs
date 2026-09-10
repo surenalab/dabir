@@ -362,7 +362,7 @@ pub fn worktree_add(root: &Path, run_id: &str) -> Result<PathBuf, String> {
     }
     // The agent works in the paper's folder inside the worktree, which is the whole repository.
     let cwd = dir.join(&prefix);
-    let _ = std::fs::create_dir_all(cwd.join(".dabir"));
+    let _ = std::fs::create_dir_all(cwd.join(".dabir").join("build"));
     Ok(cwd)
 }
 
