@@ -91,6 +91,9 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
           <Row label={s.autosave ? "Compile after changes settle" : "Compile on save"}>
             <Toggle on={s.compileOnSave} onChange={(v) => updateSettings({ compileOnSave: v })} label="Compile on save" />
           </Row>
+          <Row label="Suggest changes" hint="Track changes for coauthors who do not use Git. Your insertions are underlined and your deletions struck through in your colour until someone accepts or rejects them, from the People tab or by hovering the text. Suggestions are saved in .dabir/changes.json and shared in live sessions. Also in the formatting bar.">
+            <Toggle on={s.suggesting} onChange={(v) => updateSettings({ suggesting: v })} label="Suggest changes" />
+          </Row>
         </section>
 
         <footer>

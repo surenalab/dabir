@@ -428,14 +428,16 @@ pub struct Pick {
 }
 
 /// Keep only the selected files and hunks of a unified diff. Binary files are all or nothing.
-pub fn filter_patch(patch: &str, picks: &[Pick]) -> String {
-    let mut out = String::new();
-    let mut file_block: Vec<&str> = vec![];
-    let flush = |block: &Vec<&str>, out: &mut String| {
+/// Keep only the picked files and hunks of a patch. Byte-exact: a diff of a PDF or other file Git treats as text may hold bytes that are not
+/// UTF-8, and a lossy round trip would change the context lines so `git apply` rejects the hunk.
+pub fn filter_patch_bytes(patch: &[u8], picks: &[Pick]) -> Vec<u8> {
+    let mut out: Vec<u8> = Vec::new();
+    let mut file_block: Vec<&[u8]> = vec![];
+    let flush = |block: &Vec<&[u8]>, out: &mut Vec<u8>| {
         if block.is_empty() {
             return;
         }
-        let header = block[0];
+        let header = String::from_utf8_lossy(block[0]).into_owned();
         let Some(name) = header
             .strip_prefix("diff --git a/")
             .and_then(|r| r.split(" b/").next())
@@ -445,16 +447,22 @@ pub fn filter_patch(patch: &str, picks: &[Pick]) -> String {
         let Some(pick) = picks.iter().find(|p| p.path == name) else {
             return;
         };
-        let first_hunk = block.iter().position(|l| l.starts_with("@@"));
+        let first_hunk = block.iter().position(|l| l.starts_with(b"@@"));
+        let emit = |lines: &[&[u8]], out: &mut Vec<u8>| {
+            for l in lines {
+                out.extend_from_slice(l);
+                out.push(b'\n');
+            }
+        };
         match (&pick.hunks, first_hunk) {
             (Some(wanted), Some(h0)) => {
-                let mut kept: Vec<&str> = block[..h0].to_vec();
+                let mut kept: Vec<&[u8]> = block[..h0].to_vec();
                 let mut idx = 0usize;
                 let mut i = h0;
                 let mut any = false;
                 while i < block.len() {
                     let mut j = i + 1;
-                    while j < block.len() && !block[j].starts_with("@@") {
+                    while j < block.len() && !block[j].starts_with(b"@@") {
                         j += 1;
                     }
                     if wanted.contains(&idx) {
@@ -465,22 +473,15 @@ pub fn filter_patch(patch: &str, picks: &[Pick]) -> String {
                     i = j;
                 }
                 if any {
-                    for l in kept {
-                        out.push_str(l);
-                        out.push('\n');
-                    }
+                    emit(&kept, out);
                 }
             }
-            _ => {
-                for l in block {
-                    out.push_str(l);
-                    out.push('\n');
-                }
-            }
+            _ => emit(block, out),
         }
     };
-    for line in patch.lines() {
-        if line.starts_with("diff --git ") {
+    let body = patch.strip_suffix(b"\n").unwrap_or(patch);
+    for line in body.split(|b| *b == b'\n') {
+        if line.starts_with(b"diff --git ") {
             flush(&file_block, &mut out);
             file_block = vec![line];
         } else if !file_block.is_empty() {
@@ -528,10 +529,11 @@ fn apply_selection(
         .args(["diff", "--cached", "--binary", "HEAD"])
         .output()
         .map_err(|e| e.to_string())?;
-    let full = String::from_utf8_lossy(&full.stdout).to_string();
-    let (patch, selected): (String, Vec<String>) = match &picks {
+    // Keep the patch as bytes: a regenerated figure that Git still treats as text must round-trip exactly.
+    let full = full.stdout;
+    let (patch, selected): (Vec<u8>, Vec<String>) = match &picks {
         Some(ps) if !ps.is_empty() => (
-            filter_patch(&full, ps),
+            filter_patch_bytes(&full, ps),
             ps.iter().map(|p| p.path.clone()).collect(),
         ),
         _ => {
@@ -550,7 +552,7 @@ fn apply_selection(
             )
         }
     };
-    if !patch.trim().is_empty() {
+    if patch.iter().any(|b| !b.is_ascii_whitespace()) {
         // Apply from the repository root: git apply run in a subdirectory silently drops paths outside it.
         let mut child = Command::new("git")
             .current_dir(&workdir)
@@ -564,7 +566,7 @@ fn apply_selection(
             .stdin
             .take()
             .unwrap()
-            .write_all(patch.as_bytes())
+            .write_all(&patch)
             .map_err(|e| e.to_string())?;
         let out = child.wait_with_output().map_err(|e| e.to_string())?;
         if !out.status.success() {

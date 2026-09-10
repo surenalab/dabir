@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, Check, Loader2, Paperclip, RefreshCw, Square, X, FileText, Pencil, Terminal, Search, Wrench, Brain, FileDiff } from "lucide-react";
+import { ArrowUp, Check, Loader2, Paperclip, RefreshCw, Square, X, FileText, Pencil, Terminal, Search, Wrench, Brain, FileDiff, PenLine } from "lucide-react";
 import {
   agentAccept, agentApply, agentCancel, agentDiff, agentProviders, agentPullRequest, agentReject, agentRun, memoryRead, memorySetup,
   onAgentEvent, provenanceRerun, type Artefact, type Memory, type Pick, type Project, type Provider, type WorktreeDiff,
@@ -8,6 +8,9 @@ import { Segmented } from "./Segmented";
 import type { Comment, Peer } from "../lib/collab";
 
 type Tab = "agent" | "memory" | "people";
+
+/** A pending suggestion in the open file, with the text it covers. */
+export interface ChangeItem { id: string; author: string; color: string; kind: "insert" | "delete"; excerpt: string; at: number }
 
 interface Step { kind: "text" | "tool" | "log" | "thinking"; text: string; tool?: string | null; at: number }
 
@@ -139,6 +142,11 @@ interface Props {
   onRemoveComment: (id: string) => void;
   onJumpComment: (c: Comment) => void;
   onShare: () => void;
+  changes: ChangeItem[];
+  suggesting: boolean;
+  onToggleSuggesting: () => void;
+  onResolveChanges: (ids: string[] | null, accept: boolean) => void;
+  onJumpChange: (id: string) => void;
   project: Project | null;
   gitRepo: boolean;
   askFocus: number;
@@ -151,7 +159,7 @@ interface Props {
   autoRun?: string | null;
 }
 
-export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady, onChanged, onOpenFile, onNote, live, peers, comments, currentFile, hasSelection, onAddComment, onResolveComment, onReplyComment, onRemoveComment, onJumpComment, onShare, autoRun }: Props) {
+export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady, onChanged, onOpenFile, onNote, live, peers, comments, currentFile, hasSelection, onAddComment, onResolveComment, onReplyComment, onRemoveComment, onJumpComment, onShare, autoRun, changes, suggesting, onToggleSuggesting, onResolveChanges, onJumpChange }: Props) {
   const [commentDraft, setCommentDraft] = useState("");
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [replyDraft, setReplyDraft] = useState("");
@@ -448,6 +456,31 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
                   ))}
                 </div>
               </div>}
+              <div className="field">
+                <label>Suggested changes{currentFile ? <> in <code>{currentFile}</code></> : ""}</label>
+                <div className="suggest-head">
+                  <button className={`btn ${suggesting ? "primary" : ""}`} aria-pressed={suggesting} onClick={onToggleSuggesting} title="While on, your edits are recorded as suggestions instead of changing the text outright."><PenLine /> {suggesting ? "Suggesting" : "Suggest changes"}</button>
+                  {changes.length > 1 && (
+                    <span className="suggest-all">
+                      <button className="btn" onClick={() => onResolveChanges(null, true)}>Accept all</button>
+                      <button className="btn" onClick={() => onResolveChanges(null, false)}>Reject all</button>
+                    </span>
+                  )}
+                </div>
+                <div className="suggs">
+                  {changes.map((c) => (
+                    <div className={`sugg ${c.kind}`} key={c.id} style={{ "--sugg-color": c.color } as React.CSSProperties}>
+                      <div className="who"><b>{c.author}</b><span>{c.kind === "insert" ? "inserted" : "deleted"}</span></div>
+                      <button className="excerpt" onClick={() => onJumpChange(c.id)} title="Show in the source">{c.excerpt || "(whitespace)"}</button>
+                      <div className="row">
+                        <button onClick={() => onResolveChanges([c.id], true)}>Accept</button>
+                        <button onClick={() => onResolveChanges([c.id], false)}>Reject</button>
+                      </div>
+                    </div>
+                  ))}
+                  {changes.length === 0 && <span className="target">{suggesting ? "Type to suggest. Deletions stay struck through in the text until they are accepted." : "No suggestions in this file."}</span>}
+                </div>
+              </div>
               <div className="field">
                 <label>Comments{currentFile ? <> on <code>{currentFile}</code></> : ""}</label>
                 <div className="comment-box">

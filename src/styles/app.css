@@ -622,6 +622,32 @@ button { background: none; border: 0; padding: 0; cursor: default; }
 .comment-box { display: flex; gap: 6px; }
 .comment-box input { flex: 1; min-width: 0; height: 26px; padding: 0 var(--space-2); border: 1px solid var(--line-strong); border-radius: var(--radius-md); background: var(--raised); color: var(--ink); font-size: var(--text-sm); user-select: text; cursor: text; }
 .comment-box input:focus { outline: 0; border-color: var(--accent); box-shadow: 0 0 0 3px var(--focus); }
+
+/* Track changes: suggestions keep the ink colour for contrast; the author's colour carries the mark only. */
+.cm-sugg { --sugg-color: var(--warn); }
+.cm-sugg.ins { background: color-mix(in srgb, var(--sugg-color) 12%, transparent); text-decoration: underline; text-decoration-color: var(--sugg-color); text-decoration-thickness: 1.5px; text-underline-offset: 3px; }
+.cm-sugg.del { background: color-mix(in srgb, var(--sugg-color) 8%, transparent); text-decoration: line-through; text-decoration-color: var(--sugg-color); text-decoration-thickness: 1.5px; color: var(--ink-3); }
+.change-card .gc-msg b { color: var(--ink); }
+.change-card .gc-msg b::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--sugg-color); margin-right: 5px; }
+.change-card .gc-fix.reject { background: transparent; color: var(--ink-2); border: 1px solid var(--line-strong); }
+.change-card .gc-fix.reject:hover { background: var(--wash-hover); color: var(--ink); }
+.fb.on { background: var(--accent-wash); color: var(--accent); }
+.fb.on:hover { background: var(--accent-wash); color: var(--accent); }
+.fb-hint.suggesting { color: var(--accent); }
+.suggest-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 6px; }
+.suggest-all { display: flex; gap: 4px; }
+.suggs { display: flex; flex-direction: column; gap: 6px; }
+.sugg { border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--raised); padding: 6px var(--space-2); font-size: var(--text-sm); }
+.sugg .who { display: flex; gap: 6px; font-size: var(--text-xs); color: var(--ink-3); margin-bottom: 2px; }
+.sugg .who b { color: var(--ink); font-weight: 600; }
+.sugg .who b::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--sugg-color, var(--warn)); margin-right: 5px; vertical-align: 0; }
+.sugg .excerpt { display: block; width: 100%; text-align: left; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-2); line-height: 1.45; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 2px 0; }
+.sugg .excerpt:hover { color: var(--ink); }
+.sugg.insert .excerpt { text-decoration: underline; text-decoration-color: var(--sugg-color); text-underline-offset: 2px; }
+.sugg.delete .excerpt { text-decoration: line-through; text-decoration-color: var(--sugg-color); }
+.sugg .row { display: flex; gap: 6px; margin-top: 4px; }
+.sugg .row button { font-size: var(--text-xs); color: var(--ink-3); text-decoration: underline; }
+.sugg .row button:hover { color: var(--ink); }
 .diag .count { color: var(--ink-4); font-family: var(--font-mono); font-size: var(--text-xs); margin-left: 4px; }
 
 /* Problems panel */
