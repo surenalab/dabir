@@ -222,9 +222,11 @@ export async function agentComplete(root: string, provider: string, file: string
   return invoke<string>("agent_complete", { root, provider, file, context, model: model || null, effort: effort || null });
 }
 
-export async function agentRun(root: string, provider: string, prompt: string, model = "", effort = ""): Promise<{ runId: string; worktree: string }> {
+/** A follow-up continues the run under review in its own worktree, on top of the changes it made. */
+export interface FollowUp { runId: string; prompt: string; reply: string }
+export async function agentRun(root: string, provider: string, prompt: string, model = "", effort = "", followUp: FollowUp | null = null): Promise<{ runId: string; worktree: string }> {
   if (!native) {
-    const runId = Math.random().toString(16).slice(2, 10);
+    const runId = followUp?.runId ?? Math.random().toString(16).slice(2, 10);
     (async () => {
       const send = (e: Omit<AgentEvent, "runId">) => sampleRunHandlers.forEach((h) => h({ runId, ...e }));
       await wait(300); send({ kind: "thinking", text: "The sweep script writes both the figure and the table; rerunning it with a finer grid changes the margin claim in the sampler section too.", tool: null, ok: null });
@@ -240,7 +242,7 @@ export async function agentRun(root: string, provider: string, prompt: string, m
     })();
     return { runId, worktree: `${root}/.dabir/worktrees/${runId}` };
   }
-  return invoke("agent_run", { root, provider, prompt, model: model || null, effort: effort || null });
+  return invoke("agent_run", { root, provider, prompt, model: model || null, effort: effort || null, followUp });
 }
 
 export function onAgentEvent(handler: (e: AgentEvent) => void): () => void {

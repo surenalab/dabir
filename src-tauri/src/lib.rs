@@ -1137,6 +1137,15 @@ struct RunStarted {
     worktree: String,
 }
 
+/// A request that continues an unreviewed run in its own worktree, so the agent builds on what it did.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FollowUp {
+    run_id: String,
+    prompt: String,
+    reply: String,
+}
+
 /// Start an agent run on a fresh worktree. Events stream on the `agent-event` channel.
 #[tauri::command]
 fn agent_run(
@@ -1146,11 +1155,30 @@ fn agent_run(
     prompt: String,
     model: Option<String>,
     effort: Option<String>,
+    follow_up: Option<FollowUp>,
 ) -> Result<RunStarted, String> {
-    let run_id = uuid::Uuid::new_v4().to_string()[..8].to_string();
     let root_p = PathBuf::from(&root);
-    let wt = git::worktree_add(&root_p, &run_id)?;
-    let full = agent_preamble(&root_p, &wt, &prompt);
+    // A follow-up keeps the worktree of the run under review: its changes stay in place and the next
+    // request builds on them, instead of a fresh worktree that silently drops them.
+    let cont = follow_up.and_then(|f| git::worktree_cwd(&root_p, &f.run_id).map(|cwd| (f, cwd)));
+    let (run_id, wt, full) = match cont {
+        Some((f, cwd)) => {
+            let ask = format!(
+                "This request continues your previous one in this same working copy. Earlier request: {}\nYour report then: {}\nThe files still hold the changes you made; the author has not accepted them yet and now asks for the following on top of them. Do not undo your earlier work unless asked.\n\n{}",
+                f.prompt.trim(),
+                if f.reply.trim().is_empty() { "(none)" } else { f.reply.trim() },
+                prompt
+            );
+            let full = agent_preamble(&root_p, &cwd, &ask);
+            (f.run_id, cwd, full)
+        }
+        None => {
+            let run_id = uuid::Uuid::new_v4().to_string()[..8].to_string();
+            let wt = git::worktree_add(&root_p, &run_id)?;
+            let full = agent_preamble(&root_p, &wt, &prompt);
+            (run_id, wt, full)
+        }
+    };
     let steer = agents::Steer { model, effort };
     if let Err(e) = agents::run(app, provider, full, wt.clone(), run_id.clone(), steer) {
         let _ = git::worktree_remove(&root_p, &run_id);

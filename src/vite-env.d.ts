@@ -1,5 +1,8 @@
 /// <reference types="vite/client" />
 
+/** Commit and day of this build, set in vite.config.ts. */
+declare const __DABIR_BUILD__: string;
+
 // nspell ships no types; this is the part Dabir uses.
 declare module "nspell" {
   interface NSpell {
