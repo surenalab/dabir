@@ -3,7 +3,7 @@
 // figures render as widgets, and anything under the cursor reveals its source.
 
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view";
-import { RangeSetBuilder, StateField, type Range, type EditorState } from "@codemirror/state";
+import { RangeSetBuilder, StateEffect, StateField, type Range, type EditorState } from "@codemirror/state";
 import katex from "katex";
 import type { BibEntry } from "./latex";
 import { changesField, safeColor, type ChangeKind } from "./changes";
@@ -27,9 +27,24 @@ export function setVisualContext(c: VisualContext) { ctx = c; }
 export interface SuggBadge { kind: ChangeKind | "mixed"; color: string; author: string; count: number }
 const sameSugg = (a: SuggBadge | null, b: SuggBadge | null) => (a === b) || (!!a && !!b && a.kind === b.kind && a.color === b.color && a.author === b.author && a.count === b.count);
 
+/** A coauthor's caret, as an absolute offset in this document. Widgets that hide the caret's text wear the name instead. */
+export interface RemoteCursor { pos: number; name: string; color: string }
+export const setRemoteCursors = StateEffect.define<RemoteCursor[]>();
+export const remoteCursorsField = StateField.define<RemoteCursor[]>({
+  create: () => [],
+  update(cs, tr) {
+    for (const e of tr.effects) if (e.is(setRemoteCursors)) return e.value;
+    return tr.docChanged ? cs.map((c) => ({ ...c, pos: tr.changes.mapPos(c.pos) })) : cs;
+  },
+});
+const samePeers = (a: RemoteCursor[], b: RemoteCursor[]) => a.length === b.length && a.every((x, i) => x.name === b[i].name && x.color === b[i].color);
+
 abstract class VzWidget extends WidgetType {
   sugg: SuggBadge | null = null;
+  peers: RemoteCursor[] = [];
   abstract render(): HTMLElement;
+  /** Subclasses compare their own content; this adds the badges every widget can wear. */
+  sameBadges(o: VzWidget) { return sameSugg(this.sugg, o.sugg) && samePeers(this.peers, o.peers); }
   toDOM() {
     const el = this.render();
     const s = this.sugg;
@@ -39,6 +54,21 @@ abstract class VzWidget extends WidgetType {
       const what = s.kind === "insert" ? "an insertion" : s.kind === "delete" ? "a deletion" : `${s.count} changes`;
       el.dataset.sugg = `${s.author} suggests ${what}`;
       el.title = `${s.author} suggests ${what} here. Click to review the source.`;
+    }
+    if (this.peers.length) {
+      el.classList.add("vz-peers");
+      el.style.setProperty("--peer-color", safeColor(this.peers[0].color));
+      const tags = document.createElement("span");
+      tags.className = "vz-peer-tags";
+      tags.setAttribute("aria-label", `${this.peers.map((p) => p.name).join(", ")} editing here`);
+      for (const p of this.peers) {
+        const t = document.createElement("span");
+        t.className = "vz-peer";
+        t.style.setProperty("--peer-color", safeColor(p.color));
+        t.textContent = p.name;
+        tags.appendChild(t);
+      }
+      el.appendChild(tags);
     }
     return el;
   }
@@ -57,7 +87,7 @@ function renderMath(tex: string, display: boolean): string {
 
 class MathWidget extends VzWidget {
   constructor(readonly tex: string, readonly display: boolean, readonly tag: string, readonly from: number) { super(); }
-  eq(o: MathWidget) { return sameSugg(this.sugg, o.sugg) && o.tex === this.tex && o.display === this.display && o.tag === this.tag; }
+  eq(o: MathWidget) { return this.sameBadges(o) && o.tex === this.tex && o.display === this.display && o.tag === this.tag; }
   render() {
     const el = document.createElement(this.display ? "div" : "span");
     el.className = this.display ? "vz-eq" : "vz-math";
@@ -72,7 +102,7 @@ class MathWidget extends VzWidget {
 /** A folded run of preamble lines. Click to open it. */
 class FoldWidget extends VzWidget {
   constructor(readonly lines: number, readonly first: string, readonly from: number) { super(); }
-  eq(o: FoldWidget) { return sameSugg(this.sugg, o.sugg) && o.lines === this.lines && o.first === this.first; }
+  eq(o: FoldWidget) { return this.sameBadges(o) && o.lines === this.lines && o.first === this.first; }
   render() {
     const el = document.createElement("div");
     el.className = "vz-fold";
@@ -99,7 +129,7 @@ class PreviewWidget extends WidgetType {
 
 class ChipWidget extends VzWidget {
   constructor(readonly kind: "cite" | "ref" | "input" | "note" | "link", readonly label: string, readonly title: string, readonly from: number, readonly target?: string) { super(); }
-  eq(o: ChipWidget) { return sameSugg(this.sugg, o.sugg) && o.kind === this.kind && o.label === this.label && o.title === this.title; }
+  eq(o: ChipWidget) { return this.sameBadges(o) && o.kind === this.kind && o.label === this.label && o.title === this.title; }
   render() {
     const el = document.createElement("span");
     el.className = `vz-chip vz-${this.kind}`;
@@ -116,14 +146,14 @@ class ChipWidget extends VzWidget {
 
 class TextWidget extends VzWidget {
   constructor(readonly text: string, readonly from: number) { super(); }
-  eq(o: TextWidget) { return sameSugg(this.sugg, o.sugg) && o.text === this.text; }
+  eq(o: TextWidget) { return this.sameBadges(o) && o.text === this.text; }
   render() { const el = document.createElement("span"); el.textContent = this.text; el.dataset.from = String(this.from); return el; }
   ignoreEvent() { return false; }
 }
 
 class TableWidget extends VzWidget {
   constructor(readonly inner: string, readonly number: number, readonly from: number) { super(); }
-  eq(o: TableWidget) { return sameSugg(this.sugg, o.sugg) && o.inner === this.inner && o.number === this.number; }
+  eq(o: TableWidget) { return this.sameBadges(o) && o.inner === this.inner && o.number === this.number; }
   render() {
     const el = document.createElement("figure");
     el.className = "vz-figure vz-tablefig";
@@ -169,7 +199,7 @@ const imageCache = new Map<string, Promise<string | null>>();
 
 class FigureWidget extends VzWidget {
   constructor(readonly file: string | null, readonly caption: string, readonly number: number, readonly from: number) { super(); }
-  eq(o: FigureWidget) { return sameSugg(this.sugg, o.sugg) && o.file === this.file && o.caption === this.caption && o.number === this.number; }
+  eq(o: FigureWidget) { return this.sameBadges(o) && o.file === this.file && o.caption === this.caption && o.number === this.number; }
   render() {
     const el = document.createElement("figure");
     el.className = "vz-figure";
@@ -258,12 +288,16 @@ export function buildDecorations(state: EditorState): DecorationSet {
   const push = (from: number, to: number, d: Decoration) => { if (to >= from) ranges.push(d.range(from, to)); };
   // Suggestions whose text a widget would hide: the widget wears the badge instead.
   const suggs = state.field(changesField, false)?.items ?? [];
+  const cursors = state.field(remoteCursorsField, false) ?? [];
   const badge = <T extends VzWidget>(w: T, from: number, to: number): T => {
     const hits = suggs.filter((c) => c.from < to && c.to > from);
     if (hits.length) {
       const kinds = new Set(hits.map((c) => c.kind));
       w.sugg = { kind: kinds.size === 1 ? hits[0].kind : "mixed", color: hits[0].color, author: hits.every((c) => c.author === hits[0].author) ? hits[0].author : `${hits[0].author} and others`, count: hits.length };
     }
+    // A coauthor's caret inside the hidden source: the widget shows who is there.
+    const here = cursors.filter((c) => c.pos > from && c.pos < to);
+    if (here.length) w.peers = here;
     return w;
   };
 
@@ -477,6 +511,7 @@ const visualField = StateField.define<DecorationSet>({
   update: (deco, tr) => {
     if (tr.docChanged) return buildDecorations(tr.state);
     if (tr.startState.field(changesField, false)?.items !== tr.state.field(changesField, false)?.items) return buildDecorations(tr.state);
+    if (tr.effects.some((e) => e.is(setRemoteCursors))) return buildDecorations(tr.state);
     if (!tr.selection) return deco;
     // Skip a full rebuild when the caret stays on the same line(s); widgets only reveal on line intersection.
     const a = tr.startState.selection.main, b = tr.state.selection.main;
