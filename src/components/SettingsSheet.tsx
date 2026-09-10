@@ -108,6 +108,7 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
         </section>
 
         <footer>
+          <span className="build" title="Commit and day this copy of Dabir was built from">Dabir {__DABIR_BUILD__}</span>
           <button className="btn" onClick={() => resetSettings()} title={`Defaults: ${Object.keys(DEFAULTS).length} settings`}>Reset to Defaults</button>
           <button className="btn primary" onClick={onClose}>Done</button>
         </footer>

@@ -149,3 +149,11 @@ Built once the Windows and Linux builds started running. Every joiner rebuilds t
 - The working folder is literally named `Open Source ` with a trailing space. It works, but some tools may trip on it.
 - The `.dabir/build` output folder must exist before Tectonic runs; the compile command creates it.
 - In the browser preview (`npm run dev`) compile and PDF are mocked because there is no TeX engine in the browser.
+
+### Follow-ups on a reviewed run
+
+Asking again while the agent's changes were under review used to start a fresh worktree, which silently
+dropped those changes and replaced the transcript. Now a second request continues the same run: same
+worktree, the agent is told what it did and that the author has not accepted it yet, and the panel keeps
+each earlier request and reply above the new one. Accept, Reject and the memory log cover the whole
+conversation. Settings shows the commit and day the running copy was built from.

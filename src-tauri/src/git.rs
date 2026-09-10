@@ -284,6 +284,17 @@ pub fn worktree_dir(root: &Path, run_id: &str) -> PathBuf {
     root.join(".dabir").join("worktrees").join(run_id)
 }
 
+/// The paper's folder inside an existing run's worktree, or None when that run is gone.
+pub fn worktree_cwd(root: &Path, run_id: &str) -> Option<PathBuf> {
+    let dir = worktree_dir(root, run_id);
+    if !dir.is_dir() {
+        return None;
+    }
+    let (_, prefix) = repo_prefix(root).ok()?;
+    let cwd = dir.join(prefix);
+    cwd.is_dir().then_some(cwd)
+}
+
 /// A paper may live inside a larger repository (a monorepo, or the bundled sample inside Dabir's own
 /// checkout). Everything Git-side works on the repository; everything the user sees is relative to the
 /// paper. This returns the repository's working directory and the paper's prefix inside it ("" or "sub/dir/").
