@@ -4,7 +4,8 @@ Newest first. Every merged pull request adds a line under Unreleased; a release 
 
 ## Unreleased
 
-- Development harness: CONTRIBUTING.md, docs/REVIEW.md, the `npm run check` gate, ESLint, clippy and fmt in CI, pull request template, pre-push hook, optional agent review workflow.
+- Development harness: CONTRIBUTING.md, docs/REVIEW.md, the `npm run check` gate, ESLint, clippy and fmt in CI, pull request template, pre-push hook, optional Claude review workflow on the owner's subscription.
+- Review bot `npm run review`: codebase-aware pull request reviews on the local agent subscriptions, any vendor, posted with gh; its first run reviewed itself and its findings were applied.
 - Agent transcript: reasoning folded, tool rows with verbs and times, result card; Accept without a commit.
 - Autosave with a Saved / Saving indicator; snapshots every five minutes and after accepted agent changes; Versions in the sidebar with restore.
 - Preview hooks for documentation screenshots (`?open=sample&view=…`), browser preview only.
