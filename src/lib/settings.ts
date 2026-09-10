@@ -2,7 +2,7 @@
 
 export interface Settings {
   spellcheck: boolean;          // spelling in the editor
-  spellLanguage: "en-GB" | "en-US" | "system";  // Dabir's LaTeX-aware dictionary, or the OS checker
+  spellLanguage: string;                        // a dictionary id from public/dict/index.json, or "system" for the OS checker
   grammar: "off" | "languagetool";
   languageToolUrl: string;      // a server you trust; the public one has limits and sees your text
   grammarLanguage: string;      // e.g. en-GB, en-US, auto
