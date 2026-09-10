@@ -203,7 +203,20 @@ let sampleRunHandlers: ((e: AgentEvent) => void)[] = [];
 // Line numbers match src/lib/sample.ts, so the review preview shows the marks on the real text.
 const SAMPLE_PATCH = `diff --git a/tables/psnr-sweep.tex b/tables/psnr-sweep.tex\n--- a/tables/psnr-sweep.tex\n+++ b/tables/psnr-sweep.tex\n@@ -8,3 +8,5 @@\n 0.2 & 28.9 & 28.1 & 30.7 \\\\\n+0.25 & 27.0 & 26.2 & 28.9 \\\\\n+0.3 & 25.4 & 24.6 & 27.2 \\\\\n \\bottomrule\ndiff --git a/main.tex b/main.tex\n--- a/main.tex\n+++ b/main.tex\n@@ -33,1 +33,1 @@\n-We plug $\\tilde{g}_t$ into a standard predictor--corrector sampler. Figure~\\ref{fig:psnr} reports PSNR against noise level for three baselines; anchoring holds a 1.8 dB margin up to $\\sigma = 0.3$.\n+We plug $\\tilde{g}_t$ into a standard predictor--corrector sampler. Figure~\\ref{fig:psnr} reports PSNR against noise level for three baselines; anchoring holds a 1.8 dB margin up to $\\sigma = 0.3$ (Table~\\ref{tab:psnr}).\n@@ -44,1 +44,2 @@\n \\input{tables/psnr-sweep}\n+The sweep in Table~\\ref{tab:psnr} now extends to $\\sigma = 0.3$.\n`;
 
-export async function agentRun(root: string, provider: string, prompt: string): Promise<{ runId: string; worktree: string }> {
+export interface ModelChoice { id: string; label: string }
+export interface ModelOptions { models: ModelChoice[]; efforts: string[]; defaultModel: string | null; custom: boolean }
+/** Models and effort levels a provider's CLI accepts; asks the CLI where it can list them. */
+export async function agentModels(provider: string): Promise<ModelOptions> {
+  if (!native) {
+    await wait(200);
+    if (provider === "claude") return { models: [{ id: "opus", label: "Opus" }, { id: "sonnet", label: "Sonnet" }, { id: "haiku", label: "Haiku" }], efforts: ["low", "medium", "high", "xhigh", "max"], defaultModel: null, custom: true };
+    if (provider === "cursor") return { models: [{ id: "composer-2.5", label: "Composer 2.5" }, { id: "claude-opus-5-thinking-high", label: "Claude Opus 5 Thinking" }, { id: "gpt-5.6-sol-high", label: "GPT-5.6 Sol High" }], efforts: [], defaultModel: "auto", custom: true };
+    return { models: [], efforts: ["low", "medium", "high", "xhigh"], defaultModel: null, custom: true };
+  }
+  return invoke<ModelOptions>("agent_models", { provider });
+}
+
+export async function agentRun(root: string, provider: string, prompt: string, model = "", effort = ""): Promise<{ runId: string; worktree: string }> {
   if (!native) {
     const runId = Math.random().toString(16).slice(2, 10);
     (async () => {
@@ -221,7 +234,7 @@ export async function agentRun(root: string, provider: string, prompt: string): 
     })();
     return { runId, worktree: `${root}/.dabir/worktrees/${runId}` };
   }
-  return invoke("agent_run", { root, provider, prompt });
+  return invoke("agent_run", { root, provider, prompt, model: model || null, effort: effort || null });
 }
 
 export function onAgentEvent(handler: (e: AgentEvent) => void): () => void {

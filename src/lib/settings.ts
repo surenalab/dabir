@@ -16,6 +16,8 @@ export interface Settings {
   autosave: boolean;            // write the file a moment after you stop typing; snapshots every few minutes
   suggesting: boolean;          // track changes: edits become suggestions a coauthor accepts or rejects
   signalingUrl: string;         // for the "signalling server" live mode; empty means none configured
+  agentModel: Record<string, string>;   // per provider: model id, "" for the CLI's default
+  agentEffort: Record<string, string>;  // per provider: reasoning effort level, "" for the CLI's default
 }
 
 export const DEFAULTS: Settings = {
@@ -34,6 +36,8 @@ export const DEFAULTS: Settings = {
   autosave: true,
   suggesting: false,
   signalingUrl: "",
+  agentModel: {},
+  agentEffort: {},
 };
 
 const KEY = "dabir.settings";

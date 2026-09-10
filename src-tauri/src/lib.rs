@@ -1090,6 +1090,14 @@ fn agent_providers() -> Vec<agents::Provider> {
     agents::detect()
 }
 
+/// Models and effort levels one provider's CLI accepts (asks the CLI where it can list them).
+#[tauri::command]
+async fn agent_models(provider: String) -> agents::ModelOptions {
+    tauri::async_runtime::spawn_blocking(move || agents::models(&provider))
+        .await
+        .unwrap_or_else(|_| agents::models(""))
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct RunStarted {
@@ -1104,12 +1112,15 @@ fn agent_run(
     root: String,
     provider: String,
     prompt: String,
+    model: Option<String>,
+    effort: Option<String>,
 ) -> Result<RunStarted, String> {
     let run_id = uuid::Uuid::new_v4().to_string()[..8].to_string();
     let root_p = PathBuf::from(&root);
     let wt = git::worktree_add(&root_p, &run_id)?;
     let full = agent_preamble(&root_p, &prompt);
-    if let Err(e) = agents::run(app, provider, full, wt.clone(), run_id.clone()) {
+    let steer = agents::Steer { model, effort };
+    if let Err(e) = agents::run(app, provider, full, wt.clone(), run_id.clone(), steer) {
         let _ = git::worktree_remove(&root_p, &run_id);
         return Err(e);
     }
@@ -1573,6 +1584,7 @@ pub fn run() {
             checkpoints,
             checkpoint_restore,
             agent_providers,
+            agent_models,
             agent_run,
             agent_cancel,
             agent_diff,
@@ -1787,6 +1799,67 @@ mod tests {
         assert_eq!(evs.len(), 1);
         assert_eq!(evs[0].2.as_deref(), Some("Read"));
         assert_eq!(evs[0].1, "/p/main.tex");
+    }
+
+    #[test]
+    fn steering_flags_per_cli() {
+        let cwd = Path::new("/w");
+        let steer = agents::Steer {
+            model: Some("opus".into()),
+            effort: Some("high".into()),
+        };
+        let claude = agents::args_for_test("claude", "p", cwd, &steer);
+        assert!(claude.windows(2).any(|w| w == ["--model", "opus"]));
+        assert!(claude.windows(2).any(|w| w == ["--effort", "high"]));
+        let codex = agents::args_for_test("codex", "p", cwd, &steer);
+        assert!(codex.windows(2).any(|w| w == ["-m", "opus"]));
+        assert!(codex
+            .windows(2)
+            .any(|w| w == ["-c", "model_reasoning_effort=\"high\""]));
+        assert_eq!(codex.last().unwrap(), "p", "prompt stays last for codex");
+        let cursor = agents::args_for_test("cursor", "p", cwd, &steer);
+        assert!(cursor.windows(2).any(|w| w == ["--model", "opus"]));
+        assert!(
+            !cursor.iter().any(|a| a.contains("effort")),
+            "cursor takes effort through the model id"
+        );
+        assert_eq!(cursor.last().unwrap(), "p");
+        let grok = agents::args_for_test("grok", "p", cwd, &steer);
+        assert!(grok.windows(2).any(|w| w == ["--reasoning-effort", "high"]));
+        // Blank steering adds nothing.
+        let none = agents::args_for_test(
+            "claude",
+            "p",
+            cwd,
+            &agents::Steer {
+                model: Some("  ".into()),
+                effort: None,
+            },
+        );
+        assert!(!none.iter().any(|a| a == "--model"));
+    }
+
+    #[test]
+    fn model_lists_come_from_installed_clis() {
+        let installed: Vec<String> = agents::detect()
+            .into_iter()
+            .filter(|p| p.installed)
+            .map(|p| p.id)
+            .collect();
+        for id in ["grok", "cursor"] {
+            if !installed.iter().any(|x| x == id) {
+                continue;
+            }
+            let m = agents::models(id);
+            assert!(!m.models.is_empty(), "{} lists its models: {:?}", id, m);
+            assert!(m.models.iter().all(|c| !c.id.contains(' ')));
+        }
+        let claude = agents::models("claude");
+        assert_eq!(
+            claude.efforts,
+            vec!["low", "medium", "high", "xhigh", "max"]
+        );
+        assert!(agents::models("cursor").efforts.is_empty());
     }
 
     #[test]
@@ -2029,7 +2102,7 @@ mod tests {
         let wt = git::worktree_add(&dir, &run_id).unwrap();
         let (tx, rx) = std::sync::mpsc::channel::<agents::AgentEvent>();
         let started = std::time::Instant::now();
-        agents::run_with(provider.clone(), "Open main.tex and change the abstract's phrase 'three baselines' to 'three strong baselines'. Do not touch anything else. Reply DONE when finished.".into(), wt.clone(), run_id.clone(), move |e| { let _ = tx.send(e); }).unwrap();
+        agents::run_with(provider.clone(), "Open main.tex and change the abstract's phrase 'three baselines' to 'three strong baselines'. Do not touch anything else. Reply DONE when finished.".into(), wt.clone(), run_id.clone(), agents::Steer::default(), move |e| { let _ = tx.send(e); }).unwrap();
         let mut ok = None;
         let mut tools = 0;
         while let Ok(e) = rx.recv_timeout(std::time::Duration::from_secs(240)) {
@@ -2213,6 +2286,7 @@ mod tests {
                 task.prompt.clone(),
                 wt.clone(),
                 run_id.clone(),
+                agents::Steer::default(),
                 move |e| {
                     let _ = tx.send(e);
                 },
