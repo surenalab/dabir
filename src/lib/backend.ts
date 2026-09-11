@@ -218,6 +218,36 @@ export async function zoteroImport(root: string): Promise<string> {
   return invoke<string>("zotero_import", { root });
 }
 
+// ---------------------------------------------------------------- reference sync
+
+export interface ZoteroCollection { key: string; name: string; parent: string | null }
+export interface ZoteroStatus { reachable: boolean; betterBibtex: boolean; collections: ZoteroCollection[] }
+export interface SyncReport { file: string; added: number; updated: number; total: number; keys: string[] }
+export interface LinkedSync { mtime: number; report: SyncReport | null }
+let sampleLinkedTick = 0;
+export async function zoteroStatus(): Promise<ZoteroStatus> {
+  if (!native) { await wait(400); return { reachable: true, betterBibtex: true, collections: [{ key: "C1", name: "Thesis", parent: null }, { key: "C2", name: "Thesis / Diffusion", parent: "C1" }, { key: "C3", name: "Reading", parent: null }] }; }
+  return invoke<ZoteroStatus>("zotero_status");
+}
+export async function zoteroSync(root: string, collection: string | null, betterBibtex: boolean): Promise<SyncReport> {
+  if (!native) { await wait(900); return { file: "refs.bib", added: 3, updated: 1, total: 42, keys: ["ho2020ddpm", "song2021score", "chung2023dps", "kingma2014adam"] }; }
+  return invoke<SyncReport>("zotero_sync", { root, collection, betterBibtex });
+}
+export async function refsAdd(root: string, id: string): Promise<SyncReport> {
+  if (!native) { await wait(700); if (!/^(10\.|arxiv|\d{4}\.\d{4,5})/i.test(id.trim())) throw new Error("Enter a DOI (10.xxxx/…) or an arXiv id (2301.00001)."); return { file: "refs.bib", added: 1, updated: 0, total: 43, keys: ["vaswani2017attention"] }; }
+  return invoke<SyncReport>("refs_add", { root, id });
+}
+export async function refsLinkedSync(root: string, path: string, since: number): Promise<LinkedSync> {
+  if (!native) { sampleLinkedTick += 1; return sampleLinkedTick === 1 ? { mtime: Date.now(), report: { file: "refs.bib", added: 2, updated: 0, total: 44, keys: ["a", "b"] } } : { mtime: since, report: null }; }
+  return invoke<LinkedSync>("refs_linked_sync", { root, path, since });
+}
+/** Choose a .bib another reference manager keeps up to date; null when cancelled. */
+export async function pickBibFile(title = "Link a BibTeX file"): Promise<string | null> {
+  if (!native) { await wait(200); return "/Users/ada/Library/Application Support/Mendeley Desktop/library.bib"; }
+  const picked = await openDialog({ multiple: false, title, filters: [{ name: "BibTeX", extensions: ["bib"] }] });
+  return typeof picked === "string" ? picked : null;
+}
+
 // ---------------------------------------------------------------- synctex
 
 export async function synctexForward(mainTex: string, file: string, line: number): Promise<PdfPos | null> {

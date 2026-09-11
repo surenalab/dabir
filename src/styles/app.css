@@ -1021,3 +1021,17 @@ input[type="range"] { accent-color: var(--accent); width: 140px; }
 .export-done code { font-family: var(--font-mono); font-size: var(--text-xs); user-select: text; }
 .export-done .note { color: var(--ink-3); }
 .export-done .link { color: var(--accent); padding: 0 0 0 6px; font-size: inherit; }
+
+/* ---------- References sheet ---------- */
+.sheet.refs .actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: var(--space-2); }
+.refs-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-sm); color: var(--ink-2); margin-left: var(--space-1); }
+.refs-toggle input { accent-color: var(--accent); margin: 0; }
+.refs-status { margin: var(--space-2) 0 0; font-size: var(--text-xs); color: var(--ink-3); line-height: 1.5; font-variant-numeric: tabular-nums; }
+.refs-path { display: flex; align-items: center; gap: 6px; margin: var(--space-2) 0 0; font-size: var(--text-xs); color: var(--ink-2); min-width: 0; }
+.refs-path svg { width: 13px; height: 13px; flex: none; color: var(--ink-3); }
+.refs-path code { font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: text; }
+.sheet.refs { max-height: 90vh; overflow-y: auto; }
+.refs-add { display: flex; gap: var(--space-2); align-items: center; }
+.refs-add .sheet-input { margin: 0; flex: 1; font-family: var(--font-mono); font-size: var(--text-sm); }
+.sheet.refs .memory-note.small { font-size: var(--text-xs); color: var(--ink-3); margin-top: var(--space-2); }
+.sheet.refs .link { color: var(--accent); padding: 0; font-size: inherit; }
