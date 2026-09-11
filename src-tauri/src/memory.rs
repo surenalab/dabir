@@ -472,27 +472,69 @@ fn repo_map(root: &Path) -> Vec<String> {
 
 // ---------------------------------------------------------------- setup
 
-const SKILLS: &[(&str, &str, &str)] = &[
-    ("rerun-experiment", "Regenerate a figure or table by rerunning the command that produced it, then update every number in the text that came from it.",
+/// A starter skill: the playbook and any files it carries (scripts an agent runs). `previous` holds
+/// the texts earlier Dabir versions wrote for it, so an untouched copy is refreshed on the next setup
+/// while an author-edited one is left alone.
+struct SkillDef {
+    name: &'static str,
+    desc: &'static str,
+    body: &'static str,
+    files: &'static [(&'static str, &'static str)],
+    previous: &'static [(&'static str, &'static str)],
+}
+
+const fn skill(name: &'static str, desc: &'static str, body: &'static str) -> SkillDef {
+    SkillDef {
+        name,
+        desc,
+        body,
+        files: &[],
+        previous: &[],
+    }
+}
+
+const CHECK_REFERENCES_V1: (&str, &str) = ("Verify citations, cross-references and bibliography entries are consistent and complete.",
+"1. Every `\\cite{key}` must exist in the `.bib` files; every `\\ref`/`\\eqref` must have a `\\label`. List the misses.\n2. Look for `??` and `[?]` in the compile log and the PDF text.\n3. Do not invent bibliography entries. If a reference is missing, say so and stop; the author adds it.\n4. Normalise obvious BibTeX problems (missing year, journal capitalisation in braces) only when the source is unambiguous.");
+
+const SKILLS: &[SkillDef] = &[
+    skill("rerun-experiment", "Regenerate a figure or table by rerunning the command that produced it, then update every number in the text that came from it.",
 "1. Find the artefact in `.dabir/PROJECT.md` → Generated artefacts, or `dabir.toml [provenance]`. Use the recorded command, prefixed with the env prefix from `dabir.toml [env]` if present.\n2. Run it from the repo root. If it fails, fix the cause in the code, never by editing the output by hand.\n3. Search the manuscript for numbers that came from this artefact (captions, `\\input` tables, inline claims). Update each one from the new output.\n4. Compile (see compile-and-fix). Report the old and new numbers in your final message.\n5. Update `producedAt` and `commit` for the artefact in `.dabir/provenance.json`."),
-    ("update-figure-and-text", "Change a figure's content or style and keep the caption, the reference in the text, and any claims consistent.",
+    skill("update-figure-and-text", "Change a figure's content or style and keep the caption, the reference in the text, and any claims consistent.",
 "1. Edit the plotting code, not the exported file. Keep the figure's file name so `\\includegraphics` keeps working.\n2. Regenerate through the recorded command (rerun-experiment).\n3. Re-read the caption and every sentence that references the figure (`\\ref{fig:…}`). Fix wording that no longer matches.\n4. Keep the venue's rules: no colour-only encodings, fonts legible at column width.\n5. Compile and check the figure placement in the PDF log for overfull boxes."),
-    ("address-reviewer", "Turn a reviewer comment into a minimal, traceable change plus a response paragraph.",
+    skill("address-reviewer", "Turn a reviewer comment into a minimal, traceable change plus a response paragraph.",
 "1. Quote the comment. Decide: change the paper, add an experiment (rerun-experiment), or justify without change.\n2. Make the smallest edit that answers it. Prefer adding a sentence over rewriting a section.\n3. Record the decision as a fact: `.dabir/memory/reviewer-<n>-<slug>.md` with name and description frontmatter, what was asked, what was changed, and why.\n4. Draft the response paragraph at the end of your final message, in the paper's voice, with the section or line changed."),
-    ("tighten-prose", "Edit for clarity and length without changing claims or notation.",
+    skill("tighten-prose", "Edit for clarity and length without changing claims or notation.",
 "1. Work paragraph by paragraph. Never change a number, a symbol, a citation key, or a claim's strength.\n2. Prefer shorter sentences, active voice, one idea per sentence. Remove hedges that add no information.\n3. Keep the notation in `.dabir/PROJECT.md` → Conventions. Do not introduce new macros.\n4. Show a before/after word count for each section you touched."),
-    ("check-references", "Verify citations, cross-references and bibliography entries are consistent and complete.",
-"1. Every `\\cite{key}` must exist in the `.bib` files; every `\\ref`/`\\eqref` must have a `\\label`. List the misses.\n2. Look for `??` and `[?]` in the compile log and the PDF text.\n3. Do not invent bibliography entries. If a reference is missing, say so and stop; the author adds it.\n4. Normalise obvious BibTeX problems (missing year, journal capitalisation in braces) only when the source is unambiguous."),
-    ("compile-and-fix", "Compile the paper with Tectonic and fix errors at their source.",
+    SkillDef {
+        name: "check-references",
+        desc: "Verify citations and cross-references, and check every bibliography entry against Crossref, DOI, arXiv and OpenAlex online with the bundled script.",
+        body: include_str!("../skills/check-references/BODY.md"),
+        files: &[(
+            "scripts/verify_refs.py",
+            include_str!("../skills/check-references/verify_refs.py"),
+        )],
+        previous: &[CHECK_REFERENCES_V1],
+    },
+    skill("compile-and-fix", "Compile the paper with Tectonic and fix errors at their source.",
 "1. Compile: `tectonic -X compile --keep-logs --synctex --outdir .dabir/build main.tex` (or the main file named in PROJECT.md).\n2. Read `.dabir/build/*.log` for `!` errors first, then warnings. Fix the first error, recompile, repeat.\n3. Undefined citations or references are usually a missing `\\label` or a typo in the key; do not silence them.\n4. Overfull boxes in the log point at line numbers; fix wording or table widths rather than adding `\\sloppy`.\n5. Finish with a clean compile and report the remaining warnings."),
 ];
+
+fn render_skill(name: &str, desc: &str, body: &str) -> String {
+    format!(
+        "---\nname: dabir-{}\ndescription: \"{}\"\n---\n\n# {}\n\n{}\n",
+        name,
+        desc,
+        name.replace('-', " "),
+        body.trim_end()
+    )
+}
 
 fn link_skills(root: &Path) -> Result<Vec<String>, String> {
     let mut written = vec![];
     for host in [".agents/skills", ".claude/skills"] {
         let dir = root.join(host);
         fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        for (name, _, _) in SKILLS {
+        for SkillDef { name, .. } in SKILLS {
             let link = dir.join(format!("dabir-{}", name));
             if link.exists() || fs::symlink_metadata(&link).is_ok() {
                 continue;
@@ -678,25 +720,33 @@ Never hand-edit these or numbers copied from them. Rerun the command (skill: rer
         written.push(".dabir/PROJECT.md".into());
     }
 
-    for (name, desc, body) in SKILLS {
-        let dir = dabir.join("skills").join(name);
+    for sk in SKILLS {
+        let dir = dabir.join("skills").join(sk.name);
         let file = dir.join("SKILL.md");
-        if file.exists() {
-            continue;
+        // Refresh only a copy Dabir wrote and nobody edited since; an author's playbook is theirs.
+        let stale = fs::read_to_string(&file)
+            .map(|cur| {
+                sk.previous
+                    .iter()
+                    .any(|(d, b)| cur == render_skill(sk.name, d, b))
+            })
+            .unwrap_or(false);
+        if !file.exists() || stale {
+            fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+            fs::write(&file, render_skill(sk.name, sk.desc, sk.body)).map_err(|e| e.to_string())?;
+            written.push(format!(".dabir/skills/{}/SKILL.md", sk.name));
         }
-        fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        fs::write(
-            &file,
-            format!(
-                "---\nname: dabir-{}\ndescription: \"{}\"\n---\n\n# {}\n\n{}\n",
-                name,
-                desc,
-                name.replace('-', " "),
-                body
-            ),
-        )
-        .map_err(|e| e.to_string())?;
-        written.push(format!(".dabir/skills/{}/SKILL.md", name));
+        for (rel, text) in sk.files {
+            let path = dir.join(rel);
+            if path.exists() && !stale {
+                continue;
+            }
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+            }
+            fs::write(&path, text).map_err(|e| e.to_string())?;
+            written.push(format!(".dabir/skills/{}/{}", sk.name, rel));
+        }
     }
     written.extend(link_skills(root)?);
 
@@ -1080,4 +1130,86 @@ pub fn context_pack(root: &Path, query: &str, max_chars: usize) -> String {
         out.push_str(&block);
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn check_references_carries_its_script_and_refreshes_untouched_copies() {
+        let dir = std::env::temp_dir().join(format!("dabir-skills-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("main.tex"),
+            "\\documentclass{article}\\begin{document}x\\end{document}",
+        )
+        .unwrap();
+        // A paper set up by an earlier Dabir: the short check-references playbook, and an author-edited
+        // compile-and-fix.
+        let skills = dir.join(".dabir").join("skills");
+        fs::create_dir_all(skills.join("check-references")).unwrap();
+        fs::create_dir_all(skills.join("compile-and-fix")).unwrap();
+        fs::write(
+            skills.join("check-references").join("SKILL.md"),
+            render_skill(
+                "check-references",
+                CHECK_REFERENCES_V1.0,
+                CHECK_REFERENCES_V1.1,
+            ),
+        )
+        .unwrap();
+        fs::write(skills.join("compile-and-fix").join("SKILL.md"), "mine\n").unwrap();
+
+        let written = setup(&dir, Some(&dir.join("main.tex"))).unwrap();
+        assert!(written.contains(&".dabir/skills/check-references/SKILL.md".to_string()));
+        assert!(
+            written.contains(&".dabir/skills/check-references/scripts/verify_refs.py".to_string())
+        );
+        assert!(!written
+            .iter()
+            .any(|w| w.contains("compile-and-fix/SKILL.md")));
+        let text = fs::read_to_string(skills.join("check-references").join("SKILL.md")).unwrap();
+        assert!(text.contains("verify_refs.py") && text.contains("Crossref"));
+        assert_eq!(
+            fs::read_to_string(skills.join("compile-and-fix").join("SKILL.md")).unwrap(),
+            "mine\n"
+        );
+        let script = fs::read_to_string(
+            skills
+                .join("check-references")
+                .join("scripts")
+                .join("verify_refs.py"),
+        )
+        .unwrap();
+        assert!(script.starts_with("#!/usr/bin/env python3"));
+
+        // The script parses without the network when Python is around; one verdict per entry.
+        let script = skills
+            .join("check-references")
+            .join("scripts")
+            .join("verify_refs.py");
+        fs::write(
+            dir.join("refs.bib"),
+            "@article{a, title={T}, year={2020}}\n",
+        )
+        .unwrap();
+        if let Ok(out) = std::process::Command::new("python3")
+            .arg(&script)
+            .arg("--offline")
+            .arg(dir.join("refs.bib"))
+            .output()
+        {
+            let text = String::from_utf8_lossy(&out.stdout);
+            assert!(
+                text.contains("unchecked") && text.contains("1 entries"),
+                "{}",
+                text
+            );
+            assert!(out.status.success(), "offline run exits 0");
+        }
+        let m = read(&dir).unwrap();
+        assert_eq!(m.skills.len(), 6);
+        let _ = fs::remove_dir_all(&dir);
+    }
 }
