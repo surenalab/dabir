@@ -9,6 +9,8 @@ import { CloneSheet } from "./components/CloneSheet";
 import { ShareSheet, type LiveState } from "./components/ShareSheet";
 import { NewPaperSheet } from "./components/NewPaperSheet";
 import { ExportSheet } from "./components/ExportSheet";
+import { ReferencesSheet } from "./components/ReferencesSheet";
+import { useRefSync } from "./lib/refsync";
 import { SettingsSheet } from "./components/SettingsSheet";
 import type { EditorApi } from "./components/SourceEditor";
 import { useSettings, updateSettings } from "./lib/settings";
@@ -20,7 +22,7 @@ import { addComment as yAddComment, connect as yConnect, decodeRange, disconnect
 import type { CommentRange } from "./components/SourceEditor";
 import { safeColor, type Change, type ChangeRange } from "./lib/changes";
 import {
-  bibImportFile, agentComplete, checkForUpdates, projectSnapshot, sessionMaterialize, checkpoint, checkpoints, checkpointRestore, checkpointUndo, gitDiscard, type Checkpoint, newPaper, templatesList, zoteroImport, compile as runCompile, compileCancel, gitClone, gitPull, gitPush, gitRemoteAdd, gitRemoteUrl, isMac, onCompileProgress, relayStart, relayStop, gitCommit, gitInit, gitStatus, importOverleaf, native, onMenu, onWindowFocus,
+  agentComplete, checkForUpdates, projectSnapshot, sessionMaterialize, checkpoint, checkpoints, checkpointRestore, checkpointUndo, gitDiscard, type Checkpoint, newPaper, templatesList, compile as runCompile, compileCancel, gitClone, gitPull, gitPush, gitRemoteAdd, gitRemoteUrl, isMac, onCompileProgress, relayStart, relayStop, gitCommit, gitInit, gitStatus, importOverleaf, native, onMenu, onWindowFocus,
   openProject, pickFolder, readText, setWindowTitle, synctexForward, synctexInverse, writeText,
   type CompileResult, type GitStatus, type PdfPos, type Project,
 } from "./lib/backend";
@@ -66,7 +68,7 @@ export default function App() {
   const [focused, setFocused] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  const [sheet, setSheet] = useState<"shortcuts" | "clone" | "share" | "new" | "settings" | "export" | null>(null);
+  const [sheet, setSheet] = useState<"shortcuts" | "clone" | "share" | "new" | "settings" | "export" | "refs" | null>(null);
   // The template the New Paper chooser opens on, when a welcome-card starter was clicked.
   const [newTemplate, setNewTemplate] = useState<string | null>(null);
   const [starters, setStarters] = useState<{ id: string; label: string }[]>([]);
@@ -186,8 +188,9 @@ export default function App() {
     await openFolder(dest);
     setNote("New paper created with Git and memory set up.");
   }, [openFolder]);
-  const importZotero = useCallback(async () => { if (!project) return; setLiveBusy("zotero"); try { setNote(await zoteroImport(project.root)); await reloadProject(); } finally { setLiveBusy(null); } }, [project, reloadProject]);
-  const importBib = useCallback(async () => { if (!project) return; const r = await bibImportFile(project.root); if (r) { setNote(r); await reloadProject(); } }, [project, reloadProject]);
+  // Reference sync runs while the paper is open; when entries land, say so and reload the bibliography.
+  const onRefsChanged = useCallback((summary: string) => { setNote(summary); reloadProject(); }, [reloadProject]);
+  const refSync = useRefSync(project?.root ?? null, onRefsChanged);
 
   const cloneRepo = useCallback(async (url: string) => {
     const parent = await pickFolder("Choose where to clone");
@@ -605,6 +608,7 @@ export default function App() {
       case "clone": setSheet("clone"); break;
       case "share": setSheet("share"); break;
       case "export": setSheet("export"); break;
+      case "references": setSheet("refs"); break;
       case "save": save(); break;
       case "compile": compile(); break;
       case "show-log": setShowLog((v) => !v); break;
@@ -663,6 +667,7 @@ export default function App() {
       if (e.shiftKey && !e.altKey && shifted[k]) { e.preventDefault(); command(shifted[k]); return; }
       if (e.altKey && k === "c") { e.preventDefault(); command("commit"); return; }
       if (e.altKey && (k === "e" || e.code === "KeyE")) { e.preventDefault(); command("export"); return; }
+      if (e.altKey && (k === "r" || e.code === "KeyR")) { e.preventDefault(); command("references"); return; }
       if (k === "=" || k === "+") { e.preventDefault(); command("zoom-in"); return; }
       if (k === "-") { e.preventDefault(); command("zoom-out"); return; }
       if (k === "0") { e.preventDefault(); command("zoom-fit"); return; }
@@ -852,8 +857,9 @@ export default function App() {
       {sheet === "share" && (
         <ShareSheet projectName={project?.name ?? "Dabir"} live={live} overleafUrl={overleafUrl} busy={liveBusy} onClose={() => setSheet(null)}
           onStart={startSession} onJoin={joinSession} onStop={stopSession} onSetOverleaf={setOverleaf} onPull={pullOverleaf} onPush={pushOverleaf}
-          onZotero={importZotero} onBibFile={importBib} onExport={() => setSheet("export")} signalingUrl={settings.signalingUrl} direct={directApi} />
+          onReferences={() => setSheet("refs")} onExport={() => setSheet("export")} signalingUrl={settings.signalingUrl} direct={directApi} />
       )}
+      {sheet === "refs" && project && <ReferencesSheet project={project} sync={refSync} bibCount={Object.keys(bib).length} onClose={() => setSheet(null)} onChanged={onRefsChanged} />}
       {sheet === "export" && project && <ExportSheet project={project} onClose={() => setSheet(null)} ensurePdf={ensurePdf} onNote={setNote} />}
       {sheet === "new" && <NewPaperSheet onClose={() => setSheet(null)} onCreate={createPaper} initial={newTemplate} />}
       {sheet === "settings" && <SettingsSheet onClose={() => setSheet(null)} />}
