@@ -1369,6 +1369,27 @@ fn agent_preamble(root: &Path, cwd: &Path, prompt: &str) -> String {
     if !skills.is_empty() {
         out.push_str(&format!("\nSkills for recurring jobs are in .dabir/skills/ ({skills}); open the matching SKILL.md only when the request names one of these jobs. Durable decisions go in .dabir/memory/ as one-fact files with `name` and `description` frontmatter.\n"));
     }
+    // A request about the bibliography gets the online check spelled out, since the agent would
+    // otherwise reason about entries it cannot see the truth of.
+    let lower = prompt.to_lowercase();
+    let about_refs = [
+        "referenc",
+        "citation",
+        "cite",
+        "bibliograph",
+        ".bib",
+        "bibtex",
+        "doi",
+    ]
+    .iter()
+    .any(|k| lower.contains(k));
+    if about_refs
+        && root
+            .join(".dabir/skills/check-references/scripts/verify_refs.py")
+            .is_file()
+    {
+        out.push_str("\nThis request concerns references. Read .dabir/skills/check-references/SKILL.md and run its script, `python3 .dabir/skills/check-references/scripts/verify_refs.py <every .bib the paper uses>`; it has network access and checks each entry against Crossref, doi.org, arXiv and OpenAlex, printing verified / mismatch / not found / unchecked with the fields that differ. Fix fields of verified entries from the record, keep citation keys, and report mismatches and not-found entries to the author instead of deleting or inventing anything.\n");
+    }
 
     if let Some(b) = brief {
         out.push_str("\nProject brief (.dabir/PROJECT.md)\n");
