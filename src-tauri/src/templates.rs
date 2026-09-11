@@ -35,6 +35,9 @@ pub struct Patch {
     pub replace: Option<String>,
     #[serde(default)]
     pub prepend: Option<String>,
+    /// Replace every occurrence of `find`, not just the first.
+    #[serde(default)]
+    pub all: bool,
     #[serde(default)]
     pub why: Option<String>,
 }
@@ -364,7 +367,11 @@ fn apply_patch(dest: &Path, patch: &Patch) -> Result<(), String> {
                 patch.file, find
             ));
         }
-        text = text.replacen(find.as_str(), replace, 1);
+        text = if patch.all {
+            text.replace(find.as_str(), replace)
+        } else {
+            text.replacen(find.as_str(), replace, 1)
+        };
     }
     fs::write(&path, text).map_err(|e| e.to_string())
 }
@@ -496,7 +503,7 @@ mod tests {
         fs::create_dir_all(&dir).unwrap();
         fs::write(
             dir.join("index.json"),
-            r##"{"groups":[{"id":"g","label":"G"}],"templates":[{"id":"k","label":"K","venue":"V","group":"g","engine":"latex","official":true,"featured":false,"version":"1","summary":"s","source":{"kind":"zip","url":"https://example.org/k.zip"},"main":"sample.tex","drop":["*.pdf","docs"],"flatten":["bst"],"patches":[{"file":"main.tex","find":"\\usepackage{bad}","replace":"% bad","why":"bad fails"},{"file":"main.tex","prepend":"% top\n","why":"prelude"}]}]}"##,
+            r##"{"groups":[{"id":"g","label":"G"}],"templates":[{"id":"k","label":"K","venue":"V","group":"g","engine":"latex","official":true,"featured":false,"version":"1","summary":"s","source":{"kind":"zip","url":"https://example.org/k.zip"},"main":"sample.tex","drop":["*.pdf","docs"],"flatten":["bst"],"patches":[{"file":"main.tex","find":"\\usepackage{bad}","replace":"% bad","why":"bad fails"},{"file":"main.tex","prepend":"% top\n","why":"prelude"},{"file":"main.tex","find":"{x.eps}","replace":"{x.pdf}","all":true,"why":"eps"}]}]}"##,
         )
         .unwrap();
         let kit = cache.join("k-1");
@@ -504,7 +511,7 @@ mod tests {
         fs::create_dir_all(kit.join("docs")).unwrap();
         fs::write(
             kit.join("sample.tex"),
-            b"\\documentclass{x}\n\\usepackage{bad}\n\xe9\n",
+            b"\\documentclass{x}\n\\usepackage{bad}\n\xe9\n{x.eps}{x.eps}\n",
         )
         .unwrap();
         fs::write(kit.join("bst").join("s.bst"), "bst").unwrap();
@@ -519,12 +526,19 @@ mod tests {
             main
         );
         assert!(main.contains('é'), "latin-1 byte transcoded");
+        assert!(
+            main.ends_with("{x.pdf}{x.pdf}\n"),
+            "all occurrences replaced"
+        );
         assert!(dest.join("s.bst").is_file() && !dest.join("bst").exists());
         assert!(!dest.join("manual.pdf").exists() && !dest.join("docs").exists());
         assert!(!dest.join("sample.tex").exists());
         let listing = list(&dir, &cache).unwrap();
         assert!(listing.templates[0].cached);
-        assert_eq!(listing.templates[0].notes, vec!["bad fails", "prelude"]);
+        assert_eq!(
+            listing.templates[0].notes,
+            vec!["bad fails", "prelude", "eps"]
+        );
         let _ = fs::remove_dir_all(&base);
     }
 
