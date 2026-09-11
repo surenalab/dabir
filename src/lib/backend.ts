@@ -50,6 +50,17 @@ export async function revealPath(path: string): Promise<void> {
   await revealItemInDir(path);
 }
 
+/**
+ * Where a new paper goes: the save panel, so the folder is named and placed in one native step
+ * (Save As + Where) instead of a typed name and a second dialog. Returns the full path of the
+ * folder to create, or null when cancelled.
+ */
+export async function pickNewPaperPath(suggested: string): Promise<string | null> {
+  if (!native) return `/Users/ada/Papers/${suggested}`;
+  const picked = await saveDialog({ defaultPath: suggested, title: "New Paper", canCreateDirectories: true });
+  return typeof picked === "string" ? picked : null;
+}
+
 export async function pickFolder(title = "Open a paper"): Promise<string | null> {
   if (!native) return SAMPLE_PROJECT.root;
   const picked = await openDialog({ directory: true, multiple: false, title });
@@ -153,12 +164,16 @@ export interface Template {
 export interface TemplateGroup { id: string; label: string }
 export interface TemplateListing { groups: TemplateGroup[]; templates: Template[] }
 const SAMPLE_TEMPLATES: TemplateListing = {
-  groups: [{ id: "ml", label: "Machine learning" }, { id: "vision", label: "Computer vision" }, { id: "publishers", label: "Journals and publishers" }, { id: "math", label: "Mathematics" }, { id: "general", label: "General" }, { id: "typst", label: "Typst" }],
+  groups: [{ id: "ml", label: "Machine learning" }, { id: "vision", label: "Vision and graphics" }, { id: "nlp", label: "Language" }, { id: "publishers", label: "Journals and publishers" }, { id: "biology", label: "Biology and medicine" }, { id: "math", label: "Mathematics" }, { id: "general", label: "General" }, { id: "typst", label: "Typst" }],
   templates: [
     { id: "neurips", label: "NeurIPS 2026", venue: "Conference on Neural Information Processing Systems", group: "ml", engine: "latex", official: true, featured: true, version: "2026", summary: "The official neurips_2026.sty with the paper checklist. Anonymous with line numbers by default; add the final or preprint option when the time comes.", site: "https://neurips.cc/Conferences/2026/CallForPapers", main: "main.tex", kit: "media.neurips.cc", cached: false, notes: [] },
     { id: "iclr", label: "ICLR 2027", venue: "International Conference on Learning Representations", group: "ml", engine: "latex", official: true, featured: true, version: "2027", summary: "The official ICLR style, bibliography style and math_commands.tex from the ICLR master template.", site: "https://github.com/ICLR/Master-Template", main: "main.tex", kit: "raw.githubusercontent.com", cached: true, notes: [] },
     { id: "icml", label: "ICML 2026", venue: "International Conference on Machine Learning", group: "ml", engine: "latex", official: true, featured: false, version: "2026", summary: "The official icml2026.sty and bibliography style with the example paper.", site: "https://icml.cc/Conferences/2026/CallForPapers", main: "main.tex", kit: "media.icml.cc", cached: false, notes: [] },
     { id: "cvpr", label: "CVPR 2026", venue: "IEEE/CVF Conference on Computer Vision and Pattern Recognition", group: "vision", engine: "latex", official: true, featured: true, version: "2026-v1", summary: "The official CVF author kit: cvpr.sty, the IEEE natbib style, sections split under sec/, and the rebuttal template.", site: "https://github.com/cvpr-org/author-kit", main: "main.tex", kit: "codeload.github.com", cached: false, notes: [] },
+    { id: "siggraph", label: "SIGGRAPH", venue: "SIGGRAPH and SIGGRAPH Asia (ACM TOG journal track)", group: "vision", engine: "latex", official: false, featured: true, version: null, summary: "A short paper on ACM's acmart class in acmtog mode, the layout SIGGRAPH asks for; acmart is fetched from CTAN on first compile. Switch to sigconf for the conference track.", site: "https://www.siggraph.org/", main: "main.tex", kit: null, cached: false, notes: [] },
+    { id: "acl", label: "ACL", venue: "ACL, EMNLP, NAACL and other ACL venues", group: "nlp", engine: "latex", official: true, featured: true, version: "master", summary: "The official ACL style files (acl.sty, acl_natbib.bst) and the example paper from the ACL organisation's repository, shared by every ACL venue.", site: "https://github.com/acl-org/acl-style-files", main: "main.tex", kit: "raw.githubusercontent.com", cached: false, notes: [] },
+    { id: "plos", label: "PLOS", venue: "PLOS ONE, PLOS Biology, PLOS Computational Biology and the other PLOS journals", group: "biology", engine: "latex", official: true, featured: true, version: "2025-08", summary: "The official PLOS LaTeX template and plos2025 bibliography style, shared by every PLOS journal.", site: "https://journals.plos.org/plosone/s/latex", main: "main.tex", kit: "journals.plos.org", cached: false, notes: ["the template's ligature switch is pdfTeX-only and stops the bundled engine"] },
+    { id: "frontiers", label: "Frontiers", venue: "Frontiers journals (Harvard and Vancouver reference styles)", group: "biology", engine: "latex", official: true, featured: false, version: "2025-04", summary: "The official Frontiers kit: FrontiersinHarvard and FrontiersinVancouver classes, both bibliography styles and the supplementary-material template.", site: "https://www.frontiersin.org/about/author-guidelines", main: "main.tex", kit: "www.frontiersin.org", cached: false, notes: ["the class embeds its logo as EPS, which the bundled engine cannot read; the kit ships the same logo as PDF"] },
     { id: "springer-nature", label: "Springer Nature", venue: "Springer, BMC and Nature Portfolio journals", group: "publishers", engine: "latex", official: true, featured: true, version: "2024-12", summary: "The official sn-jnl.cls (December 2024) with all eight reference styles and the sample article.", site: "https://www.springernature.com/gp/authors/campaigns/latex-author-support", main: "main.tex", kit: "cms-resources.apps.public.k8s.springernature.io", cached: false, notes: ["EPS figures cannot be embedded by the bundled engine"] },
     { id: "ieee-journal", label: "IEEE Transactions", venue: "IEEE journals and transactions", group: "publishers", engine: "latex", official: false, featured: true, version: null, summary: "A short paper on IEEEtran in journal mode, fetched from CTAN by the engine on first compile.", site: "https://ctan.org/pkg/ieeetran", main: "main.tex", kit: null, cached: true, notes: [] },
     { id: "siam", label: "SIAM journals", venue: "Society for Industrial and Applied Mathematics", group: "math", engine: "latex", official: true, featured: true, version: "251216", summary: "The official siamart251216.cls, siamplain.bst and the example article with its shared front matter.", site: "https://epubs.siam.org/journal-authors", main: "main.tex", kit: "epubs.siam.org", cached: false, notes: ["the SIAM class only compiles under pdfLaTeX or dvips without this prelude", "EPS figures cannot be embedded by the bundled engine"] },
