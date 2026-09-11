@@ -8,6 +8,7 @@ mod agents;
 mod export;
 mod git;
 mod memory;
+mod refs;
 mod relay;
 mod synctex;
 mod templates;
@@ -961,102 +962,70 @@ fn new_paper(
     Ok(dest.to_string_lossy().to_string())
 }
 
-fn bib_keys(text: &str) -> std::collections::HashSet<String> {
-    text.lines()
-        .filter_map(|l| {
-            let t = l.trim();
-            if t.starts_with('@') {
-                t.split('{')
-                    .nth(1)
-                    .map(|k| k.trim_end_matches(',').trim().to_string())
-            } else {
-                None
-            }
-        })
-        .collect()
-}
-
-/// Merge BibTeX text into the project's references file, skipping keys already present.
-fn merge_bib(root: &Path, incoming: &str) -> Result<(usize, String), String> {
-    let target = ["refs.bib", "references.bib", "bibliography.bib"]
-        .iter()
-        .map(|n| root.join(n))
-        .find(|p| p.exists())
-        .unwrap_or_else(|| root.join("refs.bib"));
-    let existing = fs::read_to_string(&target).unwrap_or_default();
-    let have = bib_keys(&existing);
-    let mut added = 0;
-    let mut out = existing.clone();
-    let mut entry = String::new();
-    let mut depth = 0i32;
-    let flush = |entry: &mut String, out: &mut String, added: &mut usize| {
-        let key = bib_keys(entry).into_iter().next();
-        if let Some(k) = key {
-            if !have.contains(&k) {
-                if !out.ends_with("\n\n") && !out.is_empty() {
-                    out.push('\n');
-                }
-                out.push_str(entry.trim());
-                out.push_str("\n\n");
-                *added += 1;
-            }
-        }
-        entry.clear();
-    };
-    for l in incoming.lines() {
-        if l.trim_start().starts_with('@') && depth == 0 && !entry.trim().is_empty() {
-            flush(&mut entry, &mut out, &mut added);
-        }
-        entry.push_str(l);
-        entry.push('\n');
-        depth += l.matches('{').count() as i32 - l.matches('}').count() as i32;
-        if depth <= 0 && entry.trim_start().starts_with('@') {
-            depth = 0;
-            flush(&mut entry, &mut out, &mut added);
-        }
-    }
-    if !entry.trim().is_empty() {
-        flush(&mut entry, &mut out, &mut added);
-    }
-    fs::write(&target, out).map_err(|e| e.to_string())?;
-    Ok((
-        added,
-        target
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_default(),
-    ))
-}
-
 #[tauri::command]
 fn bib_import_file(root: String, path: String) -> Result<String, String> {
     let text = fs::read_to_string(&path).map_err(|e| e.to_string())?;
-    let (n, target) = merge_bib(Path::new(&root), &text)?;
+    let r = refs::merge_into(Path::new(&root), &text)?;
     Ok(format!(
-        "Added {} new entr{} to {}.",
-        n,
-        if n == 1 { "y" } else { "ies" },
-        target
+        "Added {} new entr{} to {}{}.",
+        r.added,
+        if r.added == 1 { "y" } else { "ies" },
+        r.file,
+        if r.updated > 0 {
+            format!(", updated {}", r.updated)
+        } else {
+            String::new()
+        }
     ))
 }
 
-/// Pull the whole library (or a collection) from Zotero's local API as BibTeX and merge it.
+/// Is Zotero running here, does it have Better BibTeX, and which collections are there.
+#[tauri::command]
+fn zotero_status() -> refs::ZoteroStatus {
+    refs::zotero_status(refs::ZOTERO)
+}
+
+/// Pull a collection (or the whole library) from Zotero and merge it into the paper's .bib.
+#[tauri::command]
+fn zotero_sync(
+    root: String,
+    collection: Option<String>,
+    better_bibtex: bool,
+) -> Result<refs::SyncReport, String> {
+    let text = refs::zotero_fetch(refs::ZOTERO, collection.as_deref(), better_bibtex)?;
+    if refs::parse_entries(&text).is_empty() {
+        return Err(if collection.is_some() {
+            "That collection has no items Zotero can write as BibTeX.".into()
+        } else {
+            "Zotero answered but sent no BibTeX entries.".into()
+        });
+    }
+    refs::merge_into(Path::new(&root), &text)
+}
+
+/// One-shot import of the whole library, kept for the Share sheet.
 #[tauri::command]
 fn zotero_import(root: String) -> Result<String, String> {
-    let url = "http://127.0.0.1:23119/api/users/0/items?format=bibtex&limit=100&sort=dateModified&direction=desc";
-    let text = ureq::get(url).config().timeout_global(Some(std::time::Duration::from_secs(8))).build().call()
-        .map_err(|_| "Zotero is not reachable. Start Zotero 7 and enable Settings → Advanced → Allow other applications to communicate with Zotero.".to_string())?
-        .body_mut().read_to_string().map_err(|e| e.to_string())?;
-    if !text.contains('@') {
-        return Err("Zotero answered but sent no BibTeX entries.".into());
-    }
-    let (n, target) = merge_bib(Path::new(&root), &text)?;
+    let r = zotero_sync(root, None, false)?;
     Ok(format!(
         "Imported {} new entr{} from Zotero into {}.",
-        n,
-        if n == 1 { "y" } else { "ies" },
-        target
+        r.added,
+        if r.added == 1 { "y" } else { "ies" },
+        r.file
     ))
+}
+
+/// Add one reference by DOI or arXiv id.
+#[tauri::command]
+fn refs_add(root: String, id: String) -> Result<refs::SyncReport, String> {
+    let text = refs::fetch_reference(&id)?;
+    refs::merge_into(Path::new(&root), &text)
+}
+
+/// Merge a linked .bib another manager maintains, when it changed since `since` (ms).
+#[tauri::command]
+fn refs_linked_sync(root: String, path: String, since: u64) -> Result<refs::LinkedSync, String> {
+    refs::linked_sync(Path::new(&root), Path::new(&path), since)
 }
 
 // ---------------------------------------------------------------- synctex
@@ -1835,6 +1804,12 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
         )
         .separator()
         .item(
+            &MenuItemBuilder::with_id("references", "References…")
+                .accelerator("CmdOrCtrl+Alt+R")
+                .build(app)?,
+        )
+        .separator()
+        .item(
             &MenuItemBuilder::with_id("ask-agent", "Ask the Agent…")
                 .accelerator("CmdOrCtrl+J")
                 .build(app)?,
@@ -1898,6 +1873,10 @@ pub fn run() {
             new_paper,
             bib_import_file,
             zotero_import,
+            zotero_status,
+            zotero_sync,
+            refs_add,
+            refs_linked_sync,
             synctex_forward,
             synctex_inverse,
             git_status,
@@ -2456,14 +2435,18 @@ mod tests {
             "@article{a2020,\n  title={A},\n  year={2020}\n}\n",
         )
         .unwrap();
-        let (n, t) = merge_bib(
+        let r = refs::merge_into(
             &dir,
-            "@article{a2020,\n  title={A dup}\n}\n@book{b2021,\n  title={B},\n  publisher={P}\n}\n",
+            "@article{a2020,\n  title={A, revised},\n  year={2020}\n}\n@book{b2021,\n  title={B},\n  publisher={P}\n}\n",
         )
         .unwrap();
-        assert_eq!((n, t.as_str()), (1, "refs.bib"));
+        assert_eq!((r.added, r.updated, r.file.as_str()), (1, 1, "refs.bib"));
         let out = fs::read_to_string(dir.join("refs.bib")).unwrap();
-        assert!(out.contains("b2021") && !out.contains("A dup"));
+        assert!(
+            out.contains("b2021")
+                && out.contains("A, revised")
+                && out.matches("a2020").count() == 1
+        );
         let d =
             parse_typst_log("error: unknown variable: foo\n  ┌─ main.typ:12:5\n  │\n12 │ #foo\n");
         assert_eq!(d[0].line, Some(12));

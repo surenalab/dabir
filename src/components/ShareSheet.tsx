@@ -18,8 +18,7 @@ interface Props {
   onSetOverleaf: (url: string) => Promise<void>;
   onPull: () => Promise<void>;
   onPush: () => Promise<void>;
-  onZotero: () => Promise<void>;
-  onBibFile: () => Promise<void>;
+  onReferences: () => void;
   onExport: () => void;
 }
 
@@ -134,11 +133,8 @@ export function ShareSheet(p: Props) {
 
         <section className="share-section">
           <h3><BookMarked aria-hidden /> References</h3>
-          <p className="memory-note">Merge entries into the paper's <code>.bib</code> without duplicates: from Zotero 7 running on this Mac (its local API), or from any BibTeX file.</p>
-          <div className="actions">
-            <button className="btn" onClick={wrap(p.onZotero)} disabled={!!p.busy}>{p.busy === "zotero" ? "Importing…" : "Import from Zotero"}</button>
-            <button className="btn" onClick={wrap(p.onBibFile)} disabled={!!p.busy}>Import .bib File…</button>
-          </div>
+          <p className="memory-note">Keep the paper's <code>.bib</code> in step with Zotero, or with a BibTeX file Mendeley, Paperpile, JabRef or EndNote maintains; add entries by DOI or arXiv id.</p>
+          <div className="actions"><button className="btn" onClick={p.onReferences}>References…</button></div>
         </section>
 
         <section className="share-section">
