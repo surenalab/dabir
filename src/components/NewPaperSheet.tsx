@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ArrowUpRight, Search } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { native, onTemplateProgress, templatesList, type Template, type TemplateListing } from "../lib/backend";
@@ -10,19 +10,24 @@ function sourceLine(t: Template): string {
   return `Official kit, fetched from ${t.kit} when you create the paper.`;
 }
 
+/** A folder name to offer in the save panel: the venue's label, lower-case, hyphenated. */
+function suggestedFolder(t: Template): string {
+  const slug = t.label.toLowerCase().replace(/\(typst\)/g, "typst").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return slug ? `${slug}-paper` : "paper";
+}
+
 /**
  * New Paper: a chooser in the manner of a document template picker. Groups on the left, the group's
- * templates in the middle, the chosen one explained on the right with the folder name and Create.
+ * templates in the middle, the chosen one explained on the right. Create opens the save panel, where
+ * the folder is named and placed in one step; `onCreate` resolves false when that panel is cancelled.
  */
-export function NewPaperSheet({ onClose, onCreate, initial }: { onClose: () => void; onCreate: (name: string, template: string) => Promise<void>; initial?: string | null }) {
+export function NewPaperSheet({ onClose, onCreate, initial }: { onClose: () => void; onCreate: (template: string, suggested: string) => Promise<boolean>; initial?: string | null }) {
   const [listing, setListing] = useState<TemplateListing | null>(null);
   const [group, setGroup] = useState<string>("featured");
   const [selected, setSelected] = useState<string | null>(initial ?? null);
   const [query, setQuery] = useState("");
-  const [name, setName] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const nameRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     templatesList().then((l) => {
@@ -51,10 +56,9 @@ export function NewPaperSheet({ onClose, onCreate, initial }: { onClose: () => v
   useEffect(() => { if (shown.length && !shown.some((t) => t.id === selected)) setSelected(shown[0].id); }, [shown, selected]);
 
   const go = async () => {
-    if (!current) return;
-    if (!name.trim()) { setError("Give the paper a folder name."); nameRef.current?.focus(); return; }
+    if (!current || busy) return;
     setBusy(current.id); setError(null); setProgress(current.kit && !current.cached ? `Fetching the official kit from ${current.kit}…` : "Laying out the paper…");
-    try { await onCreate(name.trim(), current.id); onClose(); } catch (e) { setError(String(e)); } finally { setBusy(null); setProgress(null); }
+    try { if (await onCreate(current.id, suggestedFolder(current))) onClose(); } catch (e) { setError(String(e)); } finally { setBusy(null); setProgress(null); }
   };
   const groups = [{ id: "featured", label: "Featured" }, ...(listing?.groups ?? [])].filter((g) => g.id === "featured" || templates.some((t) => t.group === g.id));
 
@@ -79,12 +83,12 @@ export function NewPaperSheet({ onClose, onCreate, initial }: { onClose: () => v
               const i = shown.findIndex((t) => t.id === selected);
               if (e.key === "ArrowDown" && i < shown.length - 1) { e.preventDefault(); setSelected(shown[i + 1].id); }
               if (e.key === "ArrowUp" && i > 0) { e.preventDefault(); setSelected(shown[i - 1].id); }
-              if (e.key === "Enter") { e.preventDefault(); nameRef.current?.focus(); }
+              if (e.key === "Enter") { e.preventDefault(); go(); }
             }}>
             {listing == null && !error && <p className="chooser-empty">Loading templates…</p>}
             {listing != null && shown.length === 0 && <p className="chooser-empty">Nothing matches “{query}”.</p>}
             {shown.map((t) => (
-              <div key={t.id} role="option" aria-selected={t.id === selected} className={`chooser-row ${t.id === selected ? "on" : ""}`} onClick={() => setSelected(t.id)} onDoubleClick={() => nameRef.current?.focus()}>
+              <div key={t.id} role="option" aria-selected={t.id === selected} className={`chooser-row ${t.id === selected ? "on" : ""}`} onClick={() => setSelected(t.id)} onDoubleClick={go}>
                 <div className="chooser-row-text">
                   <span className="name">{t.label}</span>
                   <span className="venue">{t.venue}</span>
@@ -114,18 +118,14 @@ export function NewPaperSheet({ onClose, onCreate, initial }: { onClose: () => v
                     {current.kit ? "Where the kit comes from" : "About this class"} <ArrowUpRight aria-hidden />
                   </button>
                 )}
-                <label className="share-label">Folder name
-                  <input ref={nameRef} className="sheet-input" value={name} onChange={(e) => setName(e.target.value)} placeholder="my-paper" disabled={!!busy}
-                    onKeyDown={(e) => { if (e.key === "Enter") go(); }} autoFocus />
-                </label>
               </>
             ) : <p className="chooser-empty">Pick a template.</p>}
           </aside>
         </div>
         <footer>
-          {busy ? <span className="progress" role="status" aria-live="polite">{progress ?? "Working…"}</span> : error ? <span className="progress error" role="alert">{error}</span> : <span className="progress">The paper is created in a folder you choose next, with Git and the memory scaffold set up.</span>}
+          {busy ? <span className="progress" role="status" aria-live="polite">{progress ?? "Working…"}</span> : error ? <span className="progress error" role="alert">{error}</span> : <span className="progress">Create… opens a save panel to name and place the paper's folder. Git and the memory scaffold are set up inside it.</span>}
           <button className="btn" onClick={onClose} disabled={!!busy}>Cancel</button>
-          <button className="btn primary" onClick={go} disabled={!current || !name.trim() || !!busy}>{busy ? "Creating…" : "Choose Location and Create"}</button>
+          <button className="btn primary" onClick={go} disabled={!current || !!busy} autoFocus>{busy ? "Creating…" : "Create…"}</button>
         </footer>
       </div>
     </div>

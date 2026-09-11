@@ -23,7 +23,7 @@ import type { CommentRange } from "./components/SourceEditor";
 import { safeColor, type Change, type ChangeRange } from "./lib/changes";
 import {
   agentComplete, checkForUpdates, projectSnapshot, sessionMaterialize, checkpoint, checkpoints, checkpointRestore, checkpointUndo, gitDiscard, type Checkpoint, newPaper, templatesList, compile as runCompile, compileCancel, gitClone, gitPull, gitPush, gitRemoteAdd, gitRemoteUrl, isMac, onCompileProgress, relayStart, relayStop, gitCommit, gitInit, gitStatus, importOverleaf, native, onMenu, onWindowFocus,
-  openProject, pickFolder, readText, setWindowTitle, synctexForward, synctexInverse, writeText,
+  openProject, pickFolder, pickNewPaperPath, readText, setWindowTitle, synctexForward, synctexInverse, writeText,
   type CompileResult, type GitStatus, type PdfPos, type Project,
 } from "./lib/backend";
 import { parseBib, type BibEntry, type OutlineItem } from "./lib/latex";
@@ -181,12 +181,20 @@ export default function App() {
     try { const folder = await importOverleaf(); if (folder) await openFolder(folder); } catch (e) { setError(String(e)); }
   }, [openFolder]);
 
-  const createPaper = useCallback(async (name: string, template: string) => {
-    const parent = await pickFolder("Choose where to create the paper");
-    if (!parent) return;
+  // The save panel names and places the folder in one step; false means the author cancelled.
+  const createPaper = useCallback(async (template: string, suggested: string): Promise<boolean> => {
+    const last = localStorage.getItem("dabir.papersDir");
+    const path = await pickNewPaperPath(last ? `${last}/${suggested}` : suggested);
+    if (!path) return false;
+    const cut = path.replace(/[\\/]+$/, "").lastIndexOf(path.includes("\\") && !path.includes("/") ? "\\" : "/");
+    const parent = path.slice(0, cut);
+    const name = path.slice(cut + 1);
+    if (!parent || !name) throw new Error("Choose a folder name inside a location.");
     const dest = await newPaper(parent, name, template);
+    localStorage.setItem("dabir.papersDir", parent);
     await openFolder(dest);
     setNote("New paper created with Git and memory set up.");
+    return true;
   }, [openFolder]);
   // Reference sync runs while the paper is open; when entries land, say so and reload the bibliography.
   const onRefsChanged = useCallback((summary: string) => { setNote(summary); reloadProject(); }, [reloadProject]);
@@ -766,6 +774,12 @@ export default function App() {
     setMode("source"); setJumpLine(line); setJumpStamp(Date.now());
   }, [project, file, selectFile]);
   const fixWithAgent = useCallback((prompt: string) => { if (!inspectorOpen) toggleInspector(); setPrefill({ text: prompt, stamp: Date.now() }); }, [inspectorOpen, toggleInspector]);
+  // Hand the bibliography to the agent under the check-references skill: online lookups, fields fixed
+  // from the record, doubtful entries reported rather than rewritten.
+  const checkReferences = useCallback(() => {
+    setSheet(null);
+    fixWithAgent("Check the references: follow the check-references skill. Run its script (python3 .dabir/skills/check-references/scripts/verify_refs.py on every .bib the paper uses), fix the fields of verified entries from the records without changing citation keys, add missing DOIs, and list every mismatch and not-found entry at the top of your report for me to decide on. Also list \\cite keys with no entry and \\ref with no \\label. Do not delete or invent entries.");
+  }, [fixWithAgent]);
   const jumpTo = useCallback((line: number, inSource?: boolean) => { if (inSource) setMode("source"); setJumpLine(line); setJumpStamp(Date.now()); }, []);
   const onChanged = useCallback(() => {
     // Cancel a pending autosave so a dirty buffer cannot overwrite an accepted agent change.
@@ -859,7 +873,7 @@ export default function App() {
           onStart={startSession} onJoin={joinSession} onStop={stopSession} onSetOverleaf={setOverleaf} onPull={pullOverleaf} onPush={pushOverleaf}
           onReferences={() => setSheet("refs")} onExport={() => setSheet("export")} signalingUrl={settings.signalingUrl} direct={directApi} />
       )}
-      {sheet === "refs" && project && <ReferencesSheet project={project} sync={refSync} bibCount={Object.keys(bib).length} onClose={() => setSheet(null)} onChanged={onRefsChanged} />}
+      {sheet === "refs" && project && <ReferencesSheet project={project} sync={refSync} bibCount={Object.keys(bib).length} onClose={() => setSheet(null)} onChanged={onRefsChanged} agentReady={agentReady} onCheck={checkReferences} />}
       {sheet === "export" && project && <ExportSheet project={project} onClose={() => setSheet(null)} ensurePdf={ensurePdf} onNote={setNote} />}
       {sheet === "new" && <NewPaperSheet onClose={() => setSheet(null)} onCreate={createPaper} initial={newTemplate} />}
       {sheet === "settings" && <SettingsSheet onClose={() => setSheet(null)} />}

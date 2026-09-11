@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BookMarked, FileText, Link2, Plus, RefreshCw } from "lucide-react";
+import { BookMarked, FileText, Link2, Plus, RefreshCw, ShieldCheck } from "lucide-react";
 import { bibImportFile, pickBibFile, refsAdd, type Project } from "../lib/backend";
 import { ago, type useRefSync } from "../lib/refsync";
 
@@ -17,7 +17,7 @@ function shortPath(p: string): string {
  * synced now or kept in step), a .bib another manager writes (Mendeley, Paperpile, JabRef, EndNote,
  * a Better BibTeX auto-export), one entry by DOI or arXiv id, or a one-off import.
  */
-export function ReferencesSheet({ project, sync, bibCount, onClose, onChanged }: { project: Project; sync: Sync; bibCount: number; onClose: () => void; onChanged: (note: string) => void }) {
+export function ReferencesSheet({ project, sync, bibCount, onClose, onChanged, onCheck, agentReady }: { project: Project; sync: Sync; bibCount: number; onClose: () => void; onChanged: (note: string) => void; onCheck: () => void; agentReady: boolean }) {
   const { cfg, setCfg, zotero, probe, syncZotero, syncLinked, busy } = sync;
   const [error, setError] = useState<string | null>(null);
   const [id, setId] = useState("");
@@ -98,6 +98,14 @@ export function ReferencesSheet({ project, sync, bibCount, onClose, onChanged }:
           <div className="actions">
             <button className="btn" disabled={importing} onClick={() => run(async () => { setImporting(true); try { const r = await bibImportFile(project.root); if (r) onChanged(r); } finally { setImporting(false); } })}>{importing ? "Importing…" : "Import a .bib File…"}</button>
           </div>
+        </section>
+
+        <section className="share-section">
+          <h3><ShieldCheck aria-hidden /> Check online</h3>
+          <div className="actions">
+            <button className="btn" disabled={!agentReady || bibCount === 0} onClick={onCheck} title={agentReady ? "The agent runs the check-references skill" : "Choose an installed agent first"}>Check References with the Agent</button>
+          </div>
+          <p className="memory-note small">Every entry is looked up at Crossref, doi.org, arXiv and OpenAlex. Fields that differ are fixed from the record; entries that resolve to another work or to nothing are reported, never rewritten.</p>
         </section>
 
         {error && <p className="composer-note" role="alert">{error}</p>}
