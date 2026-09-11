@@ -6,7 +6,7 @@
     },
     {
       "id": "vision",
-      "label": "Computer vision"
+      "label": "Vision and graphics"
     },
     {
       "id": "nlp",
@@ -15,6 +15,10 @@
     {
       "id": "publishers",
       "label": "Journals and publishers"
+    },
+    {
+      "id": "biology",
+      "label": "Biology and medicine"
     },
     {
       "id": "math",
@@ -197,13 +201,28 @@
       ]
     },
     {
+      "id": "siggraph",
+      "label": "SIGGRAPH",
+      "venue": "SIGGRAPH and SIGGRAPH Asia (ACM TOG journal track)",
+      "group": "vision",
+      "engine": "latex",
+      "official": false,
+      "featured": true,
+      "summary": "A short paper on ACM's acmart class in acmtog mode, the layout SIGGRAPH asks for; acmart is fetched from CTAN on first compile. Switch to sigconf for the conference track.",
+      "site": "https://www.siggraph.org/",
+      "source": {
+        "kind": "bundled"
+      },
+      "main": "main.tex"
+    },
+    {
       "id": "acl",
-      "label": "ACL Rolling Review",
+      "label": "ACL",
       "venue": "ACL, EMNLP, NAACL and other ACL venues",
       "group": "nlp",
       "engine": "latex",
       "official": true,
-      "featured": false,
+      "featured": true,
       "version": "master",
       "summary": "The official ACL style files (acl.sty, acl_natbib.bst) and the example paper from the ACL organisation's repository, shared by every ACL venue.",
       "site": "https://github.com/acl-org/acl-style-files",
@@ -316,6 +335,167 @@
           "why": "EPS figures cannot be embedded by the bundled engine"
         }
       ]
+    },
+    {
+      "id": "plos",
+      "label": "PLOS",
+      "venue": "PLOS ONE, PLOS Biology, PLOS Computational Biology and the other PLOS journals",
+      "group": "biology",
+      "engine": "latex",
+      "official": true,
+      "featured": true,
+      "version": "2025-08",
+      "summary": "The official PLOS LaTeX template and plos2025 bibliography style, shared by every PLOS journal.",
+      "site": "https://journals.plos.org/plosone/s/latex",
+      "source": {
+        "kind": "zip",
+        "url": "https://journals.plos.org/plosone/s/file?id=1457/PLOS_latex_template.zip"
+      },
+      "main": "plos_latex_template.tex",
+      "drop": [
+        "plos_latex_template.pdf"
+      ],
+      "patches": [
+        {
+          "file": "main.tex",
+          "find": "\\DisableLigatures[f]{encoding = *, family = * }",
+          "replace": "%\\DisableLigatures[f]{encoding = *, family = * } % Dabir: pdfTeX-only; the bundled XeTeX engine has no ligature switch here",
+          "why": "the template's ligature switch is pdfTeX-only and stops the bundled engine"
+        }
+      ]
+    },
+    {
+      "id": "frontiers",
+      "label": "Frontiers",
+      "venue": "Frontiers journals (Harvard and Vancouver reference styles)",
+      "group": "biology",
+      "engine": "latex",
+      "official": true,
+      "featured": false,
+      "version": "2025-04",
+      "summary": "The official Frontiers kit: FrontiersinHarvard and FrontiersinVancouver classes, both bibliography styles and the supplementary-material template.",
+      "site": "https://www.frontiersin.org/about/author-guidelines",
+      "source": {
+        "kind": "zip",
+        "url": "https://www.frontiersin.org/design/zip/Frontiers_LaTeX_Templates.zip"
+      },
+      "main": "frontiers.tex",
+      "drop": [
+        "*.eps",
+        "PDF examples"
+      ],
+      "patches": [
+        {
+          "file": "Frontiers-Harvard.bst",
+          "find": "    { \"\\bibAnnoteFile{\" cite$ * \"}\" * write$ newline$ }",
+          "replace": "    { skip$ }",
+          "why": "the Harvard style asks TeX for an annotation file named after each citation key, and keys such as book or article resolve to LaTeX classes under the bundled engine"
+        },
+        {
+          "file": "FrontiersinHarvard.cls",
+          "find": "{./logo1.eps}",
+          "replace": "{./logo1.pdf}",
+          "why": "the class embeds its logo as EPS, which the bundled engine cannot read; the kit ships the same logo as PDF"
+        },
+        {
+          "file": "FrontiersinVancouver.cls",
+          "find": "{./logo1.eps}",
+          "replace": "{./logo1.pdf}",
+          "why": "same logo fix for the Vancouver class"
+        },
+        {
+          "file": "frontiersinFPHY_FAMS.cls",
+          "find": "{./logo1.eps}",
+          "replace": "{./logo1.pdf}",
+          "why": "same logo fix for the Physics and Applied Mathematics class"
+        },
+        {
+          "file": "frontiers_suppmat.cls",
+          "find": "{./logo1.eps}",
+          "replace": "{./logo1.pdf}",
+          "why": "same logo fix for the supplementary-material class"
+        },
+        {
+          "file": "main.tex",
+          "find": "{logo1.eps}",
+          "replace": "{logo1.pdf}",
+          "all": true,
+          "why": "the example figures point at the EPS logos"
+        },
+        {
+          "file": "main.tex",
+          "find": "{logo2.eps}",
+          "replace": "{logo2.pdf}",
+          "all": true,
+          "why": "same for the second example figure"
+        },
+        {
+          "file": "frontiers_SupplementaryMaterial.tex",
+          "find": "{logo1.eps}",
+          "replace": "{logo1.pdf}",
+          "all": true,
+          "why": "same in the supplementary template"
+        },
+        {
+          "file": "frontiers_SupplementaryMaterial.tex",
+          "find": "{logo2.eps}",
+          "replace": "{logo2.pdf}",
+          "all": true,
+          "why": "same in the supplementary template"
+        }
+      ]
+    },
+    {
+      "id": "bmc",
+      "label": "BMC",
+      "venue": "BMC Bioinformatics, Genome Biology, BMC Biology and the other BMC journals",
+      "group": "biology",
+      "engine": "latex",
+      "official": true,
+      "featured": false,
+      "version": "2024-12",
+      "summary": "BMC journals take the official Springer Nature kit with the Vancouver numbered reference style; this is that kit with the documentclass set accordingly.",
+      "site": "https://www.springernature.com/gp/authors/campaigns/latex-author-support",
+      "source": {
+        "kind": "zip",
+        "url": "https://cms-resources.apps.public.k8s.springernature.io/springer-cms/rest/v1/content/18782940/data/v12"
+      },
+      "main": "sn-article.tex",
+      "drop": [
+        "*.pdf"
+      ],
+      "flatten": [
+        "bst"
+      ],
+      "patches": [
+        {
+          "file": "main.tex",
+          "find": "\\documentclass[pdflatex,sn-mathphys-num]{sn-jnl}",
+          "replace": "\\documentclass[pdflatex,sn-vancouver-num]{sn-jnl}",
+          "why": "BMC journals use the Vancouver numbered reference style"
+        },
+        {
+          "file": "main.tex",
+          "find": "\\includegraphics[width=0.9\\textwidth]{fig.eps}",
+          "replace": "\\fbox{\\rule{0pt}{4cm}\\rule{0.9\\textwidth}{0pt}} % Dabir: the kit's example figure is EPS, which the bundled engine cannot embed; use a PDF or PNG",
+          "why": "EPS figures cannot be embedded by the bundled engine"
+        }
+      ]
+    },
+    {
+      "id": "oup",
+      "label": "Oxford University Press",
+      "venue": "Bioinformatics, Nucleic Acids Research, Brain and other OUP journals",
+      "group": "biology",
+      "engine": "latex",
+      "official": false,
+      "featured": false,
+      "summary": "A short paper on OUP's authoring class (oup-authoring-template, fetched from CTAN on first compile) in the contemporary layout, set up the way Bioinformatics asks for.",
+      "site": "https://ctan.org/pkg/oup-authoring-template",
+      "source": {
+        "kind": "bundled"
+      },
+      "main": "main.tex"
     },
     {
       "id": "lncs",
