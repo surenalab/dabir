@@ -81,7 +81,7 @@ const SKIP_ARGS: Record<string, number> = {
   color: -1, textcolor: 1, definecolor: -1, pagestyle: -1, thispagestyle: -1, hyphenation: -1, selectlanguage: -1, geometry: -1, hypersetup: -1,
   fontsize: -1, fontfamily: -1, setcounter: -1, addtocounter: -1, numberwithin: -1, counterwithin: -1, lstset: -1, tikzset: -1, pgfplotsset: -1,
   bibitem: 1, index: -1, glossaryentry: -1, gls: -1, acrshort: -1, acrlong: -1, si: -1, SI: 1, num: -1, qty: -1, unit: -1, ce: -1,
-  todo: 0, footnote: 0, caption: 0, title: 0, author: 0, section: 0, subsection: 0, subsubsection: 0, paragraph: 0, textbf: 0, emph: 0, textit: 0,
+  todo: 0, footnote: 0, caption: 0, title: 0, author: -1, thanks: 0, section: 0, subsection: 0, subsubsection: 0, paragraph: 0, textbf: 0, emph: 0, textit: 0,
 };
 const MATH_ENVS = new Set(["equation", "equation*", "align", "align*", "alignat", "alignat*", "gather", "gather*", "multline", "multline*", "eqnarray", "eqnarray*", "displaymath", "math", "flalign", "flalign*", "split", "cases", "array", "matrix", "pmatrix", "bmatrix", "IEEEeqnarray", "IEEEeqnarray*"]);
 const RAW_ENVS = new Set(["verbatim", "verbatim*", "lstlisting", "minted", "tikzpicture", "algorithmic", "algorithm2e", "comment", "filecontents", "filecontents*", "Verbatim", "BVerbatim", "pgfplots", "axis", "tabular", "tabular*", "tabularx", "longtable"]);
