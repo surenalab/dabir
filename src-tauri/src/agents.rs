@@ -315,8 +315,56 @@ pub fn models(id: &str) -> ModelOptions {
     }
 }
 
+/// Tools an agent does not need here: the preamble already carries the paper map, the file list
+/// and the last steps, and Dabir owns the worktree, so inspecting Git or walking the tree is a
+/// wasted call. `dabir.toml [agents] deny = [...]` replaces this list; an empty list denies nothing.
+/// Rules use the Claude Code form (`Bash(git log*)`, `WebSearch`); Grok accepts the same rules.
+pub const DEFAULT_DENY: &[&str] = &[
+    "Bash(git log*)",
+    "Bash(git status*)",
+    "Bash(git diff*)",
+    "Bash(git show*)",
+    "Bash(git branch*)",
+    "Bash(git stash*)",
+    "Bash(git checkout*)",
+    "Bash(git reset*)",
+    "Bash(tree*)",
+];
+
+/// The deny rules for a run: the paper's own list when `dabir.toml [agents] deny` is set, else the default.
+pub fn deny_rules(cwd: &Path) -> Vec<String> {
+    let from_toml = std::fs::read_to_string(cwd.join("dabir.toml"))
+        .ok()
+        .and_then(|t| t.parse::<toml::Table>().ok())
+        .and_then(|t| {
+            t.get("agents")?.get("deny")?.as_array().map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.trim().to_string()))
+                    .filter(|s| !s.is_empty())
+                    .collect::<Vec<_>>()
+            })
+        });
+    from_toml.unwrap_or_else(|| DEFAULT_DENY.iter().map(|s| s.to_string()).collect())
+}
+
+/// The CLI flags that carry the deny rules; CLIs without such a flag get none.
+fn deny_args(id: &str, rules: &[String]) -> Vec<String> {
+    if rules.is_empty() {
+        return vec![];
+    }
+    match id {
+        "claude" => vec!["--disallowedTools".into(), rules.join(",")],
+        "grok" => rules
+            .iter()
+            .flat_map(|r| ["--deny".to_string(), r.clone()])
+            .collect(),
+        _ => vec![],
+    }
+}
+
 fn args_for(id: &str, prompt: &str, cwd: &Path, steer: &Steer) -> Vec<String> {
     let cwd_s = cwd.to_string_lossy().to_string();
+    let deny = deny_args(id, &deny_rules(cwd));
     let mut args: Vec<String> = match id {
         "claude" => vec![
             "-p".into(),
@@ -365,6 +413,7 @@ fn args_for(id: &str, prompt: &str, cwd: &Path, steer: &Steer) -> Vec<String> {
             if let Some(e) = steer.effort() {
                 args.extend(["--effort".into(), e.into()]);
             }
+            args.extend(deny);
         }
         "codex" => {
             if let Some(m) = steer.model() {
@@ -388,6 +437,7 @@ fn args_for(id: &str, prompt: &str, cwd: &Path, steer: &Steer) -> Vec<String> {
             if let Some(e) = steer.effort() {
                 args.extend(["--reasoning-effort".into(), e.into()]);
             }
+            args.extend(deny);
         }
         _ => {
             if let Some(m) = steer.model() {

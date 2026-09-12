@@ -1577,7 +1577,30 @@ fn agent_preamble(
                 .join(", ")
         })
         .unwrap_or_default();
-    let files = memory::file_map(root, 80);
+    let artefact_cmds: std::collections::HashMap<String, String> = mem
+        .as_ref()
+        .map(|m| {
+            m.provenance
+                .iter()
+                .map(|a| {
+                    (
+                        a.artefact.trim_start_matches("./").to_string(),
+                        a.command.clone(),
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let manuscript: Vec<String> = map.files.iter().map(|(f, _)| f.clone()).collect();
+    let bibs: Vec<String> = map.bibs.iter().map(|(f, _)| f.clone()).collect();
+    let files = memory::file_map_by_role(
+        root,
+        80,
+        Some(main.as_str()),
+        &manuscript,
+        &bibs,
+        &artefact_cmds,
+    );
     // The author's own words, plus the selection if any: the ranking sees what they mean, not the
     // preamble of a follow-up. The paper map already routes named sections and labels.
     let query = match focus.and_then(|f| f.selection.as_deref()) {
@@ -1720,9 +1743,9 @@ fn agent_preamble(
         out.push('\n');
     }
     if !files.is_empty() {
-        out.push_str("\nFiles\n");
+        out.push_str("\nFiles, by role (path, size)\n");
         out.push_str(&files.join("\n"));
-        if files.len() >= 80 {
+        if files.iter().map(|g| g.lines().count() - 1).sum::<usize>() >= 80 {
             out.push_str("\n(more files not listed)");
         }
         out.push('\n');
@@ -2735,6 +2758,43 @@ mod tests {
             },
         );
         assert!(!none.iter().any(|a| a == "--model"));
+        // Deny rules: the default list for claude and grok, none for CLIs without the flag.
+        let i = claude
+            .iter()
+            .position(|a| a == "--disallowedTools")
+            .unwrap();
+        assert!(claude[i + 1].contains("Bash(git log*)") && claude[i + 1].contains("Bash(tree*)"));
+        assert!(grok
+            .windows(2)
+            .any(|w| w == ["--deny", "Bash(git status*)"]));
+        assert!(!codex
+            .iter()
+            .any(|a| a.contains("deny") || a.contains("disallowed")));
+        assert!(!cursor
+            .iter()
+            .any(|a| a.contains("deny") || a.contains("disallowed")));
+    }
+
+    #[test]
+    fn deny_rules_come_from_dabir_toml_when_set() {
+        let dir = std::env::temp_dir().join(format!("dabir-deny-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        assert_eq!(agents::deny_rules(&dir).len(), agents::DEFAULT_DENY.len());
+        fs::write(
+            dir.join("dabir.toml"),
+            "[agents]\ndeny = [\"WebSearch\", \" Bash(rm*) \"]\n",
+        )
+        .unwrap();
+        assert_eq!(agents::deny_rules(&dir), vec!["WebSearch", "Bash(rm*)"]);
+        fs::write(dir.join("dabir.toml"), "[agents]\ndeny = []\n").unwrap();
+        assert!(agents::deny_rules(&dir).is_empty());
+        let steer = agents::Steer {
+            model: None,
+            effort: None,
+        };
+        let claude = agents::args_for_test("claude", "p", &dir, &steer);
+        assert!(!claude.iter().any(|a| a == "--disallowedTools"));
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

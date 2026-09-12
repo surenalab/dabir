@@ -457,6 +457,89 @@ pub fn file_map(root: &Path, cap: usize) -> Vec<String> {
     out
 }
 
+/// The file map grouped by what each file is for the paper, so an agent knows where a change
+/// belongs before opening anything: the manuscript (main first, then the files it includes),
+/// bibliographies, generated artefacts with the command that makes them, code, figures, data, other.
+/// `manuscript` and `bibs` are relative paths from the paper map; `artefacts` maps artefact path to
+/// its command. Entries not in the manuscript or bib lists are classified by extension.
+pub fn file_map_by_role(
+    root: &Path,
+    cap: usize,
+    main: Option<&str>,
+    manuscript: &[String],
+    bibs: &[String],
+    artefacts: &std::collections::HashMap<String, String>,
+) -> Vec<String> {
+    let flat = file_map(root, cap);
+    let mut groups: Vec<(&str, Vec<String>)> = vec![
+        ("manuscript", vec![]),
+        ("bibliography", vec![]),
+        ("generated (rerun the command, never edit)", vec![]),
+        ("code", vec![]),
+        ("figures", vec![]),
+        ("data", vec![]),
+        ("other", vec![]),
+    ];
+    let norm = |s: &str| s.trim_start_matches("./").to_string();
+    let manuscript: Vec<String> = manuscript.iter().map(|m| norm(m)).collect();
+    let bibs: Vec<String> = bibs.iter().map(|b| norm(b)).collect();
+    for line in flat {
+        let rel = line.split(" (").next().unwrap_or(&line).to_string();
+        let ext = rel
+            .rsplit('.')
+            .next()
+            .map(|e| e.to_ascii_lowercase())
+            .unwrap_or_default();
+        let is_main = main.map(norm).as_deref() == Some(rel.as_str());
+        let group = if is_main || manuscript.contains(&rel) {
+            0
+        } else if bibs.contains(&rel) || ext == "bib" {
+            1
+        } else if artefacts.contains_key(&rel) {
+            2
+        } else {
+            match ext.as_str() {
+                "tex" | "typ" | "sty" | "cls" | "bst" | "ltx" => 0,
+                "py" | "jl" | "r" | "m" | "sh" | "rs" | "js" | "ts" | "ipynb" | "cpp" | "c"
+                | "h" => 3,
+                "pdf" | "png" | "jpg" | "jpeg" | "svg" | "eps" | "tikz" | "pgf" => 4,
+                "csv" | "tsv" | "json" | "npy" | "npz" | "parquet" | "h5" | "mat" | "pkl"
+                | "yaml" | "yml" | "toml" => 5,
+                _ => 6,
+            }
+        };
+        let entry = if is_main {
+            format!("{line} [main]")
+        } else if group == 2 {
+            format!("{line} <- `{}`", artefacts[&rel])
+        } else {
+            line
+        };
+        groups[group].1.push(entry);
+    }
+    // The main file leads the manuscript group; the rest keep the paper map's include order.
+    if let Some(m) = main.map(norm) {
+        let order = |p: &str| {
+            if p == m {
+                0
+            } else {
+                1 + manuscript
+                    .iter()
+                    .position(|x| x == p)
+                    .unwrap_or(manuscript.len())
+            }
+        };
+        groups[0]
+            .1
+            .sort_by_key(|e| order(e.split(" (").next().unwrap_or(e)));
+    }
+    groups
+        .into_iter()
+        .filter(|(_, v)| !v.is_empty())
+        .map(|(name, v)| format!("{name}:\n  {}", v.join("\n  ")))
+        .collect()
+}
+
 fn repo_map(root: &Path) -> Vec<String> {
     let mut out = vec![];
     fn walk(dir: &Path, root: &Path, out: &mut Vec<String>, depth: usize) {
@@ -636,7 +719,7 @@ pub fn setup(root: &Path, main_tex: Option<&Path>) -> Result<Vec<String>, String
     let existing_toml = fs::read_to_string(&toml_path).unwrap_or_default();
     if !existing_toml.contains("[env]") {
         let prefix = det.prefix.clone().unwrap_or_default();
-        let block = format!("{}{}\n[env]\n# Prepended to every provenance command and suggested to agents. Examples: \"conda run -n myenv\", \"uv run\", \".venv/bin/python -m\".\nprefix = \"{}\"\n\n# Where the code runs when not on this machine. Uncomment to run recorded commands and the\n# terminal's remote shell over ssh; artefacts are copied back with scp after each run.\n# [remote]\n# host = \"gpu-box\"        # a name from ~/.ssh/config, or user@host\n# dir = \"~/work/paper\"    # the repository's path on that host\n", existing_toml, if existing_toml.is_empty() || existing_toml.ends_with('\n') { "" } else { "\n" }, prefix);
+        let block = format!("{}{}\n[env]\n# Prepended to every provenance command and suggested to agents. Examples: \"conda run -n myenv\", \"uv run\", \".venv/bin/python -m\".\nprefix = \"{}\"\n\n# Where the code runs when not on this machine. Uncomment to run recorded commands and the\n# terminal's remote shell over ssh; artefacts are copied back with scp after each run.\n# [remote]\n# host = \"gpu-box\"        # a name from ~/.ssh/config, or user@host\n# dir = \"~/work/paper\"    # the repository's path on that host\n\n# Tools the agents may not use here. Unset means Dabir's default (no Git inspection, no tree walks:\n# the prompt already carries the map). Rules in Claude Code form; an empty list denies nothing.\n# [agents]\n# deny = [\"Bash(git log*)\", \"WebSearch\"]\n", existing_toml, if existing_toml.is_empty() || existing_toml.ends_with('\n') { "" } else { "\n" }, prefix);
         let header = if existing_toml.is_empty() {
             format!(
                 "[paper]\nmain = \"{}\"\nengine = \"tectonic\"\n",
@@ -1499,6 +1582,44 @@ mod tests {
         std::fs::write(dir.join("dabir.toml"), "[remote]\nhost = \"\"\n").unwrap();
         assert_eq!(super::remote(&dir), None);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn file_map_groups_by_role_with_main_first() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/anchor-journal");
+        let mut art = std::collections::HashMap::new();
+        art.insert(
+            "figures/kappa-sweep.pdf".to_string(),
+            "python code/sweep.py".to_string(),
+        );
+        let groups = super::file_map_by_role(
+            &root,
+            80,
+            Some("main.tex"),
+            &["sections/ablations.tex".into(), "main.tex".into()],
+            &["refs.bib".into()],
+            &art,
+        );
+        let text = groups.join("\n");
+        let manuscript = groups
+            .iter()
+            .find(|g| g.starts_with("manuscript:"))
+            .unwrap();
+        let first = manuscript.lines().nth(1).unwrap();
+        assert!(
+            first.trim().starts_with("main.tex (") && first.ends_with("[main]"),
+            "{first}"
+        );
+        assert!(manuscript.contains("sections/ablations.tex"));
+        assert!(text.contains("bibliography:\n  refs.bib ("), "{text}");
+        assert!(text.contains("code:\n"), "{text}");
+        if root.join("figures/kappa-sweep.pdf").exists() {
+            assert!(
+                text.contains("kappa-sweep.pdf") && text.contains("<- `python code/sweep.py`"),
+                "{text}"
+            );
+        }
+        assert!(!text.contains("other:\n  main.tex"));
     }
 
     #[test]
