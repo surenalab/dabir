@@ -1084,3 +1084,11 @@ input[type="range"] { accent-color: var(--accent); width: 140px; }
 .find-hit .num { min-width: 3ch; text-align: right; }
 .find-hit .text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-2); }
 .find-hit mark { background: var(--accent-wash); color: var(--ink); border-radius: 2px; padding: 0 1px; }
+
+/* Focus mode: the current paragraph is ink, the rest recedes; the chrome fades until the pointer visits it */
+.editor .cm-dim { color: var(--ink-4); transition: color var(--dur-fast); }
+.editor .cm-dim .tok-cmd, .editor .cm-dim .tok-env, .editor .cm-dim .tok-math, .editor .cm-dim .cm-heading, .editor .cm-dim .tok-cmt { color: var(--ink-4); }
+.app.focus-mode .titlebar, .app.focus-mode .status, .app.focus-mode .formatbar { opacity: 0.45; transition: opacity var(--dur-med); }
+.app.focus-mode .titlebar:hover, .app.focus-mode .titlebar:focus-within, .app.focus-mode .status:hover, .app.focus-mode .formatbar:hover, .app.focus-mode .formatbar:focus-within { opacity: 1; }
+.app.focus-mode .editor .cm-activeLine, .app.focus-mode .editor .cm-activeLineGutter { background: transparent; }
+.app.focus-mode .editor .cm-scroller { max-width: 96ch; margin: 0 auto; padding-top: 22vh; padding-bottom: 40vh; }

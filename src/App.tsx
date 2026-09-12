@@ -13,7 +13,7 @@ import { ReferencesSheet } from "./components/ReferencesSheet";
 import { useRefSync } from "./lib/refsync";
 import { SettingsSheet } from "./components/SettingsSheet";
 import type { EditorApi } from "./components/SourceEditor";
-import { useSettings, updateSettings } from "./lib/settings";
+import { useSettings, updateSettings, getSettings } from "./lib/settings";
 import { checkGrammar, type GrammarMatch } from "./lib/grammar";
 import { paperSymbols, paperOutline, flattenFiles, type AssistSources } from "./lib/assist";
 import { stopLanguageServers } from "./lib/lsp";
@@ -68,6 +68,13 @@ export default function App() {
   const [terminal, setTerminal] = useState({ open: false, focusStamp: 0 });
   // Find in Paper lives at the top of the sidebar; ⇧⌘F opens or refocuses it.
   const [findPaper, setFindPaper] = useState({ open: false, stamp: 0 });
+  // Focus mode is a setting so it survives restarts; turning it on folds the panels away, turning it off brings them back.
+  const toggleFocusMode = useCallback(() => {
+    const on = !getSettings().focusMode;
+    updateSettings({ focusMode: on });
+    setAnimating(true); setNavOpen(!on); setInspectorOpen(!on);
+    if (on && mode === "pdf") setMode("source");
+  }, [mode]);
   const openFindPaper = useCallback(() => { setFindPaper({ open: true, stamp: Date.now() }); setNavOpen(true); }, []);
   const closeFindPaper = useCallback(() => setFindPaper((f) => ({ ...f, open: false })), []);
   const toggleTerminal = useCallback(() => setTerminal((t) => ({ open: !t.open, focusStamp: Date.now() })), []);
@@ -182,6 +189,7 @@ export default function App() {
       if (q.get("nav") === "0") setNavOpen(false);
       const f = q.get("file"); if (f) await selectFile(`${folder}/${f}`);
       if (q.get("terminal") === "1") setTerminal({ open: true, focusStamp: 0 });
+      if (q.get("focus") === "1") { updateSettings({ focusMode: true }); setNavOpen(false); setInspectorOpen(false); }
       if (q.get("demo") === "run") setTimeout(() => setAutoRun("Rerun the sweep with a finer noise grid and update Table 1 and the abstract."), 400);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -649,6 +657,7 @@ export default function App() {
       case "show-log": setShowLog((v) => !v); break;
       case "show-terminal": toggleTerminal(); break;
       case "find-paper": openFindPaper(); break;
+      case "focus-mode": toggleFocusMode(); break;
       case "sync-pdf": showInPdf(); break;
       case "commit": if (!navOpen) toggleNav(); setCommitFocus((n) => n + 1); break;
       case "view-visual": setMode("visual"); break;
@@ -685,7 +694,7 @@ export default function App() {
         checkForUpdates(async (v, notes) => window.confirm(`Dabir ${v} is available.\n\n${notes}\n\nDownload and restart now?`)).then(setNote).catch((e) => setNote(String(e)));
         break;
     }
-  }, [open, importFromOverleaf, save, compile, showInPdf, toggleNav, toggleInspector, toggleTerminal, openFindPaper, inspectorOpen, navOpen, runGrammar, mode]);
+  }, [open, importFromOverleaf, save, compile, showInPdf, toggleNav, toggleInspector, toggleTerminal, openFindPaper, toggleFocusMode, inspectorOpen, navOpen, runGrammar, mode]);
 
   useEffect(() => onMenu(command), [command]);
   useEffect(() => onCompileProgress((line) => setProgress(line.length > 90 ? line.slice(0, 87) + "…" : line)), []);
@@ -711,6 +720,7 @@ export default function App() {
       if (k === "0") { e.preventDefault(); command("zoom-fit"); return; }
       if (e.ctrlKey && k === "s") { e.preventDefault(); command("toggle-sidebar"); return; }
       if (e.altKey && (k === "i" || e.code === "KeyI")) { e.preventDefault(); command("toggle-inspector"); return; }
+      if (e.altKey && (k === "f" || e.code === "KeyF")) { e.preventDefault(); command("focus-mode"); return; }
       if (!e.altKey && !e.ctrlKey && !e.shiftKey && map[k]) { e.preventDefault(); command(map[k]); }
     };
     window.addEventListener("keydown", onKey);
@@ -872,7 +882,7 @@ export default function App() {
     };
   }, [review, project, file, rel, reviewText, reviewShowing, session, selectFile]);
 
-  const cls = ["app", native ? "native" : "", isMac ? "mac" : "", navOpen ? "" : "nav-hidden", inspectorOpen ? "" : "inspector-hidden", animating ? "animating" : "", focused ? "" : "inactive"].join(" ").trim();
+  const cls = ["app", native ? "native" : "", isMac ? "mac" : "", navOpen ? "" : "nav-hidden", inspectorOpen ? "" : "inspector-hidden", animating ? "animating" : "", focused ? "" : "inactive", settings.focusMode ? "focus-mode" : ""].join(" ").trim();
 
   return (
     <div className={cls} style={{ "--nav-w": `${navW}px`, "--inspector-w": `${inspW}px` } as React.CSSProperties}>
