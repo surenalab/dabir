@@ -289,6 +289,10 @@ button { background: none; border: 0; padding: 0; cursor: default; }
 .editor .cm-cursor { border-left-color: var(--accent); }
 .editor .cm-matchingBracket { background: var(--accent-wash); outline: 0; }
 .editor .cm-env-match { background: var(--accent-wash); border-radius: var(--radius-sm); }
+/* Section titles in source view carry their weight, so the file's shape reads without leaving the markup. */
+.editor .cm-heading { font-weight: 600; color: var(--ink); }
+.editor .cm-heading-1 { font-size: 1.12em; }
+.editor .cm-heading-2 { font-size: 1.05em; }
 /* Fold markers: quiet until the gutter is hovered, so line numbers stay the only thing in view. */
 .editor .cm-foldGutter { width: 14px; }
 .editor .cm-foldGutter .cm-gutterElement { color: transparent; cursor: pointer; padding: 0 2px; transition: color var(--dur) var(--ease-out); }

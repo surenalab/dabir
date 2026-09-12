@@ -793,7 +793,7 @@ export default function App() {
   // What completions, go-to-definition and the outline read: the paper's symbols with the open buffer's labels live.
   const symbols = useMemo(() => paperSymbols(map, rel(file), source), [map, rel, file, source]);
   const files = useMemo(() => (project ? flattenFiles(project.tree) : []), [project]);
-  const assist = useMemo<AssistSources>(() => ({ bib: () => bib, symbols: () => symbols, files: () => files, currentFile: () => rel(file), goTo: jumpToFile }), [bib, symbols, files, rel, file, jumpToFile]);
+  const assist = useMemo<AssistSources>(() => ({ bib: () => bib, symbols: () => symbols, files: () => files, currentFile: () => rel(file), goTo: jumpToFile, main: () => map?.main ?? rel(project?.mainTex ?? null) }), [bib, symbols, files, rel, file, jumpToFile, map, project]);
   const fixWithAgent = useCallback((prompt: string) => { if (!inspectorOpen) toggleInspector(); setPrefill({ text: prompt, stamp: Date.now() }); }, [inspectorOpen, toggleInspector]);
   // Hand the bibliography to the agent under the check-references skill: online lookups, fields fixed
   // from the record, doubtful entries reported rather than rewritten.

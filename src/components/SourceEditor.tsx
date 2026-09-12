@@ -12,7 +12,7 @@ import * as Y from "yjs";
 import type { Awareness } from "y-protocols/awareness";
 import { visualExtensions, remoteCursorsField, setRemoteCursors, type RemoteCursor } from "../lib/visual";
 import { typstVisualExtensions } from "../lib/visual-typst";
-import { projectSource, commandSource, dollarPairing, matchingEnvironment, goToDefinition, goToDefinitionCommand, type AssistSources } from "../lib/assist";
+import { projectSource, commandSource, dollarPairing, matchingEnvironment, goToDefinition, goToDefinitionCommand, paperLint, headingEmphasis, type AssistSources } from "../lib/assist";
 import type { GrammarMatch } from "../lib/grammar";
 import type { Settings } from "../lib/settings";
 import { currentGhost, ghostText, prediction, setGhostText } from "../lib/predict";
@@ -139,7 +139,7 @@ interface Props {
   findRequest: number;
 }
 
-const sourceOnly = () => [lineNumbers(), foldGutter({ openText: "⌄", closedText: "›" }), highlightActiveLineGutter(), highlightActiveLine(), syntaxHighlighting(highlight), matchingEnvironment()];
+const sourceOnly = () => [lineNumbers(), foldGutter({ openText: "⌄", closedText: "›" }), highlightActiveLineGutter(), highlightActiveLine(), syntaxHighlighting(highlight), matchingEnvironment(), headingEmphasis()];
 
 export interface EditorApi {
   wrap: (pre: string, post: string) => void;      // wrap the selection, or insert and place the cursor inside
@@ -201,7 +201,7 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
   ];
   const completionExt = (s: Settings) => {
     if (!s.autocomplete && !s.citeComplete) return [];
-    const live: AssistSources = { bib: () => assistRef.current.bib(), symbols: () => assistRef.current.symbols(), files: () => assistRef.current.files(), currentFile: () => assistRef.current.currentFile(), goTo: (f, l) => assistRef.current.goTo(f, l) };
+    const live: AssistSources = { bib: () => assistRef.current.bib(), symbols: () => assistRef.current.symbols(), files: () => assistRef.current.files(), currentFile: () => assistRef.current.currentFile(), goTo: (f, l) => assistRef.current.goTo(f, l), main: () => assistRef.current.main() };
     const override: CompletionSource[] = [];
     if (s.citeComplete) override.push(projectSource(live));
     if (s.autocomplete) override.push(commandSource(latexCompletionSource(true) as CompletionSource, live));
@@ -217,7 +217,7 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
         indentOnInput(), bracketMatching(), closeBrackets(), dollarPairing(), highlightSelectionMatches(),
         goToDefinition(() => assistRef.current),
         completeComp.current.of(completionExt(settings)), search({ top: true }),
-        latex({ enableAutocomplete: false, autoCloseBrackets: false }),
+        latex({ enableAutocomplete: false, autoCloseBrackets: false, enableLinting: false }), paperLint(() => assistRef.current),
         prefsComp.current.of(prefs(settings)),
         modeComp.current.of(modeExt(visual)),
         collabComp.current.of([]),
