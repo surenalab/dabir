@@ -43,7 +43,9 @@ The preamble now carries a paper map (every section, label, figure, table, equat
 | 22–31 multi-file, `DABIR_BENCH_BARE=1` | 9/10 | 16.7 s | 2.8 | 5 |
 | 22–31 multi-file, full preamble | 10/10 | 21.1 s (this run; 16 s in the earlier one) | 2.6 | 4 |
 
-The vague task fell from 49 s to 37 s. On the multi-file paper the map turns "change a word in the kappa sweep caption" from read → edit → verify (3 calls) into a single edit at `sections/ablations.tex:10`; the bare preamble fails the one task that says "add a sentence here", because without the editor position "here" has no referent, and passes it with the position in the prompt. Claude in `-p` mode does everything through Bash, so the remaining reads are `sed -n` of the lines the map named rather than searches.
+Grok and Cursor on the same day, full suite: Grok 31/31 (single-file mean 15 s, 2.4 calls, one orientation call in the whole suite; vague task 94 s and 11 calls, down from 128 s and 8 on 2026-09-10 in time though not in calls; multi-file mean 18.5 s, 3.0 calls); Cursor 31/31 (single-file mean 24 s, 2.3 calls, two orientation calls; vague 56 s; multi-file mean 21.6 s, 2.8 calls, no orientation call at all on the multi-file paper). Codex was not installed on the machine and is not in this run.
+
+The vague task fell from 49 s to 37 s for Claude. On the multi-file paper the map turns "change a word in the kappa sweep caption" from read → edit → verify (3 calls) into a single edit at `sections/ablations.tex:10`; the bare preamble fails the one task that says "add a sentence here", because without the editor position "here" has no referent, and passes it with the position in the prompt. Claude in `-p` mode does everything through Bash, so the remaining reads are `sed -n` of the lines the map named rather than searches.
 
 ## Results, 2026-09-10, third run (preamble in the loop)
 
