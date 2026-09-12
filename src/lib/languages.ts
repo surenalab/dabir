@@ -2,7 +2,9 @@
 // that made the figures is Python, Julia, R or shell; the rest is configuration and notes. One editor,
 // one theme, one set of keys: only the grammar and the LaTeX-specific helpers change with the file.
 
-import { StreamLanguage, type LanguageSupport } from "@codemirror/language";
+import { StreamLanguage, Language, LanguageSupport, languageDataProp, HighlightStyle } from "@codemirror/language";
+import { tags } from "@lezer/highlight";
+import { typstParser, typstLanguageData, typstLezerHighlighting, typstLezerIndentation, typstLezerFolding, typstLezerIndentService, typstLezerListKeymap, typstLezerFoldService, typstLezerLinter, typstTags } from "codemirror-lang-typst/lezer";
 import type { Extension } from "@codemirror/state";
 import { python } from "@codemirror/lang-python";
 import { markdown } from "@codemirror/lang-markdown";
@@ -47,4 +49,24 @@ export function codeLanguage(path: string | null): LanguageSupport | Extension |
     case "toml": return StreamLanguage.define(toml);
     default: return null;
   }
+}
+
+// ---- Typst source grammar: the Lezer parser from codemirror-lang-typst without the package's own colours,
+// so Typst source is set in the same palette as LaTeX and the code files.
+
+/** Typst-specific tags mapped onto the manuscript palette. */
+export const typstHighlight = HighlightStyle.define([
+  { tag: tags.heading, class: "tok-env tok-heading" },
+  { tag: tags.strong, class: "tok-strong" },
+  { tag: tags.emphasis, class: "tok-em" },
+  { tag: [typstTags.mathDelimiter, tags.escape], class: "tok-math" },
+  { tag: [typstTags.listMarker, typstTags.interpolated, tags.propertyName], class: "tok-cmd" },
+  { tag: [tags.bool, tags.null, tags.atom], class: "tok-num" },
+  { tag: tags.labelName, class: "tok-env" },
+  { tag: [tags.monospace], class: "tok-str" },
+]);
+
+export function typstLanguage(): LanguageSupport {
+  const parser = typstParser.configure({ props: [languageDataProp.add((type) => (type.isTop ? typstLanguageData : undefined)), typstLezerHighlighting, typstLezerIndentation, typstLezerFolding] });
+  return new LanguageSupport(new Language(typstLanguageData, parser, [], "typst"), [typstLezerIndentService, typstLezerListKeymap, typstLezerFoldService, typstLezerLinter]);
 }

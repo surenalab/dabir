@@ -235,7 +235,9 @@ export function Document(p: Props) {
 
   // Anything textual opens in the editor; the LaTeX formatting bar and the word count belong to manuscript and notes.
   const isTex = !p.file || /\.(tex|sty|cls|bib|md|txt|toml|py|json|typ|jl|r|sh|bash|zsh|yml|yaml|csv|tsv|cfg|ini|rst|markdown|ltx|dtx|bbx|cbx)$/i.test(p.file);
-  const isProse = !p.file || /\.(tex|sty|cls|bib|typ|md|txt|rst|markdown|ltx)$/i.test(p.file);
+  const file = p.file;
+  const isProse = !file || /\.(tex|sty|cls|bib|typ|md|txt|rst|markdown|ltx)$/i.test(file);
+  const markupLang = /\.typ$/i.test(file ?? "") ? "typst" as const : "tex" as const;
   const showEditor = mode !== "pdf";
   const showPdf = mode === "pdf" || mode === "split";
   const rv = p.review;
@@ -281,7 +283,7 @@ export function Document(p: Props) {
           <button className="btn" disabled={rv.busy} onClick={rv.onReject}><X aria-hidden /> Reject</button>
         </div>
       )}
-      {showEditor && isProse && !previewing && <FormatBar api={p.editorRef.current} onFind={p.onFind} onComment={p.onCommentSelection} canComment={p.hasSelection} suggesting={p.settings.suggesting} onToggleSuggesting={p.onToggleSuggesting} pending={p.changes.length} />}
+      {showEditor && isProse && !previewing && <FormatBar api={p.editorRef.current} lang={markupLang} onFind={p.onFind} onComment={p.onCommentSelection} canComment={p.hasSelection} suggesting={p.settings.suggesting} onToggleSuggesting={p.onToggleSuggesting} pending={p.changes.length} />}
       <div className={`panes ${mode === "split" ? "split" : ""}`} ref={splitRef} style={mode === "split" ? { "--split": `${Math.round(p.splitRatio * 100)}%` } as React.CSSProperties : undefined}>
         <div className="scroll" hidden={!showEditor}>{editor}</div>
         {mode === "split" && <div className={`vdivider ${dragging ? "dragging" : ""}`} onPointerDown={() => setDragging(true)} role="separator" aria-orientation="vertical" aria-label="Resize editor and PDF" />}
