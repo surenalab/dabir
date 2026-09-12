@@ -10,6 +10,7 @@ const ROWS: [string, string[]][] = [
   ["Compile", ["⌘", "B"]],
   ["Show Compile Log", ["⇧", "⌘", "L"]],
   ["Show or Hide Terminal", ["⌃", "`"]],
+  ["Focus Mode", ["⌥", "⌘", "F"]],
   ["Show Line in PDF", ["⇧", "⌘", "J"]],
   ["Commit…", ["⌥", "⌘", "C"]],
   ["Clone from GitHub…", ["⇧", "⌘", "O"]],

@@ -16,6 +16,8 @@ export interface Settings {
   compileOnSave: boolean;
   autosave: boolean;            // write the file a moment after you stop typing; snapshots every few minutes
   suggesting: boolean;          // track changes: edits become suggestions a coauthor accepts or rejects
+  keymap: "standard" | "vim";   // source view key bindings
+  focusMode: boolean;           // dim every paragraph but the current one, keep the typed line centred, hide the panels
   signalingUrl: string;         // for the "signalling server" live mode; empty means none configured
   agentProvider: string;                // the agent the composer and the continuation key use
   agentModel: Record<string, string>;   // per provider: model id, "" for the CLI's default
@@ -38,6 +40,8 @@ export const DEFAULTS: Settings = {
   compileOnSave: false,
   autosave: true,
   suggesting: false,
+  keymap: "standard",
+  focusMode: false,
   signalingUrl: "",
   agentProvider: "claude",
   agentModel: {},
