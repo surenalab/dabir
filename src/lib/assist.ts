@@ -7,7 +7,8 @@ import { snippetCompletion, type Completion, type CompletionContext, type Comple
 import { EditorView, Decoration, ViewPlugin, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import { EditorState, type Extension } from "@codemirror/state";
 import { syntaxTree } from "@codemirror/language";
-import { findMatchingEnvironment, symbolIndex } from "codemirror-lang-latex";
+import { linter, type Diagnostic } from "@codemirror/lint";
+import { findMatchingEnvironment, latexLinter, symbolIndex } from "codemirror-lang-latex";
 import type { PaperMap, PaperAnchor, Entry } from "./backend";
 import type { BibEntry, OutlineItem } from "./latex";
 
@@ -85,6 +86,8 @@ export interface AssistSources {
   currentFile: () => string | null;
   /** Open a file of the paper (path relative to its root) at a line: go-to-definition lands here. */
   goTo: (file: string, line: number) => void;
+  /** The paper's main file, relative to the root; null when unknown. */
+  main: () => string | null;
 }
 
 const CITE = /\\(?:cite[tp]?\*?|citeauthor|citeyear|parencite|textcite|autocite|nocite|citealp|citealt)\{([^}]*?)$/;
@@ -329,4 +332,75 @@ function scanPartner(doc: string, hit: { from: number; to: number; env: string; 
     for (let i = all.length - 1; i >= 0; i--) { if (all[i].kind === "end") depth++; else if (depth === 0) return all[i]; else depth--; }
   }
   return null;
+}
+
+// ---------------------------------------------------------------- lint that knows the paper has more than one file
+
+const MACRO_DEF = /\\(?:newcommand|renewcommand|providecommand|DeclareMathOperator\*?|DeclarePairedDelimiter|NewDocumentCommand|def|let|newenvironment|renewenvironment)\b/;
+
+/** The language package's linter, minus what is only wrong when a file is read alone: a section file has
+ * no \begin{document}, its \ref targets live in other files, its \cite has its bibliography in main.tex,
+ * and math commands inside a macro's body are fine. Typst files are not linted as LaTeX at all. */
+export function paperLint(src: () => AssistSources): Extension {
+  return linter((view) => paperDiagnostics(view, src()), { delay: 600 });
+}
+
+const baseLinter = latexLinter();
+
+export function paperDiagnostics(view: EditorView, s: AssistSources): Diagnostic[] {
+  {
+    const file = s.currentFile();
+    if (file && /\.typ$/i.test(file)) return [];
+    const main = s.main();
+    const isMain = !main || !file || file === main;
+    const known = new Set(s.symbols().labels.map((l) => l.label));
+    const doc = view.state.doc;
+    const out: Diagnostic[] = [];
+    for (const d of baseLinter(view)) {
+      const m = d.message;
+      if (!isMain && m.startsWith("Missing document environment")) continue;
+      if (!isMain && m.startsWith("\\cite used but no \\bibliography")) continue;
+      const ref = /^(?:Reference to undefined label: |Label ')([^']+?)'?(?: not defined in this file)?$/.exec(m);
+      if (ref && known.has(ref[1])) continue;
+      if (m.endsWith("can only be used in math mode")) {
+        const line = doc.lineAt(d.from);
+        if (MACRO_DEF.test(line.text.slice(0, d.from - line.from))) continue;
+      }
+      out.push(d);
+    }
+    return out;
+  }
+}
+
+// ---------------------------------------------------------------- headings read as headings
+
+/** In source view the title inside \section{...} and its kin is set heavier, so the structure of the file
+ * shows at a glance without leaving the markup. */
+export function headingEmphasis(): Extension {
+  const marks = [1, 2, 3, 4].map((l) => Decoration.mark({ class: `cm-heading cm-heading-${l}` }));
+  const LEVEL: Record<string, number> = { part: 1, chapter: 1, section: 1, subsection: 2, subsubsection: 3, paragraph: 4, subparagraph: 4 };
+  const compute = (view: EditorView): DecorationSet => {
+    const ranges: ReturnType<Decoration["range"]>[] = [];
+    for (const { from, to } of view.visibleRanges) {
+      for (let pos = from; pos <= to;) {
+        const line = view.state.doc.lineAt(pos);
+        const re = /\\(part|chapter|section|subsection|subsubsection|paragraph|subparagraph)\*?(?:\[[^\]]*\])?\{/g;
+        let m: RegExpExecArray | null;
+        while ((m = re.exec(line.text))) {
+          // The title runs to the brace that closes the one just matched, honouring nested braces.
+          let depth = 1, i = m.index + m[0].length;
+          for (; i < line.text.length && depth > 0; i++) { const c = line.text[i]; if (c === "{") depth++; else if (c === "}") depth--; }
+          const start = line.from + m.index + m[0].length, end = line.from + (depth === 0 ? i - 1 : line.text.length);
+          if (end > start) ranges.push(marks[(LEVEL[m[1]] ?? 4) - 1].range(start, end));
+        }
+        pos = line.to + 1;
+      }
+    }
+    return Decoration.set(ranges, true);
+  };
+  return ViewPlugin.fromClass(class {
+    deco: DecorationSet;
+    constructor(view: EditorView) { this.deco = compute(view); }
+    update(u: ViewUpdate) { if (u.docChanged || u.viewportChanged) this.deco = compute(u.view); }
+  }, { decorations: (v) => v.deco });
 }
