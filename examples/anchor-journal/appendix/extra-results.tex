@@ -1,0 +1,21 @@
+\section{Additional results}
+\label{app:extra}
+\subsection{Remaining tasks}
+\label{app:remaining}
+\Cref{fig:psnr-rest} completes \cref{fig:psnr-all} with inpainting, super-resolution and phase retrieval.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figures/psnr-vs-noise-rest.pdf}
+  \caption{PSNR against noise level $\sigma$ on inpainting, super-resolution and phase retrieval.}
+  \label{fig:psnr-rest}
+\end{figure}
+
+\subsection{SSIM}
+\label{app:ssim}
+\input{tables/ssim}
+\Cref{tab:ssim} mirrors \cref{tab:main} with SSIM. The ranking is unchanged.
+
+\subsection{Latent diffusion}
+\label{app:latent}
+On $512 \times 512$ super-resolution with a latent diffusion prior~\cite{rombach2022ldm}, anchoring in latent space improves PSNR by 1.1 dB over PSLD~\cite{rout2023psld} at $\sigma = 0.1$. We did not tune $\kap$; the value $1$ transferred directly.

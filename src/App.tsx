@@ -24,8 +24,7 @@ import { safeColor, type Change, type ChangeRange } from "./lib/changes";
 import {
   agentComplete, checkForUpdates, projectSnapshot, sessionMaterialize, checkpoint, checkpoints, checkpointRestore, checkpointUndo, gitDiscard, type Checkpoint, newPaper, templatesList, compile as runCompile, compileCancel, gitClone, gitPull, gitPush, gitRemoteAdd, gitRemoteUrl, isMac, onCompileProgress, relayStart, relayStop, gitCommit, gitInit, gitStatus, importOverleaf, native, onMenu, onWindowFocus,
   openProject, pickFolder, pickNewPaperPath, readText, setWindowTitle, synctexForward, synctexInverse, writeText,
-  type CompileResult, type GitStatus, type PdfPos, type Project,
-} from "./lib/backend";
+  type CompileResult, type GitStatus, type PdfPos, type Project, type Focus } from "./lib/backend";
 import { parseBib, type BibEntry, type OutlineItem } from "./lib/latex";
 
 export type CompileState =
@@ -312,6 +311,17 @@ export default function App() {
 
   // ---- live sessions
   const rel = useCallback((path: string | null) => (path && project ? path.replace(project.root + "/", "") : null), [project]);
+  // The editor position that rides along with every agent request, so "this paragraph" has a referent.
+  const agentFocus = useMemo<Focus | null>(() => {
+    const f = rel(file);
+    if (!f) return null;
+    if (source != null && selection.to > selection.from) {
+      const line = source.slice(0, selection.from).split("\n").length;
+      const endLine = source.slice(0, selection.to).split("\n").length;
+      return { file: f, line, endLine, selection: source.slice(selection.from, selection.to).slice(0, 1200) };
+    }
+    return { file: f, line: cursorLine };
+  }, [file, rel, selection, source, cursorLine]);
 
   const attachSession = useCallback((sess: Session) => {
     setSession(sess);
@@ -861,7 +871,7 @@ export default function App() {
         review={docReview} dictionary={dictionary} onAddWord={addWord} onContinue={continueWithAgent} splitRatio={splitRatio} onSplitRatio={setSplitRatio} onPin={(id) => { const c = allComments.find((x) => x.id === id); if (c) jumpToComment(c); }}
         completions={{ bib: () => bib, labels: () => (source ? collectLabels(source) : []), files: () => project?.tree ?? [] }} />
       <Inspector project={project} gitRepo={!!git?.isRepo} askFocus={askFocus} prefill={prefill} onProviderReady={setAgentReady} onChanged={onChanged} onBeforeRun={flush} onOpenFile={selectFile} history={versions} historyBusy={historyBusy} onRestoreStep={restoreVersion} onUndoStep={undoVersion} historyFocus={historyFocus} onNote={setNote} autoRun={autoRun} onReview={setReview}
-        live={!!live} peers={peers} comments={allComments} currentFile={rel(file)} hasSelection={selection.to > selection.from}
+        live={!!live} peers={peers} comments={allComments} currentFile={rel(file)} hasSelection={selection.to > selection.from} focus={agentFocus}
         changes={changeItems} suggesting={settings.suggesting} onToggleSuggesting={toggleSuggesting} onResolveChanges={resolveChange} onJumpChange={jumpToChange}
         onAddComment={(t) => addCommentAtSelection(t)} onResolveComment={resolveAnyComment} onReplyComment={replyAnyComment} onRemoveComment={removeAnyComment} onJumpComment={jumpToComment} onShare={() => setSheet("share")} />
       <div className={`divider nav ${dragging === "nav" ? "dragging" : ""}`} onPointerDown={() => setDragging("nav")} role="separator" aria-orientation="vertical" aria-label="Resize sidebar" />

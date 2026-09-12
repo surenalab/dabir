@@ -1,0 +1,13 @@
+\section{Proofs}
+\label{app:proofs}
+\subsection{Proof of \cref{lem:nonexp}}
+\label{app:proof-lemma}
+The map $\phi_c(g) = g \cdot \min(1, c / \norm{g}_2)$ is the Euclidean projection onto the closed ball of radius $c$, and projections onto convex sets are non-expansive~\cite{bauschke2011convex}.
+
+\subsection{Proof of \cref{thm:contraction}}
+\label{app:proof-theorem}
+Write the anchored step as $x_{t-1} = x_t + h_t (\score(x_t, t) + \anchor_t) + \sqrt{2 h_t} \sigma_t \xi_t$ with $\xi_t \sim \mathcal{N}(0, I)$. Subtract the same step taken at $x^\star_t$, apply \cref{lem:nonexp} to the guidance terms and \cref{ass:smooth} to the score terms, and bound the noise term by its expectation. The strong convexity of the posterior at level $t$ gives the factor $(1 - h_t \mu_t)$. The step-size condition ensures the factor is positive.
+
+\subsection{Anchoring in three samplers}
+\label{app:samplers}
+For DDIM~\cite{song2021ddim} the guidance enters through the predicted noise; anchor the correction to $\epsilon_\theta$ by the same ratio. For the predictor--corrector sampler of~\cite{song2021sde} apply \cref{eq:anchor} in both the predictor and each corrector step. For the EDM sampler~\cite{karras2022edm} apply it to the denoised estimate before the second-order correction.

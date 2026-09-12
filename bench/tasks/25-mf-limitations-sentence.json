@@ -1,0 +1,1 @@
+{"id": "25-mf-limitations-sentence", "kind": "revision", "fixture": "anchor-journal", "prompt": "Add one sentence to the end of the Limitations subsection saying that we did not evaluate on 3D volumes.", "expect_files": ["sections/discussion.tex"], "expect_contains": [{"file": "sections/discussion.tex", "text": "3D"}], "timeout_secs": 240}

@@ -1,0 +1,16 @@
+# Dabir project file.
+[paper]
+main = "main.tex"
+engine = "tectonic"
+venue = "IEEE Transactions on Computational Imaging"
+
+[provenance]
+"figures/psnr-vs-noise.pdf"        = "python3 code/sweep.py --task ct --sigma 0.3"
+"figures/psnr-vs-noise-mri.pdf"    = "python3 code/sweep.py --task mri --sigma 0.3"
+"figures/psnr-vs-noise-deblur.pdf" = "python3 code/sweep.py --task deblur --sigma 0.3"
+"figures/kappa-sweep.pdf"          = "python3 code/sweep.py --task ct --kappa-sweep"
+"tables/main-results.tex"          = "python3 code/sweep.py --all --sigma 0.1"
+"tables/ssim.tex"                  = "python3 code/sweep.py --all --sigma 0.1 --metric ssim"
+
+[env]
+prefix = ""

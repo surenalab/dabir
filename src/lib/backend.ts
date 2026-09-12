@@ -340,7 +340,9 @@ export async function agentComplete(root: string, provider: string, file: string
 
 /** A follow-up continues the run under review in its own worktree, on top of the changes it made. */
 export interface FollowUp { runId: string; prompt: string; reply: string }
-export async function agentRun(root: string, provider: string, prompt: string, model = "", effort = "", followUp: FollowUp | null = null): Promise<{ runId: string; worktree: string }> {
+/** Where the author is in the editor when asking: file, cursor line, selection. "This paragraph" resolves against it. */
+export interface Focus { file: string; line: number; endLine?: number; selection?: string }
+export async function agentRun(root: string, provider: string, prompt: string, model = "", effort = "", followUp: FollowUp | null = null, focus: Focus | null = null): Promise<{ runId: string; worktree: string }> {
   if (!native) {
     const runId = followUp?.runId ?? Math.random().toString(16).slice(2, 10);
     (async () => {
@@ -358,7 +360,7 @@ export async function agentRun(root: string, provider: string, prompt: string, m
     })();
     return { runId, worktree: `${root}/.dabir/worktrees/${runId}` };
   }
-  return invoke("agent_run", { root, provider, prompt, model: model || null, effort: effort || null, followUp });
+  return invoke("agent_run", { root, provider, prompt, model: model || null, effort: effort || null, followUp, focus });
 }
 
 export function onAgentEvent(handler: (e: AgentEvent) => void): () => void {
