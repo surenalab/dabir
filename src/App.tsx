@@ -15,7 +15,7 @@ import { SettingsSheet } from "./components/SettingsSheet";
 import type { EditorApi } from "./components/SourceEditor";
 import { useSettings, updateSettings } from "./lib/settings";
 import { checkGrammar, type GrammarMatch } from "./lib/grammar";
-import { collectLabels } from "./lib/completions";
+import { paperSymbols, paperOutline, flattenFiles, type AssistSources } from "./lib/assist";
 import type { PdfPin, PdfZoom } from "./components/PdfView";
 import type { ManualProvider } from "./lib/manual";
 import { addComment as yAddComment, connect as yConnect, decodeRange, disconnect as yDisconnect, encodeRange, peers as yPeers, randomRoom, removeComment as yRemoveComment, resolveComment as yResolveComment, setCurrentFile, textFor, whenSynced, type Comment, type Peer, type Session, type Transport, replyComment as yReplyComment, userName, colorFor, markHost, hostPresent, publishProject, republishChanged, awaitSnapshot, sharedTexts, persist, setFileChanges } from "./lib/collab";
@@ -24,7 +24,7 @@ import { safeColor, type Change, type ChangeRange } from "./lib/changes";
 import {
   agentComplete, checkForUpdates, projectSnapshot, sessionMaterialize, checkpoint, checkpoints, checkpointRestore, checkpointUndo, gitDiscard, type Checkpoint, newPaper, templatesList, compile as runCompile, compileCancel, gitClone, gitPull, gitPush, gitRemoteAdd, gitRemoteUrl, isMac, onCompileProgress, relayStart, relayStop, gitCommit, gitInit, gitStatus, importOverleaf, native, onMenu, onWindowFocus,
   openProject, pickFolder, pickNewPaperPath, readText, setWindowTitle, synctexForward, synctexInverse, writeText,
-  type CompileResult, type GitStatus, type PdfPos, type Project, type Focus } from "./lib/backend";
+  type CompileResult, type GitStatus, type PdfPos, type Project, type Focus, paperMap, type PaperMap } from "./lib/backend";
 import { parseBib, type BibEntry, type OutlineItem } from "./lib/latex";
 
 export type CompileState =
@@ -131,15 +131,20 @@ export default function App() {
     const walk = (es: Project["tree"]) => es.forEach((e) => (e.kind === "dir" ? walk(e.children) : e.kind === "bib" && bibs.push(e.path)));
     walk(p.tree);
     const merged: Record<string, BibEntry> = {};
-    for (const b of bibs) { try { Object.assign(merged, parseBib(await readText(b))); } catch { /* unreadable bib is not fatal */ } }
+    for (const b of bibs) { try { Object.assign(merged, parseBib(await readText(b), b.replace(p.root + "/", ""))); } catch { /* unreadable bib is not fatal */ } }
     setBib(merged);
   }, []);
+  // The paper's structure across its files (sections, labels, floats, macros): what \ref completion,
+  // go-to-definition and the outline read. Rebuilt when the paper opens and after every save.
+  const [map, setMap] = useState<PaperMap | null>(null);
+  const loadMap = useCallback((root: string) => { paperMap(root).then(setMap).catch(() => setMap(null)); }, []);
 
   const openFolder = useCallback(async (folder: string) => {
     const p = await openProject(folder);
     setProject(p); setCompileState({ status: "idle" }); setError(null); setPdfTarget(null);
     setWindowTitle(p.name);
     loadBib(p);
+    loadMap(p.root);
     refreshGit(p);
     gitRemoteUrl(p.root, "overleaf").then(setOverleafUrl).catch(() => setOverleafUrl(null));
     // Files shared through the repository are as untrusted as peers: colours are validated before they reach a style.
@@ -147,12 +152,12 @@ export default function App() {
     readText(`${p.root}/.dabir/changes.json`).then((t) => setLocalChanges(t ? JSON.parse(t) : [])).catch(() => setLocalChanges([]));
     readText(`${p.root}/.dabir/dictionary.txt`).then((t) => setDictionary(t.split("\n").map((w) => w.trim()).filter(Boolean))).catch(() => setDictionary([]));
     if (p.mainTex) await selectFile(p.mainTex); else { setFile(null); setSource(null); }
-  }, [selectFile, loadBib, refreshGit]);
+  }, [selectFile, loadBib, loadMap, refreshGit]);
 
   const reloadProject = useCallback(async () => {
     if (!project) return;
-    try { const p = await openProject(project.root); setProject(p); loadBib(p); refreshGit(p); } catch (e) { setError(String(e)); }
-  }, [project, loadBib, refreshGit]);
+    try { const p = await openProject(project.root); setProject(p); loadBib(p); loadMap(p.root); refreshGit(p); } catch (e) { setError(String(e)); }
+  }, [project, loadBib, loadMap, refreshGit]);
 
   // Browser preview only: ?open=sample&view=split&inspector=1&demo=run opens the sample in a given state,
   // so documentation screenshots can be taken headlessly. Ignored in the native app.
@@ -213,7 +218,9 @@ export default function App() {
     if (!project) return;
     const rel = path.startsWith(project.root + "/") ? path.slice(project.root.length + 1) : path;
     checkpoint(project.root, `You edited ${rel}`, true).then((id) => { if (id) versionsRef.current(project.root); }).catch(() => {});
-  }, [project]);
+    loadMap(project.root);
+    if (/\.bib$/.test(rel)) loadBib(project);
+  }, [project, loadMap, loadBib]);
   const save = useCallback(async () => {
     if (!file || sourceRef.current == null) return;
     try { await writeText(file, sourceRef.current); setDirty(false); refreshGit(); recordStep(file); if (compileOnSave) compileRef.current(); }
@@ -783,6 +790,10 @@ export default function App() {
     if (project && relFile) { const abs = `${project.root}/${relFile}`; if (abs !== file) await selectFile(abs); }
     setMode("source"); setJumpLine(line); setJumpStamp(Date.now());
   }, [project, file, selectFile]);
+  // What completions, go-to-definition and the outline read: the paper's symbols with the open buffer's labels live.
+  const symbols = useMemo(() => paperSymbols(map, rel(file), source), [map, rel, file, source]);
+  const files = useMemo(() => (project ? flattenFiles(project.tree) : []), [project]);
+  const assist = useMemo<AssistSources>(() => ({ bib: () => bib, symbols: () => symbols, files: () => files, currentFile: () => rel(file), goTo: jumpToFile }), [bib, symbols, files, rel, file, jumpToFile]);
   const fixWithAgent = useCallback((prompt: string) => { if (!inspectorOpen) toggleInspector(); setPrefill({ text: prompt, stamp: Date.now() }); }, [inspectorOpen, toggleInspector]);
   // Hand the bibliography to the agent under the check-references skill: online lookups, fields fixed
   // from the record, doubtful entries reported rather than rewritten.
@@ -855,8 +866,8 @@ export default function App() {
       <Toolbar project={project} file={file} dirty={dirty} saveLabel={settings.autosave ? (saveState === "saving" ? "Saving…" : saveState === "unsaved" ? "Unsaved" : saveState === "saved" ? "Saved" : null) : null} mode={mode} navOpen={navOpen} inspectorOpen={inspectorOpen}
         compiling={compileState.status === "running"} onMode={setMode} onToggleNav={toggleNav} onToggleInspector={toggleInspector} onOpen={open} onCompile={compile} onCancelCompile={() => compileCancel()}
         onShare={() => setSheet("share")} live={!!live} />
-      <Navigator project={project} current={file} outline={outline} git={git} commitFocus={commitFocus} busy={gitBusy || historyBusy} draftMessage={commitDraft} onDiscard={discardChange} onHistory={() => { if (!inspectorOpen) toggleInspector(); setHistoryFocus(Date.now()); }} historyCount={versions.length}
-        onSelect={selectFile} onJump={(l) => jumpTo(l)} onInitGit={initGit} onCommit={commitAll} />
+      <Navigator project={project} current={file} outline={paperOutline(map) ?? outline} git={git} commitFocus={commitFocus} busy={gitBusy || historyBusy} draftMessage={commitDraft} onDiscard={discardChange} onHistory={() => { if (!inspectorOpen) toggleInspector(); setHistoryFocus(Date.now()); }} historyCount={versions.length}
+        onSelect={selectFile} onJump={(l, f) => (f ? jumpToFile(f, l) : jumpTo(l))} onInitGit={initGit} onCommit={commitAll} />
       <Document project={project} file={file} source={source} bib={bib} mode={mode} jumpLine={jumpLine} jumpStamp={jumpStamp}
         compileState={compileState} progress={progress} showLog={showLog} onToggleLog={() => setShowLog((v) => !v)} findRequest={findRequest}
         error={error ?? note} onDismissError={() => { setError(null); setNote(null); }} pdfTarget={pdfTarget}
@@ -869,7 +880,7 @@ export default function App() {
         settings={settings} grammar={grammar} pins={pins} pdfZoom={pdfZoom} onPdfZoom={setPdfZoom} onOpenSettings={() => setSheet("settings")}
         onPdfComment={onPdfComment} pdfFindRequest={pdfFindRequest} editorRef={editorRef} onFind={() => command("find")} onCommentSelection={() => { if (!inspectorOpen) toggleInspector(); setAskFocus(0); setNote("Type the comment in the People tab; it attaches to your selection."); }} hasSelection={selection.to > selection.from}
         review={docReview} dictionary={dictionary} onAddWord={addWord} onContinue={continueWithAgent} splitRatio={splitRatio} onSplitRatio={setSplitRatio} onPin={(id) => { const c = allComments.find((x) => x.id === id); if (c) jumpToComment(c); }}
-        completions={{ bib: () => bib, labels: () => (source ? collectLabels(source) : []), files: () => project?.tree ?? [] }} />
+        assist={assist} />
       <Inspector project={project} gitRepo={!!git?.isRepo} askFocus={askFocus} prefill={prefill} onProviderReady={setAgentReady} onChanged={onChanged} onBeforeRun={flush} onOpenFile={selectFile} history={versions} historyBusy={historyBusy} onRestoreStep={restoreVersion} onUndoStep={undoVersion} historyFocus={historyFocus} onNote={setNote} autoRun={autoRun} onReview={setReview}
         live={!!live} peers={peers} comments={allComments} currentFile={rel(file)} hasSelection={selection.to > selection.from} focus={agentFocus}
         changes={changeItems} suggesting={settings.suggesting} onToggleSuggesting={toggleSuggesting} onResolveChanges={resolveChange} onJumpChange={jumpToChange}

@@ -23,6 +23,8 @@ const ROWS: [string, string[]][] = [
   ["Send to Agent", ["⌘", "↩"]],
   ["Continue Sentence with Agent", ["⇧", "⌘", "Space"]],
   ["Find in Source", ["⌘", "F"]],
+  ["Go to Definition (label, key, file, macro)", ["F12"]],
+  ["Fold · Unfold at Cursor", ["⌘⌥", "[ ]"]],
   ["Keyboard Shortcuts", ["⌘", "/"]],
 ];
 

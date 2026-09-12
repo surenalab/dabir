@@ -44,7 +44,7 @@ interface Props {
   commitFocus: number;
   busy: boolean;
   onSelect: (path: string) => void;
-  onJump: (line: number) => void;
+  onJump: (line: number, file?: string) => void;
   onInitGit: () => void;
   onCommit: (message: string) => Promise<void>;
   draftMessage?: string;
@@ -97,7 +97,7 @@ export function Navigator({ project, current, outline, git, commitFocus, busy, o
         <section className="nav-section">
           <div className="nav-heading"><span>Outline</span></div>
           {outline.map((o) => (
-            <button key={`${o.number}-${o.line}`} className={`outline-row l${o.level}`} onClick={() => onJump(o.line)} title={`Line ${o.line}`}>
+            <button key={`${o.file ?? ""}-${o.number}-${o.line}`} className={`outline-row l${o.level}`} onClick={() => onJump(o.line, o.file)} title={o.file ? `${o.file}:${o.line}` : `Line ${o.line}`}>
               <span className="num">{o.number}</span><span>{o.text}</span>
             </button>
           ))}

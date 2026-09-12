@@ -72,6 +72,27 @@ export async function openProject(path: string): Promise<Project> {
   return invoke<Project>("open_project", { path });
 }
 
+/** A heading in the paper, with the file and line it starts on. */
+export interface PaperHeading { level: number; title: string; file: string; line: number; numbered: boolean }
+/** A label, float, equation, theorem or macro, with where it lives and the section it sits under. */
+export interface PaperAnchor { kind: string; name: string; file: string; line: number; detail: string; section: number | null }
+export interface PaperMap {
+  main: string;
+  files: [string, number][];
+  beginDocument: [string, number] | null;
+  headings: PaperHeading[];
+  anchors: PaperAnchor[];
+  bibs: [string, number][];
+  cites: number;
+  typst: boolean;
+}
+
+/** The paper's structure across all its files: what the outline, completions and go-to-definition read. */
+export async function paperMap(root: string): Promise<PaperMap | null> {
+  if (!native) return null;
+  try { return await invoke<PaperMap>("paper_map", { root }); } catch { return null; }
+}
+
 export async function readText(path: string): Promise<string> {
   if (!native) {
     // The sample run's worktree: the file as the demo patch leaves it.

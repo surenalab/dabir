@@ -13,7 +13,8 @@ import type { Awareness } from "y-protocols/awareness";
 import type { PdfPin, PdfZoom } from "./PdfView";
 import type { Settings } from "../lib/settings";
 import type { GrammarMatch } from "../lib/grammar";
-import type { CompletionSources } from "../lib/completions";
+import type { AssistSources } from "../lib/assist";
+import { proseWords } from "../lib/spell";
 import type { ChangeRange } from "../lib/changes";
 import type { ReviewMarks } from "../lib/review";
 
@@ -103,7 +104,7 @@ interface Props {
   jumpOffset: { pos: number; stamp: number } | null;
   settings: Settings;
   grammar: GrammarMatch[];
-  completions: CompletionSources;
+  assist: AssistSources;
   pins: PdfPin[];
   onPin: (id: string) => void;
   pdfZoom: PdfZoom;
@@ -164,6 +165,8 @@ export function Document(p: Props) {
   }, [project, p.bib, macros, p.onSelectFile, p.settings.revealOnClick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { p.onOutline(source ? parseDocument(source).outline : []); }, [source]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Prose words only: commands, math, comments and the arguments of \cite, \ref and paths do not count.
+  const wordCount = useMemo(() => (source ? proseWords(source).length : 0), [source]);
 
   const result = compileState.status === "done" ? compileState.result : null;
   const diagnostics = result?.diagnostics ?? [];
@@ -237,7 +240,7 @@ export function Document(p: Props) {
       collab={p.collab} comments={p.comments} onSelection={p.onSelection} jumpOffset={p.jumpOffset} marks={editorMarks}
       changes={previewing ? [] : p.changes} suggesting={p.settings.suggesting} author={p.author} onChanges={p.onChanges}
       review={previewing ? rv!.marks : null} dictionary={p.dictionary} onAddWord={p.onAddWord} onContinue={p.onContinue}
-      settings={p.settings} grammar={p.grammar} completions={p.completions} />
+      settings={p.settings} grammar={p.grammar} assist={p.assist} />
   ) : source != null ? <div className="doc-empty"><div className="card"><p>This file type is not editable in Dabir yet.</p></div></div> : null;
   const pdf = showPdf ? (
     <Suspense fallback={<div className="doc-empty"><div className="card"><p>Loading PDF…</p></div></div>}>
@@ -294,7 +297,7 @@ export function Document(p: Props) {
         {result && <button onClick={p.onToggleLog} data-p="2">{showLog ? "Hide log" : "Show log"}</button>}
         <button data-p="1" className={`toggle ${p.compileOnSave ? "on" : ""}`} aria-pressed={p.compileOnSave} onClick={p.onToggleCompileOnSave} title="Compile every time you save (⌘S)">{p.compileOnSave ? "Compiles on save" : "Compile on save"}</button>
         <span className="grow" />
-        {mode !== "pdf" && source != null && <span data-p="3">{source.split("\n").length} lines</span>}
+        {mode !== "pdf" && source != null && <span data-p="3" title={`${source.split("\n").length} lines`}>{wordCount.toLocaleString()} words</span>}
         {mode !== "pdf" && (
           <button data-p="2" className="toggle writing" onClick={p.onOpenSettings} title="Spelling, grammar, completion and prediction. Click to change in Settings (⌘,)">
             {[p.settings.spellcheck ? "spelling" : null, p.settings.grammar !== "off" ? "grammar" : null, p.settings.autocomplete || p.settings.citeComplete ? "completion" : null, p.settings.prediction ? "prediction" : null].filter(Boolean).join(" · ") || "writing aids off"}
