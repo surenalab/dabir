@@ -13,9 +13,11 @@ import type { Awareness } from "y-protocols/awareness";
 import { visualExtensions, remoteCursorsField, setRemoteCursors, type RemoteCursor } from "../lib/visual";
 import { typstVisualExtensions } from "../lib/visual-typst";
 import { projectSource, commandSource, dollarPairing, matchingEnvironment, goToDefinition, goToDefinitionCommand, paperLint, headingEmphasis, type AssistSources } from "../lib/assist";
-import { codeLanguage, fileKind, hasProse, isManuscript } from "../lib/languages";
+import { codeLanguage, fileKind, hasProse, isManuscript, typstLanguage, typstHighlight } from "../lib/languages";
+import { typstCompletionSource } from "codemirror-lang-typst/lezer";
 import { languageServerFor } from "../lib/lsp";
 import { focusMode } from "../lib/focus";
+import { markup, headingLine, headingBody, listBlock, type FormatAction, type ManuscriptLang } from "../lib/markup";
 import { vim } from "@replit/codemirror-vim";
 import type { GrammarMatch } from "../lib/grammar";
 import type { Settings } from "../lib/settings";
@@ -162,7 +164,7 @@ const sourceOnly = (path: string | null) => [lineNumbers(), foldGutter({ openTex
 const languageExt = (path: string | null, assist: () => AssistSources) => {
   const code = codeLanguage(path);
   if (code && !isManuscript(path)) return [code];
-  if (fileKind(path) === "typst") return [];
+  if (fileKind(path) === "typst") return [typstLanguage(), syntaxHighlighting(typstHighlight)];
   return [latex({ enableAutocomplete: false, autoCloseBrackets: false, enableLinting: false }), paperLint(assist), dollarPairing()];
 };
 
@@ -172,6 +174,7 @@ export interface EditorApi {
   list: (env: "itemize" | "enumerate") => void;
   heading: (kind: string) => void;                // section | subsection | subsubsection | paragraph | plain
   complete: (pre: string, post: string) => void;  // insert and open completion inside
+  format: (action: FormatAction) => void;         // bold, figure, citation…: LaTeX or Typst markup by the open file
   undo: () => void;
   redo: () => void;
   focus: () => void;
@@ -234,6 +237,8 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
     const live: AssistSources = { bib: () => assistRef.current.bib(), symbols: () => assistRef.current.symbols(), files: () => assistRef.current.files(), currentFile: () => assistRef.current.currentFile(), goTo: (f, l) => assistRef.current.goTo(f, l), main: () => assistRef.current.main(), root: () => assistRef.current.root() };
     // The LaTeX sources apply to manuscript files only; code files complete from their grammar and language server.
     if (!isManuscript(pathRef.current)) return autocompletion({ activateOnTyping: true, maxRenderedOptions: 40, icons: true });
+    // Typst completes from its own grammar: functions, symbols and math names, plus a language server when tinymist is installed.
+    if (fileKind(pathRef.current) === "typst") return autocompletion({ override: s.autocomplete ? [typstCompletionSource] : [], activateOnTyping: true, maxRenderedOptions: 40, icons: true });
     const override: CompletionSource[] = [];
     if (s.citeComplete) override.push(projectSource(live));
     if (s.autocomplete) override.push(commandSource(latexCompletionSource(true) as CompletionSource, live));
@@ -395,6 +400,7 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
 
   useEffect(() => { if (findRequest && view.current) openSearchPanel(view.current); }, [findRequest]);
 
+  const lang = (): ManuscriptLang => (fileKind(pathRef.current) === "typst" ? "typst" : "tex");
   useImperativeHandle(ref, () => ({
     wrap(pre, post) {
       const v = view.current; if (!v) return;
@@ -416,20 +422,20 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
     list(env) {
       const v = view.current; if (!v) return;
       const { from, to } = v.state.selection.main;
-      const sel = v.state.doc.sliceString(from, to);
-      const items = sel ? sel.split("\n").filter((l) => l.trim()).map((l) => `  \\item ${l.trim()}`).join("\n") : "  \\item ";
-      const text = `\\begin{${env}}\n${items}\n\\end{${env}}\n`;
-      v.dispatch({ changes: { from, to, insert: text }, selection: { anchor: from + `\\begin{${env}}\n  \\item `.length }, userEvent: "input.format" });
+      const { text, caret } = listBlock(lang(), env, v.state.doc.sliceString(from, to));
+      v.dispatch({ changes: { from, to, insert: text }, selection: { anchor: from + caret }, userEvent: "input.format" });
       v.focus();
     },
     heading(kind) {
       const v = view.current; if (!v) return;
       const line = v.state.doc.lineAt(v.state.selection.main.from);
-      const m = /^(\s*)\\(section|subsection|subsubsection|paragraph)\*?\{(.*)\}\s*$/.exec(line.text);
-      const body = m ? m[3] : line.text.trim();
-      const text = kind === "plain" ? body : `\\${kind}{${body}}`;
-      v.dispatch({ changes: { from: line.from, to: line.to, insert: text }, selection: { anchor: line.from + (kind === "plain" ? body.length : text.length - 1) }, userEvent: "input.format" });
+      const { text, caret } = headingLine(lang(), kind, headingBody(lang(), line.text));
+      v.dispatch({ changes: { from: line.from, to: line.to, insert: text }, selection: { anchor: line.from + caret }, userEvent: "input.format" });
       v.focus();
+    },
+    format(action) {
+      const op = markup(lang(), action);
+      this[op.kind](op.pre, op.post);
     },
     complete(pre, post) {
       const v = view.current; if (!v) return;

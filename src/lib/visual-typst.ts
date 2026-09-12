@@ -24,9 +24,60 @@ function closeOf(text: string, open: number): number {
   return -1;
 }
 
+/** The paper's own `#let` definitions: `#let kap = $kappa$`, `#let norm(x) = $||x||$`, `#let name = [text]`. */
+export interface LetDef { params: string[]; body: string; math: boolean }
+export function collectLets(text: string): Map<string, LetDef> {
+  const out = new Map<string, LetDef>();
+  const re = /^#let\s+([a-zA-Z_][\w-]*)\s*(?:\(([^)]*)\))?\s*=\s*(\$[^$\n]*\$|\[[^\]\n]*\]|"[^"\n]*"|[^\n]+?)\s*$/gm;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    const raw = m[3].trim();
+    const params = m[2] ? m[2].split(",").map((x) => x.trim().split(":")[0].trim()).filter(Boolean) : [];
+    if (raw.startsWith("$")) out.set(m[1], { params, body: raw.slice(1, -1).trim(), math: true });
+    else if (raw.startsWith("[") || raw.startsWith('"')) out.set(m[1], { params, body: raw.slice(1, -1), math: false });
+  }
+  return out;
+}
+let lets = new Map<string, LetDef>();
+
+/** `name` or `name(a, b)` in math, expanded from the paper's lets; other identifiers are left to the translator. */
+function expandMath(src: string): string {
+  if (!lets.size) return src;
+  let out = src;
+  for (let pass = 0; pass < 3; pass++) {
+    const before = out;
+    out = out.replace(/(?<![\w.])([a-zA-Z_][\w-]*)(\(([^()]*)\))?/g, (all, name: string, call: string | undefined, args: string | undefined) => {
+      const def = lets.get(name);
+      if (!def || !def.math) return all;
+      if (!def.params.length) return call ? `(${def.body})${call}` : `(${def.body})`;
+      if (!call) return all;
+      const given = (args ?? "").split(",").map((a) => a.trim());
+      let body = def.body;
+      def.params.forEach((pm, i) => { body = body.replace(new RegExp(`(?<![\\w.])${pm}(?![\\w])`, "g"), given[i] ? `(${given[i]})` : ""); });
+      return `(${body})`;
+    });
+    if (out === before) break;
+  }
+  return out;
+}
+
+/** `#name` and `#name(args)` in markup, expanded from the paper's lets; math lets come back as `$…$`. */
+function expandCalls(src: string): string {
+  if (!lets.size) return src;
+  return src.replace(/#([a-zA-Z_][\w-]*)(\(([^()]*)\))?/g, (all, name: string, call: string | undefined, args: string | undefined) => {
+    const def = lets.get(name);
+    if (!def) return all;
+    const given = (args ?? "").split(",").map((a) => unwrap(a.trim()));
+    let body = def.body;
+    def.params.forEach((pm, i) => { body = body.replace(new RegExp(def.math ? `(?<![\\w.])${pm}(?![\\w])` : `#${pm}\\b`, "g"), given[i] ?? ""); });
+    if (!def.params.length && call) return all;
+    return def.math ? `$${body}$` : body;
+  });
+}
+
 /** Typst math as LaTeX that KaTeX accepts, or null when it does not translate or render. */
 function mathTex(src: string, display: boolean): string | null {
-  const tex = typstMathToTex(src);
+  const tex = typstMathToTex(expandMath(src));
   if (tex === null) return null;
   const body = display && /&|\\\\/.test(tex) ? `\\begin{aligned}${tex}\\end{aligned}` : tex;
   return renderMath(body, display).includes("katex-error") ? null : body;
@@ -34,7 +85,7 @@ function mathTex(src: string, display: boolean): string | null {
 
 /** Typst inline markup rewritten into the LaTeX-ish form the shared widgets' inlineHtml renders. */
 function latexish(src: string): string {
-  return src
+  return expandCalls(src)
     .replace(/\$([^$]*)\$/g, (_, m: string) => { const t = mathTex(m, false); return t ? `$${t}$` : m; })
     .replace(/(^|[\s(])\*(\S[^*]*?)\*/g, "$1\\textbf{$2}")
     .replace(/(^|[\s(])_(\S[^_]*?)_/g, "$1\\emph{$2}")
@@ -106,6 +157,36 @@ class TypstTableWidget extends VzWidget {
   ignoreEvent() { return false; }
 }
 
+/** A `#grid(...)`: its cells side by side in as many columns as it declares, each cell as inline markup. */
+class GridWidget extends VzWidget {
+  constructor(readonly cells: string[], readonly columns: number, readonly from: number) { super(); }
+  eq(o: GridWidget) { return this.sameBadges(o) && o.columns === this.columns && JSON.stringify(o.cells) === JSON.stringify(this.cells); }
+  render() {
+    const el = document.createElement("div");
+    el.className = "vz-grid";
+    el.dataset.from = String(this.from);
+    el.style.gridTemplateColumns = `repeat(${this.columns}, minmax(0, 1fr))`;
+    for (const c of this.cells) {
+      const cell = document.createElement("div"); cell.className = "vz-grid-cell";
+      const fig = /image\(\s*"([^"]*)"/.exec(c);
+      if (fig) { const img = document.createElement("div"); img.className = "vz-grid-image"; img.textContent = fig[1].split("/").pop() ?? fig[1]; cell.appendChild(img); }
+      else cell.innerHTML = inlineTypst(c);
+      el.appendChild(cell);
+    }
+    return el;
+  }
+  ignoreEvent() { return false; }
+}
+
+/** The cells and column count of a `grid(...)` argument list. */
+function parseGrid(args: string): { cells: string[]; columns: number } | null {
+  const [pos, named] = splitArgs(args);
+  const cols = named.columns?.trim() ?? "";
+  const n = /^\d+$/.test(cols) ? Number(cols) : cols.startsWith("(") ? splitArgs(cols.slice(1, -1))[0].length : 0;
+  const cells = pos.filter((a) => !/^grid\.(hline|vline)\(/.test(a)).map((a) => unwrap(a.replace(/^grid\.cell\([^)]*\)/, "")));
+  return cells.length ? { cells, columns: n || Math.min(cells.length, 3) } : null;
+}
+
 /** The paper's title and authors, from the template's title block or a show rule's arguments. */
 class TitleWidget extends VzWidget {
   constructor(readonly title: string, readonly authors: string[], readonly from: number) { super(); }
@@ -141,6 +222,7 @@ export function buildTypstDecorations(state: EditorState): DecorationSet {
   const push = (from: number, to: number, d: Decoration) => { if (to >= from) ranges.push(d.range(from, to)); };
   const badge = badger(state);
   const bib = visualContext().bib;
+  lets = collectLets(text);
 
   // Title block: `#show: tmpl.with(title: …, authors: …)` or the template's `#align(center)[#text(…)[Title] \\ Authors]`.
   const blocked: [number, number][] = [];
@@ -211,6 +293,18 @@ export function buildTypstDecorations(state: EditorState): DecorationSet {
       const file = /image\(\s*"([^"]*)"/.exec(body)?.[1] ?? null;
       push(from, end, Decoration.replace({ widget: badge(new FigureWidget(file, latexish(caption), figCount, from), from, end), block: true }));
     }
+  }
+  // Grids: #grid(columns: …, [cell], [cell]) on its own becomes a row of cells.
+  const gridRe = /^#grid\(/gm;
+  while ((m = gridRe.exec(text))) {
+    const from = m.index, to = closeOf(text, m.index + m[0].length - 1);
+    if (to < 0 || from < preambleEnd || blocked.some(([a, b]) => from >= a && from < b)) continue;
+    const parsed = parseGrid(text.slice(from + m[0].length, to - 1));
+    if (!parsed) continue;
+    const end = to;
+    blocked.push([from, end]);
+    if (selectionTouches(state, from, end)) { push(from, from + m[0].length, mark("vz-envtag")); push(to - 1, to, mark("vz-envtag")); continue; }
+    push(from, end, Decoration.replace({ widget: badge(new GridWidget(parsed.cells, parsed.columns, from), from, end), block: true }));
   }
   const inBlocked = (pos: number) => blocked.some(([a, b]) => pos >= a && pos < b);
 
@@ -302,6 +396,18 @@ export function buildTypstDecorations(state: EditorState): DecorationSet {
       const from = l.from + mm.index, to = from + mm[0].length;
       if (selectionTouches(state, from, to)) continue;
       push(from, to, Decoration.replace({ widget: badge(new ChipWidget("input", `Included: ${mm[1]}`, "Click to open", from, mm[1]), from, to) }));
+    }
+    // The paper's own lets in prose: `#kap` shows κ, `#method` shows its text.
+    const call = /#([a-zA-Z_][\w-]*)(\([^()\n]*\))?/g;
+    while ((mm = call.exec(s))) {
+      const def = lets.get(mm[1]);
+      if (!def || (def.params.length > 0) !== !!mm[2]) continue;
+      const from = l.from + mm.index, to = from + mm[0].length;
+      if (selectionTouches(state, from, to)) continue;
+      const expanded = expandCalls(mm[0]);
+      const tex = def.math ? mathTex(expanded.slice(1, -1), false) : null;
+      if (def.math && !tex) continue;
+      push(from, to, Decoration.replace({ widget: def.math ? badge(new MathWidget(tex!, false, "", from), from, to) : new TextWidget(expanded, from) }));
     }
     // Footnotes and links
     const fn = /#footnote\[((?:[^[\]]|\[[^[\]]*\])*)\]/g;
