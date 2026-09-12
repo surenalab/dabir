@@ -24,7 +24,7 @@ export type Inline =
   | { kind: "bold"; text: string }
   | { kind: "cmd"; tex: string };
 
-export interface OutlineItem { level: 1 | 2 | 3; number: string; text: string; line: number }
+export interface OutlineItem { level: 1 | 2 | 3; number: string; text: string; line: number; /** Set when the outline spans the paper's files. */ file?: string }
 
 const stripComments = (s: string) => s.replace(/(^|[^\\])%.*$/gm, "$1");
 
@@ -193,8 +193,9 @@ export function highlightLine(line: string): { cls: "cmd" | "cmt" | "math" | "tx
 }
 
 /** Minimal BibTeX reader: key → { author surname(s), year }. Enough for "Candès et al. 2006" chips. */
-export interface BibEntry { key: string; label: string; title?: string }
-export function parseBib(src: string): Record<string, BibEntry> {
+export interface BibEntry { key: string; label: string; title?: string; file?: string; line?: number }
+/** Entries of a .bib file by key; `file` (relative to the paper) lets go-to-definition open the entry. */
+export function parseBib(src: string, file?: string): Record<string, BibEntry> {
   const out: Record<string, BibEntry> = {};
   const re = /@(\w+)\s*\{\s*([^,\s]+)\s*,([\s\S]*?)\n\}/g;
   let m: RegExpExecArray | null;
@@ -213,7 +214,8 @@ export function parseBib(src: string): Record<string, BibEntry> {
     const etAl = names.length > 2 || names.some((n) => n.toLowerCase() === "others");
     const real = names.filter((n) => n.toLowerCase() !== "others");
     const who = real.length === 0 ? key : etAl ? `${real[0]} et al.` : real.length === 1 ? real[0] : `${real[0]} and ${real[1]}`;
-    out[key] = { key, label: year ? `${who} ${year}` : who, title: field(body, "title") };
+    const line = src.slice(0, m.index).split("\n").length;
+    out[key] = { key, label: year ? `${who} ${year}` : who, title: field(body, "title"), file, line };
   }
   return out;
 }

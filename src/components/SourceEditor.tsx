@@ -2,7 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { EditorState, Compartment, StateEffect, StateField } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, dropCursor, rectangularSelection, crosshairCursor, Decoration, hoverTooltip, type DecorationSet } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, indentWithTab, undo, redo } from "@codemirror/commands";
-import { bracketMatching, syntaxHighlighting, HighlightStyle, indentOnInput } from "@codemirror/language";
+import { bracketMatching, syntaxHighlighting, HighlightStyle, indentOnInput, foldGutter, foldKeymap } from "@codemirror/language";
 import { search, searchKeymap, openSearchPanel, highlightSelectionMatches } from "@codemirror/search";
 import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap, startCompletion, completionStatus, currentCompletions, type CompletionSource } from "@codemirror/autocomplete";
 import { tags } from "@lezer/highlight";
@@ -12,7 +12,7 @@ import * as Y from "yjs";
 import type { Awareness } from "y-protocols/awareness";
 import { visualExtensions, remoteCursorsField, setRemoteCursors, type RemoteCursor } from "../lib/visual";
 import { typstVisualExtensions } from "../lib/visual-typst";
-import { projectCompletions, type CompletionSources } from "../lib/completions";
+import { projectSource, commandSource, dollarPairing, matchingEnvironment, goToDefinition, goToDefinitionCommand, type AssistSources } from "../lib/assist";
 import type { GrammarMatch } from "../lib/grammar";
 import type { Settings } from "../lib/settings";
 import { currentGhost, ghostText, prediction, setGhostText } from "../lib/predict";
@@ -113,7 +113,7 @@ interface Props {
   /** Visual layer to use, or false for plain source. */
   visual: false | "tex" | "typst";
   settings: Settings;
-  completions: CompletionSources;
+  assist: AssistSources;
   collab: { text: Y.Text; awareness: Awareness } | null;
   comments: CommentRange[];
   changes: ChangeRange[];
@@ -139,7 +139,7 @@ interface Props {
   findRequest: number;
 }
 
-const sourceOnly = () => [lineNumbers(), highlightActiveLineGutter(), highlightActiveLine(), syntaxHighlighting(highlight)];
+const sourceOnly = () => [lineNumbers(), foldGutter({ openText: "⌄", closedText: "›" }), highlightActiveLineGutter(), highlightActiveLine(), syntaxHighlighting(highlight), matchingEnvironment()];
 
 export interface EditorApi {
   wrap: (pre: string, post: string) => void;      // wrap the selection, or insert and place the cursor inside
@@ -156,7 +156,7 @@ export interface EditorApi {
 
 const modeExt = (visual: Props["visual"]) => (visual === "typst" ? typstVisualExtensions() : visual ? visualExtensions() : sourceOnly());
 
-export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({ value, visual, settings, completions, collab, comments, changes, suggesting, author, onChanges, grammar, marks, review, dictionary, onAddWord, onContinue, onSelection, jumpOffset, onChange, onSave, onCursorLine, jumpLine, jumpStamp, findRequest }, ref) {
+export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({ value, visual, settings, assist, collab, comments, changes, suggesting, author, onChanges, grammar, marks, review, dictionary, onAddWord, onContinue, onSelection, jumpOffset, onChange, onSave, onCursorLine, jumpLine, jumpStamp, findRequest }, ref) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const modeComp = useRef(new Compartment());
@@ -189,7 +189,7 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
   const onSaveRef = useRef(onSave); onSaveRef.current = onSave;
   const onCursorRef = useRef(onCursorLine); onCursorRef.current = onCursorLine;
   const onSelRef = useRef(onSelection); onSelRef.current = onSelection;
-  const completionsRef = useRef(completions); completionsRef.current = completions;
+  const assistRef = useRef(assist); assistRef.current = assist;
   const loading = useRef(false);
 
   const prefs = (s: Settings) => [
@@ -201,10 +201,10 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
   ];
   const completionExt = (s: Settings) => {
     if (!s.autocomplete && !s.citeComplete) return [];
-    const project = projectCompletions({ bib: () => completionsRef.current.bib(), labels: () => completionsRef.current.labels(), files: () => completionsRef.current.files() });
+    const live: AssistSources = { bib: () => assistRef.current.bib(), symbols: () => assistRef.current.symbols(), files: () => assistRef.current.files(), currentFile: () => assistRef.current.currentFile(), goTo: (f, l) => assistRef.current.goTo(f, l) };
     const override: CompletionSource[] = [];
-    if (s.citeComplete) override.push(project);
-    if (s.autocomplete) override.push(latexCompletionSource(true) as CompletionSource);
+    if (s.citeComplete) override.push(projectSource(live));
+    if (s.autocomplete) override.push(commandSource(latexCompletionSource(true) as CompletionSource, live));
     return autocompletion({ override, activateOnTyping: true, maxRenderedOptions: 40, icons: true });
   };
 
@@ -214,7 +214,8 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
       doc: value,
       extensions: [
         history(), drawSelection(), dropCursor(), rectangularSelection(), crosshairCursor(),
-        indentOnInput(), bracketMatching(), closeBrackets(), highlightSelectionMatches(),
+        indentOnInput(), bracketMatching(), closeBrackets(), dollarPairing(), highlightSelectionMatches(),
+        goToDefinition(() => assistRef.current),
         completeComp.current.of(completionExt(settings)), search({ top: true }),
         latex({ enableAutocomplete: false, autoCloseBrackets: false }),
         prefsComp.current.of(prefs(settings)),
@@ -229,7 +230,9 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
         keymap.of([
           { key: "Mod-s", run: () => { onSaveRef.current(); return true; } },
           { key: "Mod-Shift-Space", run: () => { void continueSentence(); return true; } },
-          ...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...historyKeymap, ...completionKeymap, indentWithTab,
+          { key: "F12", run: goToDefinitionCommand(() => assistRef.current) },
+          { key: "Mod-Alt-ArrowDown", run: goToDefinitionCommand(() => assistRef.current) },
+          ...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...historyKeymap, ...completionKeymap, ...foldKeymap, indentWithTab,
         ]),
         EditorView.updateListener.of((u) => {
           if (u.docChanged && !loading.current) onChangeRef.current(u.state.doc.toString());
