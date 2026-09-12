@@ -15,6 +15,8 @@ import { typstVisualExtensions } from "../lib/visual-typst";
 import { projectSource, commandSource, dollarPairing, matchingEnvironment, goToDefinition, goToDefinitionCommand, paperLint, headingEmphasis, type AssistSources } from "../lib/assist";
 import { codeLanguage, fileKind, hasProse, isManuscript } from "../lib/languages";
 import { languageServerFor } from "../lib/lsp";
+import { focusMode } from "../lib/focus";
+import { vim } from "@replit/codemirror-vim";
 import type { GrammarMatch } from "../lib/grammar";
 import type { Settings } from "../lib/settings";
 import { currentGhost, ghostText, prediction, setGhostText } from "../lib/predict";
@@ -204,6 +206,7 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
   const spellCfg = (s: Settings, words: string[], path: string | null) => spellConfig.of({ on: s.spellcheck && s.spellLanguage !== "system" && hasProse(path), lang: s.spellLanguage === "system" ? "en-GB" : s.spellLanguage, words, onAddWord: (w) => onAddWordRef.current(w) });
   const collabComp = useRef(new Compartment());
   const prefsComp = useRef(new Compartment());
+  const keysComp = useRef(new Compartment());
   const completeComp = useRef(new Compartment());
   const suggestComp = useRef(new Compartment());
   const onChangesRef = useRef(onChanges); onChangesRef.current = onChanges;
@@ -224,6 +227,7 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
     EditorView.theme({ "&": { "--doc-size": `${s.fontSize}px`, "--mono-size": `${s.monoSize}px` } }),
     ghostText(),
     s.prediction ? prediction() : [],
+    s.focusMode ? focusMode() : [],
   ];
   const completionExt = (s: Settings) => {
     if (!s.autocomplete && !s.citeComplete) return [];
@@ -246,6 +250,7 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
         goToDefinition(() => assistRef.current),
         completeComp.current.of(completionExt(settings)), search({ top: true }),
         langComp.current.of(languageExt(pathRef.current, () => assistRef.current)), lspComp.current.of([]),
+        keysComp.current.of(settings.keymap === "vim" ? vim() : []),
         prefsComp.current.of(prefs(settings)),
         modeComp.current.of(modeExt(visual, pathRef.current)),
         collabComp.current.of([]),
@@ -303,7 +308,7 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
       }).catch(() => {});
     }
   }, [assist]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { view.current?.dispatch({ effects: [prefsComp.current.reconfigure(prefs(settings)), completeComp.current.reconfigure(completionExt(settings))] }); }, [settings]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { view.current?.dispatch({ effects: [prefsComp.current.reconfigure(prefs(settings)), keysComp.current.reconfigure(settings.keymap === "vim" ? vim() : []), completeComp.current.reconfigure(completionExt(settings))] }); }, [settings]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { view.current?.dispatch({ effects: spellComp.current.reconfigure(spellCfg(settings, dictionary, pathRef.current)) }); }, [settings, dictionary]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {

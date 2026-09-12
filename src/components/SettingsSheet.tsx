@@ -108,6 +108,15 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
           <Row label="Source text size">
             <input type="range" min={11} max={18} step={1} value={s.monoSize} onChange={(e) => updateSettings({ monoSize: Number(e.target.value) })} aria-label="Source text size" /><span className="setting-value">{s.monoSize} px</span>
           </Row>
+          <Row label="Keyboard" hint="Vim gives the source view modal editing: Escape for normal mode, i to insert, : for commands. The app's own shortcuts keep working.">
+            <select className="sheet-input compact" value={s.keymap} onChange={(e) => updateSettings({ keymap: e.target.value as "standard" | "vim" })} aria-label="Keyboard">
+              <option value="standard">Standard</option>
+              <option value="vim">Vim</option>
+            </select>
+          </Row>
+          <Row label="Focus mode" hint="Only the paragraph you are in is fully inked, the line you type stays near the middle of the window, and the sidebar and inspector step aside. ⌥⌘F toggles it.">
+            <Toggle on={s.focusMode} onChange={(v) => updateSettings({ focusMode: v })} label="Focus mode" />
+          </Row>
           <Row label="Wrap long lines">
             <Toggle on={s.lineWrap} onChange={(v) => updateSettings({ lineWrap: v })} label="Wrap long lines" />
           </Row>

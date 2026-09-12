@@ -2057,6 +2057,11 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
                 .build(app)?,
         )
         .item(
+            &MenuItemBuilder::with_id("focus-mode", "Focus Mode")
+                .accelerator("Alt+CmdOrCtrl+F")
+                .build(app)?,
+        )
+        .item(
             &MenuItemBuilder::with_id("toggle-inspector", "Show/Hide Inspector")
                 .accelerator(if cfg!(target_os = "macos") {
                     "Alt+Cmd+I"
