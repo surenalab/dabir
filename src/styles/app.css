@@ -1092,3 +1092,7 @@ input[type="range"] { accent-color: var(--accent); width: 140px; }
 .app.focus-mode .titlebar:hover, .app.focus-mode .titlebar:focus-within, .app.focus-mode .status:hover, .app.focus-mode .formatbar:hover, .app.focus-mode .formatbar:focus-within { opacity: 1; }
 .app.focus-mode .editor .cm-activeLine, .app.focus-mode .editor .cm-activeLineGutter { background: transparent; }
 .app.focus-mode .editor .cm-scroller { max-width: 96ch; margin: 0 auto; padding-top: 22vh; padding-bottom: 40vh; }
+.tok-heading { font-weight: 700; color: var(--ink); }
+.vz-grid { display: grid; gap: 10px 18px; margin: 1em 0; padding: 1em; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--paper-2); cursor: text; }
+.vz-grid-cell { min-width: 0; font-size: .95em; line-height: 1.45; }
+.vz-grid-image { padding: 18px 8px; text-align: center; border: 1px dashed var(--line); border-radius: var(--radius-sm); color: var(--ink-3); font-size: 12px; }

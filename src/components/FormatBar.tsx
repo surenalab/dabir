@@ -7,11 +7,11 @@ interface Group { id: string; drop: number; items: Item[] } // higher `drop` lea
 
 const STYLES: [string, string, ReactNode][] = [["section", "Section", <Heading1 />], ["subsection", "Subsection", <Heading2 />], ["subsubsection", "Subsubsection", <Heading3 />], ["paragraph", "Run-in heading", <Type />], ["plain", "Plain paragraph", <AlignLeft />]];
 
-interface Props { api: EditorApi | null; onFind: () => void; onComment: () => void; canComment: boolean; suggesting: boolean; onToggleSuggesting: () => void; pending: number }
+interface Props { api: EditorApi | null; lang: "tex" | "typst"; onFind: () => void; onComment: () => void; canComment: boolean; suggesting: boolean; onToggleSuggesting: () => void; pending: number }
 
 /** Word-style formatting bar. Every action edits the LaTeX source through the editor API.
  *  When the window is squeezed, whole groups move into a More menu instead of clipping or scrolling. */
-export function FormatBar({ api, onFind, onComment, canComment, suggesting, onToggleSuggesting, pending }: Props) {
+export function FormatBar({ api, lang, onFind, onComment, canComment, suggesting, onToggleSuggesting, pending }: Props) {
   const off = !api;
   const groups: Group[] = [
     { id: "history", drop: 0, items: [
@@ -20,26 +20,26 @@ export function FormatBar({ api, onFind, onComment, canComment, suggesting, onTo
     ] },
     { id: "style", drop: 3, items: STYLES.map(([v, label, icon]) => ({ id: `style-${v}`, label, icon, run: () => api?.heading(v) })) },
     { id: "inline", drop: 1, items: [
-      { id: "bold", label: "Bold", icon: <Bold />, run: () => api?.wrap("\\textbf{", "}"), key: "⇧⌘B" },
-      { id: "italic", label: "Italic", icon: <Italic />, run: () => api?.wrap("\\textit{", "}"), key: "⇧⌘I" },
-      { id: "emph", label: "Emphasis", icon: <Pilcrow />, run: () => api?.wrap("\\emph{", "}"), key: "⇧⌘E" },
-      { id: "code", label: "Code", icon: <Code2 />, run: () => api?.wrap("\\texttt{", "}") },
+      { id: "bold", label: "Bold", icon: <Bold />, run: () => api?.format("bold"), key: "⇧⌘B" },
+      { id: "italic", label: "Italic", icon: <Italic />, run: () => api?.format("italic"), key: "⇧⌘I" },
+      { id: "emph", label: "Emphasis", icon: <Pilcrow />, run: () => api?.format("emph"), key: "⇧⌘E" },
+      { id: "code", label: "Code", icon: <Code2 />, run: () => api?.format("code") },
     ] },
     { id: "lists", drop: 4, items: [
       { id: "itemize", label: "Bulleted list", icon: <List />, run: () => api?.list("itemize") },
       { id: "enumerate", label: "Numbered list", icon: <ListOrdered />, run: () => api?.list("enumerate") },
     ] },
     { id: "blocks", drop: 2, items: [
-      { id: "math", label: "Inline math", icon: <Sigma />, run: () => api?.wrap("$", "$"), key: "⇧⌘M" },
-      { id: "equation", label: "Equation", icon: <Hash />, run: () => api?.block("\\begin{equation}\n  ", "\n  \\label{eq:}\n\\end{equation}") },
-      { id: "figure", label: "Figure", icon: <Image />, run: () => api?.block("\\begin{figure}[t]\n  \\centering\n  \\includegraphics[width=\\linewidth]{", "}\n  \\caption{}\n  \\label{fig:}\n\\end{figure}") },
-      { id: "table", label: "Table", icon: <Table2 />, run: () => api?.block("\\begin{table}[t]\n  \\caption{}\n  \\label{tab:}\n  \\centering\n  \\begin{tabular}{lcc}\n    \\toprule\n    ", " & & \\\\\n    \\midrule\n     & & \\\\\n    \\bottomrule\n  \\end{tabular}\n\\end{table}") },
+      { id: "math", label: "Inline math", icon: <Sigma />, run: () => api?.format("math"), key: "⇧⌘M" },
+      { id: "equation", label: "Equation", icon: <Hash />, run: () => api?.format("equation") },
+      { id: "figure", label: "Figure", icon: <Image />, run: () => api?.format("figure") },
+      { id: "table", label: "Table", icon: <Table2 />, run: () => api?.format("table") },
     ] },
     { id: "refs", drop: 5, items: [
-      { id: "cite", label: "Citation", icon: <Quote />, run: () => api?.complete("\\cite{", "}"), key: "⇧⌘C" },
-      { id: "ref", label: "Cross-reference", icon: <Hash />, run: () => api?.complete("\\ref{", "}"), key: "⇧⌘R" },
-      { id: "link", label: "Link", icon: <Link2 />, run: () => api?.wrap("\\href{https://}{", "}"), key: "⌘K" },
-      { id: "footnote", label: "Footnote", icon: <Type />, run: () => api?.wrap("\\footnote{", "}") },
+      { id: "cite", label: "Citation", icon: <Quote />, run: () => api?.format("cite"), key: "⇧⌘C" },
+      { id: "ref", label: "Cross-reference", icon: <Hash />, run: () => api?.format("ref"), key: "⇧⌘R" },
+      { id: "link", label: "Link", icon: <Link2 />, run: () => api?.format("link"), key: "⌘K" },
+      { id: "footnote", label: "Footnote", icon: <Type />, run: () => api?.format("footnote") },
     ] },
     { id: "tools", drop: 6, items: [
       { id: "find", label: "Find", icon: <Search />, run: onFind, key: "⌘F" },
@@ -123,7 +123,7 @@ export function FormatBar({ api, onFind, onComment, canComment, suggesting, onTo
       ) : pending ? (
         <span className="fb-hint" role="status" title="Suggested changes waiting for review in the People tab.">{pending} suggestion{pending === 1 ? "" : "s"} pending</span>
       ) : (
-        <span className="fb-hint" title="Headings, math, figures and citations render in place in the Visual view; the source stays plain LaTeX.">Writes LaTeX</span>
+        <span className="fb-hint" title={`Headings, math, figures and citations render in place in the Visual view; the source stays plain ${lang === "typst" ? "Typst" : "LaTeX"}.`}>Writes {lang === "typst" ? "Typst" : "LaTeX"}</span>
       )}
     </div>
   );
