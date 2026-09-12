@@ -13,6 +13,7 @@ import type { Awareness } from "y-protocols/awareness";
 import { visualExtensions, remoteCursorsField, setRemoteCursors, type RemoteCursor } from "../lib/visual";
 import { typstVisualExtensions } from "../lib/visual-typst";
 import { projectSource, commandSource, dollarPairing, matchingEnvironment, goToDefinition, goToDefinitionCommand, paperLint, headingEmphasis, type AssistSources } from "../lib/assist";
+import { codeLanguage, fileKind, hasProse, isManuscript } from "../lib/languages";
 import type { GrammarMatch } from "../lib/grammar";
 import type { Settings } from "../lib/settings";
 import { currentGhost, ghostText, prediction, setGhostText } from "../lib/predict";
@@ -27,6 +28,18 @@ const highlight = HighlightStyle.define([
   { tag: [tags.number, tags.literal], class: "tok-num" },
   { tag: [tags.tagName, tags.typeName, tags.className, tags.labelName], class: "tok-env" },
   { tag: [tags.operator, tags.special(tags.variableName), tags.processingInstruction], class: "tok-math" },
+]);
+
+/** Code files share the manuscript's palette: keywords where LaTeX has commands, names where it has environments. */
+const codeHighlight = HighlightStyle.define([
+  { tag: [tags.keyword, tags.controlKeyword, tags.operatorKeyword, tags.definitionKeyword, tags.moduleKeyword], class: "tok-cmd" },
+  { tag: tags.comment, class: "tok-cmt" },
+  { tag: [tags.string, tags.special(tags.string), tags.regexp], class: "tok-str" },
+  { tag: [tags.number, tags.bool, tags.null, tags.literal, tags.atom], class: "tok-num" },
+  { tag: [tags.function(tags.variableName), tags.function(tags.propertyName), tags.definition(tags.variableName), tags.className, tags.typeName, tags.heading], class: "tok-env" },
+  { tag: [tags.propertyName, tags.attributeName, tags.labelName], class: "tok-math" },
+  { tag: tags.strong, class: "tok-strong" },
+  { tag: tags.emphasis, class: "tok-em" },
 ]);
 
 // ---- comments
@@ -139,7 +152,16 @@ interface Props {
   findRequest: number;
 }
 
-const sourceOnly = () => [lineNumbers(), foldGutter({ openText: "⌄", closedText: "›" }), highlightActiveLineGutter(), highlightActiveLine(), syntaxHighlighting(highlight), matchingEnvironment(), headingEmphasis()];
+const sourceOnly = (path: string | null) => [lineNumbers(), foldGutter({ openText: "⌄", closedText: "›" }), highlightActiveLineGutter(), highlightActiveLine(), syntaxHighlighting(isManuscript(path) ? highlight : codeHighlight), ...(fileKind(path) === "tex" ? [matchingEnvironment(), headingEmphasis()] : [])];
+
+/** The grammar and the helpers that belong to it. LaTeX (and .bib, .sty) keep the LaTeX language, `$` pairing and
+ * the paper-aware linter; code and data files get their own grammar and none of the LaTeX helpers. */
+const languageExt = (path: string | null, assist: () => AssistSources) => {
+  const code = codeLanguage(path);
+  if (code && !isManuscript(path)) return [code];
+  if (fileKind(path) === "typst") return [];
+  return [latex({ enableAutocomplete: false, autoCloseBrackets: false, enableLinting: false }), paperLint(assist), dollarPairing()];
+};
 
 export interface EditorApi {
   wrap: (pre: string, post: string) => void;      // wrap the selection, or insert and place the cursor inside
@@ -154,7 +176,7 @@ export interface EditorApi {
   continueSentence: () => void;                   // ask the agent for the next sentence as ghost text
 }
 
-const modeExt = (visual: Props["visual"]) => (visual === "typst" ? typstVisualExtensions() : visual ? visualExtensions() : sourceOnly());
+const modeExt = (visual: Props["visual"], path: string | null) => (visual === "typst" ? typstVisualExtensions() : visual ? visualExtensions() : sourceOnly(path));
 
 export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({ value, visual, settings, assist, collab, comments, changes, suggesting, author, onChanges, grammar, marks, review, dictionary, onAddWord, onContinue, onSelection, jumpOffset, onChange, onSave, onCursorLine, jumpLine, jumpStamp, findRequest }, ref) {
   const host = useRef<HTMLDivElement>(null);
@@ -178,7 +200,7 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
     const sep = /\S$/.test(before) && /^[\p{L}\p{N}(\\$]/u.test(text) ? " " : "";
     setGhostText(v, { pos: head, text: sep + text, source: "agent" });
   };
-  const spellCfg = (s: Settings, words: string[]) => spellConfig.of({ on: s.spellcheck && s.spellLanguage !== "system", lang: s.spellLanguage === "system" ? "en-GB" : s.spellLanguage, words, onAddWord: (w) => onAddWordRef.current(w) });
+  const spellCfg = (s: Settings, words: string[], path: string | null) => spellConfig.of({ on: s.spellcheck && s.spellLanguage !== "system" && hasProse(path), lang: s.spellLanguage === "system" ? "en-GB" : s.spellLanguage, words, onAddWord: (w) => onAddWordRef.current(w) });
   const collabComp = useRef(new Compartment());
   const prefsComp = useRef(new Compartment());
   const completeComp = useRef(new Compartment());
@@ -190,6 +212,8 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
   const onCursorRef = useRef(onCursorLine); onCursorRef.current = onCursorLine;
   const onSelRef = useRef(onSelection); onSelRef.current = onSelection;
   const assistRef = useRef(assist); assistRef.current = assist;
+  const langComp = useRef(new Compartment());
+  const pathRef = useRef<string | null>(assist.currentFile());
   const loading = useRef(false);
 
   const prefs = (s: Settings) => [
@@ -203,8 +227,10 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
     if (!s.autocomplete && !s.citeComplete) return [];
     const live: AssistSources = { bib: () => assistRef.current.bib(), symbols: () => assistRef.current.symbols(), files: () => assistRef.current.files(), currentFile: () => assistRef.current.currentFile(), goTo: (f, l) => assistRef.current.goTo(f, l), main: () => assistRef.current.main() };
     const override: CompletionSource[] = [];
-    if (s.citeComplete) override.push(projectSource(live));
-    if (s.autocomplete) override.push(commandSource(latexCompletionSource(true) as CompletionSource, live));
+    // The LaTeX sources apply to manuscript files only; code files complete from their own grammar.
+    const manuscriptOnly = (src: CompletionSource): CompletionSource => (ctx) => (isManuscript(live.currentFile()) ? src(ctx) : null);
+    if (s.citeComplete) override.push(manuscriptOnly(projectSource(live)));
+    if (s.autocomplete) override.push(manuscriptOnly(commandSource(latexCompletionSource(true) as CompletionSource, live)));
     return autocompletion({ override, activateOnTyping: true, maxRenderedOptions: 40, icons: true });
   };
 
@@ -214,18 +240,18 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
       doc: value,
       extensions: [
         history(), drawSelection(), dropCursor(), rectangularSelection(), crosshairCursor(),
-        indentOnInput(), bracketMatching(), closeBrackets(), dollarPairing(), highlightSelectionMatches(),
+        indentOnInput(), bracketMatching(), closeBrackets(), highlightSelectionMatches(),
         goToDefinition(() => assistRef.current),
         completeComp.current.of(completionExt(settings)), search({ top: true }),
-        latex({ enableAutocomplete: false, autoCloseBrackets: false, enableLinting: false }), paperLint(() => assistRef.current),
+        langComp.current.of(languageExt(pathRef.current, () => assistRef.current)),
         prefsComp.current.of(prefs(settings)),
-        modeComp.current.of(modeExt(visual)),
+        modeComp.current.of(modeExt(visual, pathRef.current)),
         collabComp.current.of([]),
         suggestComp.current.of(suggestConfig.of({ on: suggesting, author })),
         trackChanges(),
         readOnlyComp.current.of([]),
         reviewField, remoteCursorsField,
-        spellComp.current.of(spellCfg(settings, dictionary)), spelling(),
+        spellComp.current.of(spellCfg(settings, dictionary, pathRef.current)), spelling(),
         commentField, markField, grammarField, grammarHover,
         keymap.of([
           { key: "Mod-s", run: () => { onSaveRef.current(); return true; } },
@@ -260,9 +286,16 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => { view.current?.dispatch({ effects: modeComp.current.reconfigure(modeExt(visual)) }); }, [visual]);
+  useEffect(() => { view.current?.dispatch({ effects: modeComp.current.reconfigure(modeExt(visual, pathRef.current)) }); }, [visual]);
+  // A different file may be a different language: swap the grammar, the LaTeX helpers, the mode's highlighting and spelling.
+  useEffect(() => {
+    const path = assist.currentFile();
+    if (path === pathRef.current) return;
+    pathRef.current = path;
+    view.current?.dispatch({ effects: [langComp.current.reconfigure(languageExt(path, () => assistRef.current)), modeComp.current.reconfigure(modeExt(visual, path)), spellComp.current.reconfigure(spellCfg(settings, dictionary, path))] });
+  }, [assist]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { view.current?.dispatch({ effects: [prefsComp.current.reconfigure(prefs(settings)), completeComp.current.reconfigure(completionExt(settings))] }); }, [settings]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { view.current?.dispatch({ effects: spellComp.current.reconfigure(spellCfg(settings, dictionary)) }); }, [settings, dictionary]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { view.current?.dispatch({ effects: spellComp.current.reconfigure(spellCfg(settings, dictionary, pathRef.current)) }); }, [settings, dictionary]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const v = view.current;
