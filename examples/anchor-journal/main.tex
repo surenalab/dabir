@@ -1,0 +1,35 @@
+\documentclass[journal]{IEEEtran}
+\usepackage{amsmath,amssymb,amsthm,graphicx,booktabs,subcaption,algorithm,algpseudocode,hyperref,cleveref}
+\input{macros}
+
+\title{Score Anchoring for Diffusion Posterior Sampling: Theory, Samplers and a Study Across Six Inverse Problems}
+\author{Aurelio Vantreight,~\IEEEmembership{Member,~IEEE,} Ilse Marrowfield, Teodor Quenzel, and Beatriz Olamide-Farrant%
+\thanks{A. Vantreight and I. Marrowfield are with the Institute of Computational Imaging, Ravensbourne University. T. Quenzel is with Halden Research. B. Olamide-Farrant is with the Department of Radiology, St. Cuthbert's Hospital.}}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Diffusion posterior sampling drifts when the guidance gradient and the learned score disagree at low noise levels. We introduce score anchoring, a single scalar correction that keeps the guided trajectory within a trust region of the prior score, and extend our earlier conference result in three directions. First, we prove that the anchored update is a contraction under a mild smoothness assumption on the score. Second, we show that the same rule transfers to DDIM, predictor--corrector and stochastic samplers without retuning. Third, we evaluate on six inverse problems including sparse-view CT, accelerated MRI, deblurring, inpainting, super-resolution and phase retrieval, where anchoring holds a 1.8 dB PSNR margin over five baselines across noise levels up to $\sigma = 0.3$ with no extra network evaluations.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Diffusion models, inverse problems, posterior sampling, computational imaging, trust region.
+\end{IEEEkeywords}
+
+\input{sections/introduction}
+\input{sections/related}
+\input{sections/method}
+\input{sections/theory}
+\input{sections/experiments}
+\input{sections/ablations}
+\input{sections/discussion}
+\input{sections/conclusion}
+
+\appendices
+\input{appendix/proofs}
+\input{appendix/extra-results}
+
+\bibliographystyle{IEEEtran}
+\bibliography{refs}
+\end{document}

@@ -1,0 +1,13 @@
+\section{Discussion}
+\label{sec:discussion}
+\subsection{Why the direction must not change}
+\label{sec:direction}
+Anchoring scales the guidance but never rotates it. Methods that project or reweight components of $g_t$ change its direction and, in our experiments, lose between 0.4 and 0.9 dB on the tasks with ill-conditioned operators. We conjecture that the direction of $g_t$ carries the information about the measurement that the prior lacks, while its magnitude carries mostly information about the conditioning of $\fwd$, which the prior already knows how to handle.
+
+\subsection{Limitations}
+\label{sec:limitations}
+\Cref{thm:contraction} assumes a Lipschitz score, which holds for the trained networks we use only approximately and only on the support of $p_t$. The bound is loose by about two orders of magnitude at low noise. Anchoring does not help when the forward operator is wrong: a mismatched blur kernel or an incorrect sampling mask defeats every method we tried. Finally, phase retrieval remains hard for all methods at $\sigma = 0.3$, where the best PSNR is below 22 dB.
+
+\subsection{Broader use}
+\label{sec:broader}
+The rule is agnostic to the modality and we expect it to transfer to audio and to video priors. It is also compatible with latent diffusion models~\cite{rombach2022ldm,rout2023psld}, where the clip is applied in latent space; preliminary results on $512 \times 512$ super-resolution are in \cref{app:latent}.

@@ -2,8 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUp, Check, Loader2, Paperclip, RefreshCw, Square, X, FileText, Pencil, Terminal, Search, Wrench, Brain, FileDiff, PenLine, Sparkles, RotateCcw, Undo2 } from "lucide-react";
 import {
   agentAccept, agentApply, agentCancel, agentDiff, agentProviders, agentPullRequest, agentReject, agentRun, memoryRead, memorySetup,
-  onAgentEvent, provenanceRerun, agentModels, checkpointPatch, type Artefact, type Checkpoint, type Memory, type ModelOptions, type Pick, type Project, type Provider, type WorktreeDiff,
-} from "../lib/backend";
+  onAgentEvent, provenanceRerun, agentModels, checkpointPatch, type Artefact, type Checkpoint, type Memory, type ModelOptions, type Pick, type Project, type Provider, type WorktreeDiff, type Focus } from "../lib/backend";
 import { Segmented } from "./Segmented";
 import { renderMarkdown } from "../lib/md";
 import { updateSettings, useSettings } from "../lib/settings";
@@ -262,6 +261,7 @@ interface Props {
   comments: Comment[];
   currentFile: string | null;
   hasSelection: boolean;
+  focus: Focus | null;
   onAddComment: (text: string) => void;
   onResolveComment: (id: string, resolved: boolean) => void;
   onReplyComment: (id: string, text: string) => void;
@@ -310,7 +310,7 @@ export interface ReviewHandle {
   reject: () => void;
 }
 
-export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady, onChanged, onBeforeRun, onOpenFile, onNote, live, peers, comments, currentFile, hasSelection, onAddComment, onResolveComment, onReplyComment, onRemoveComment, onJumpComment, onShare, autoRun, changes, suggesting, onToggleSuggesting, onResolveChanges, onJumpChange, onReview, history, historyBusy, onRestoreStep, onUndoStep, historyFocus }: Props) {
+export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady, onChanged, onBeforeRun, onOpenFile, onNote, live, peers, comments, currentFile, hasSelection, focus, onAddComment, onResolveComment, onReplyComment, onRemoveComment, onJumpComment, onShare, autoRun, changes, suggesting, onToggleSuggesting, onResolveChanges, onJumpChange, onReview, history, historyBusy, onRestoreStep, onUndoStep, historyFocus }: Props) {
   const [commentDraft, setCommentDraft] = useState("");
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [replyDraft, setReplyDraft] = useState("");
@@ -391,7 +391,7 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
       await onBeforeRun();
       // Asking again while a run is under review continues that run: same worktree, its changes kept.
       const follow = run.phase === "review" && run.diff && run.diff.changes.length > 0 ? run : null;
-      const started = await agentRun(project.root, follow ? follow.provider : provider, prompt, model, effort, follow ? { runId: follow.runId, prompt: follow.prompt, reply: follow.summary } : null);
+      const started = await agentRun(project.root, follow ? follow.provider : provider, prompt, model, effort, follow ? { runId: follow.runId, prompt: follow.prompt, reply: follow.summary } : null, focus);
       const turns: Turn[] | undefined = follow ? [...(follow.turns ?? []), { prompt: follow.prompt, summary: follow.summary, steps: follow.steps }] : undefined;
       // The earlier turn's changes stay on screen while the follow-up works on them.
       setRun({ phase: "running", runId: started.runId, worktree: started.worktree, prompt, steps: [], provider: follow ? follow.provider : provider, steer: steerLabel || undefined, started: Date.now(), turns, pending: follow?.diff ?? undefined });

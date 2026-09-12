@@ -1,0 +1,8 @@
+.dabir/index/
+*.aux
+*.log
+*.bbl
+*.blg
+*.out
+*.synctex.gz
+.dabir/build/

@@ -1,0 +1,13 @@
+\section{Related work}
+\label{sec:related}
+\subsection{Diffusion models as priors}
+Score-based generative models learn $\nabla \log p_t$ along a noising process~\cite{song2019,song2021sde,ho2020ddpm}. Their use as priors for inverse problems began with unconditional samplers steered by projections~\cite{song2022medical,chung2022mri} and moved to gradient-based guidance~\cite{chung2023dps,kawar2022ddrm,wang2023ddnm}. The surveys in~\cite{daras2024survey,li2024survey} give a broad picture.
+
+\subsection{Guidance schemes}
+Gradient guidance weights the likelihood term by a fixed or scheduled scalar~\cite{chung2023dps,song2023pigdm}. Manifold-constrained guidance projects the update onto the tangent space of the data manifold~\cite{chung2022mcg}. Posterior-mean methods replace the gradient with a closed-form estimate under a Gaussian assumption~\cite{song2023pigdm,rout2023psld}. Variational approaches optimise a surrogate posterior~\cite{mardani2023red,feng2023score}. Anchoring differs from all of these in touching only the magnitude of the guidance and never its direction.
+
+\subsection{Trust regions in optimisation}
+The trust-region idea is old~\cite{conn2000trust,nocedal2006}. Our rule is a first-order trust region whose radius is set by the norm of the prior score, a quantity the sampler already computes. Gradient clipping in deep learning~\cite{pascanu2013clip,zhang2020clip} is the closest cousin, though it clips against a constant rather than a competing gradient.
+
+\subsection{Inverse problems considered}
+We evaluate on sparse-view CT~\cite{jin2017fbpconvnet,okonkwo2021}, accelerated MRI~\cite{zbontar2018fastmri,lindqvist2022}, deblurring~\cite{krishnan2009deblur}, inpainting~\cite{lugmayr2022repaint}, super-resolution~\cite{saharia2022sr3} and phase retrieval~\cite{metzler2018prdeep,fienup1982phase}. The benchmark protocol follows DPS~\cite{chung2023dps} except where stated.
