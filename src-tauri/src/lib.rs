@@ -2975,7 +2975,17 @@ mod tests {
                 || t.contains("claude.md")
                 || t.contains(".dabir/memory")
                 || t.contains("skill.md");
-            if n.contains("grep")
+            // Edits first: Grok's `search_replace` is an edit, not a search.
+            if n.contains("edit")
+                || n.contains("write")
+                || n.contains("create")
+                || n.contains("replace")
+                || n.contains("patch")
+                || n.contains("apply")
+                || n.contains("multi")
+            {
+                "edit"
+            } else if n.contains("grep")
                 || n.contains("glob")
                 || n.contains("search")
                 || n.contains("ls")
@@ -2988,15 +2998,6 @@ mod tests {
                 } else {
                     "read"
                 }
-            } else if n.contains("edit")
-                || n.contains("write")
-                || n.contains("create")
-                || n.contains("replace")
-                || n.contains("patch")
-                || n.contains("apply")
-                || n.contains("multi")
-            {
-                "edit"
             } else if n.contains("bash")
                 || n.contains("shell")
                 || n.contains("command")
