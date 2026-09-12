@@ -16,6 +16,7 @@ import type { EditorApi } from "./components/SourceEditor";
 import { useSettings, updateSettings } from "./lib/settings";
 import { checkGrammar, type GrammarMatch } from "./lib/grammar";
 import { paperSymbols, paperOutline, flattenFiles, type AssistSources } from "./lib/assist";
+import { stopLanguageServers } from "./lib/lsp";
 import type { PdfPin, PdfZoom } from "./components/PdfView";
 import type { ManualProvider } from "./lib/manual";
 import { addComment as yAddComment, connect as yConnect, decodeRange, disconnect as yDisconnect, encodeRange, peers as yPeers, randomRoom, removeComment as yRemoveComment, resolveComment as yResolveComment, setCurrentFile, textFor, whenSynced, type Comment, type Peer, type Session, type Transport, replyComment as yReplyComment, userName, colorFor, markHost, hostPresent, publishProject, republishChanged, awaitSnapshot, sharedTexts, persist, setFileChanges } from "./lib/collab";
@@ -65,6 +66,10 @@ export default function App() {
   const [pdfTarget, setPdfTarget] = useState<(PdfPos & { stamp: number }) | null>(null);
   const [showLog, setShowLog] = useState(false);
   const [terminal, setTerminal] = useState({ open: false, focusStamp: 0 });
+  // Find in Paper lives at the top of the sidebar; ⇧⌘F opens or refocuses it.
+  const [findPaper, setFindPaper] = useState({ open: false, stamp: 0 });
+  const openFindPaper = useCallback(() => { setFindPaper({ open: true, stamp: Date.now() }); setNavOpen(true); }, []);
+  const closeFindPaper = useCallback(() => setFindPaper((f) => ({ ...f, open: false })), []);
   const toggleTerminal = useCallback(() => setTerminal((t) => ({ open: !t.open, focusStamp: Date.now() })), []);
   const [focused, setFocused] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -142,6 +147,7 @@ export default function App() {
   const loadMap = useCallback((root: string) => { paperMap(root).then(setMap).catch(() => setMap(null)); }, []);
 
   const openFolder = useCallback(async (folder: string) => {
+    stopLanguageServers();
     const p = await openProject(folder);
     setProject(p); setCompileState({ status: "idle" }); setError(null); setPdfTarget(null);
     setWindowTitle(p.name);
@@ -642,6 +648,7 @@ export default function App() {
       case "compile": compile(); break;
       case "show-log": setShowLog((v) => !v); break;
       case "show-terminal": toggleTerminal(); break;
+      case "find-paper": openFindPaper(); break;
       case "sync-pdf": showInPdf(); break;
       case "commit": if (!navOpen) toggleNav(); setCommitFocus((n) => n + 1); break;
       case "view-visual": setMode("visual"); break;
@@ -678,7 +685,7 @@ export default function App() {
         checkForUpdates(async (v, notes) => window.confirm(`Dabir ${v} is available.\n\n${notes}\n\nDownload and restart now?`)).then(setNote).catch((e) => setNote(String(e)));
         break;
     }
-  }, [open, importFromOverleaf, save, compile, showInPdf, toggleNav, toggleInspector, toggleTerminal, inspectorOpen, navOpen, runGrammar, mode]);
+  }, [open, importFromOverleaf, save, compile, showInPdf, toggleNav, toggleInspector, toggleTerminal, openFindPaper, inspectorOpen, navOpen, runGrammar, mode]);
 
   useEffect(() => onMenu(command), [command]);
   useEffect(() => onCompileProgress((line) => setProgress(line.length > 90 ? line.slice(0, 87) + "…" : line)), []);
@@ -694,7 +701,7 @@ export default function App() {
       if (!e.metaKey) return;
       const k = e.key.toLowerCase();
       const map: Record<string, string> = { o: "open", n: "new", s: "save", b: "compile", "1": "view-visual", "2": "view-source", "3": "view-pdf", "4": "view-split", j: "ask-agent", f: "find", "/": "shortcuts", ",": "settings", k: "fmt-link" };
-      const shifted: Record<string, string> = { g: "check-grammar", b: "fmt-bold", i: "fmt-italic", e: "fmt-emph", m: "fmt-math", c: "fmt-cite", r: "fmt-ref", l: "show-log", j: "sync-pdf", s: "share", o: "clone" };
+      const shifted: Record<string, string> = { g: "check-grammar", b: "fmt-bold", i: "fmt-italic", e: "fmt-emph", m: "fmt-math", c: "fmt-cite", r: "fmt-ref", l: "show-log", j: "sync-pdf", s: "share", o: "clone", f: "find-paper" };
       if (e.shiftKey && !e.altKey && shifted[k]) { e.preventDefault(); command(shifted[k]); return; }
       if (e.altKey && k === "c") { e.preventDefault(); command("commit"); return; }
       if (e.altKey && (k === "e" || e.code === "KeyE")) { e.preventDefault(); command("export"); return; }
@@ -799,7 +806,7 @@ export default function App() {
   // What completions, go-to-definition and the outline read: the paper's symbols with the open buffer's labels live.
   const symbols = useMemo(() => paperSymbols(map, rel(file), source), [map, rel, file, source]);
   const files = useMemo(() => (project ? flattenFiles(project.tree) : []), [project]);
-  const assist = useMemo<AssistSources>(() => ({ bib: () => bib, symbols: () => symbols, files: () => files, currentFile: () => rel(file), goTo: jumpToFile, main: () => map?.main ?? rel(project?.mainTex ?? null) }), [bib, symbols, files, rel, file, jumpToFile, map, project]);
+  const assist = useMemo<AssistSources>(() => ({ bib: () => bib, symbols: () => symbols, files: () => files, currentFile: () => rel(file), goTo: jumpToFile, main: () => map?.main ?? rel(project?.mainTex ?? null), root: () => project?.root ?? null }), [bib, symbols, files, rel, file, jumpToFile, map, project]);
   const fixWithAgent = useCallback((prompt: string) => { if (!inspectorOpen) toggleInspector(); setPrefill({ text: prompt, stamp: Date.now() }); }, [inspectorOpen, toggleInspector]);
   // Hand the bibliography to the agent under the check-references skill: online lookups, fields fixed
   // from the record, doubtful entries reported rather than rewritten.
@@ -873,7 +880,7 @@ export default function App() {
         compiling={compileState.status === "running"} onMode={setMode} onToggleNav={toggleNav} onToggleInspector={toggleInspector} onOpen={open} onCompile={compile} onCancelCompile={() => compileCancel()}
         onShare={() => setSheet("share")} live={!!live} />
       <Navigator project={project} current={file} outline={paperOutline(map) ?? outline} git={git} commitFocus={commitFocus} busy={gitBusy || historyBusy} draftMessage={commitDraft} onDiscard={discardChange} onHistory={() => { if (!inspectorOpen) toggleInspector(); setHistoryFocus(Date.now()); }} historyCount={versions.length}
-        onSelect={selectFile} onJump={(l, f) => (f ? jumpToFile(f, l) : jumpTo(l))} onInitGit={initGit} onCommit={commitAll} />
+        onSelect={selectFile} onJump={(l, f) => (f ? jumpToFile(f, l) : jumpTo(l))} onInitGit={initGit} onCommit={commitAll} find={findPaper} onCloseFind={closeFindPaper} />
       <Document project={project} file={file} source={source} bib={bib} mode={mode} jumpLine={jumpLine} jumpStamp={jumpStamp}
         compileState={compileState} progress={progress} showLog={showLog} onToggleLog={() => setShowLog((v) => !v)} terminal={terminal} onToggleTerminal={toggleTerminal} findRequest={findRequest}
         error={error ?? note} onDismissError={() => { setError(null); setNote(null); }} pdfTarget={pdfTarget}

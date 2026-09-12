@@ -14,6 +14,7 @@ import { visualExtensions, remoteCursorsField, setRemoteCursors, type RemoteCurs
 import { typstVisualExtensions } from "../lib/visual-typst";
 import { projectSource, commandSource, dollarPairing, matchingEnvironment, goToDefinition, goToDefinitionCommand, paperLint, headingEmphasis, type AssistSources } from "../lib/assist";
 import { codeLanguage, fileKind, hasProse, isManuscript } from "../lib/languages";
+import { languageServerFor } from "../lib/lsp";
 import type { GrammarMatch } from "../lib/grammar";
 import type { Settings } from "../lib/settings";
 import { currentGhost, ghostText, prediction, setGhostText } from "../lib/predict";
@@ -213,6 +214,7 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
   const onSelRef = useRef(onSelection); onSelRef.current = onSelection;
   const assistRef = useRef(assist); assistRef.current = assist;
   const langComp = useRef(new Compartment());
+  const lspComp = useRef(new Compartment());
   const pathRef = useRef<string | null>(assist.currentFile());
   const loading = useRef(false);
 
@@ -225,12 +227,12 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
   ];
   const completionExt = (s: Settings) => {
     if (!s.autocomplete && !s.citeComplete) return [];
-    const live: AssistSources = { bib: () => assistRef.current.bib(), symbols: () => assistRef.current.symbols(), files: () => assistRef.current.files(), currentFile: () => assistRef.current.currentFile(), goTo: (f, l) => assistRef.current.goTo(f, l), main: () => assistRef.current.main() };
+    const live: AssistSources = { bib: () => assistRef.current.bib(), symbols: () => assistRef.current.symbols(), files: () => assistRef.current.files(), currentFile: () => assistRef.current.currentFile(), goTo: (f, l) => assistRef.current.goTo(f, l), main: () => assistRef.current.main(), root: () => assistRef.current.root() };
+    // The LaTeX sources apply to manuscript files only; code files complete from their grammar and language server.
+    if (!isManuscript(pathRef.current)) return autocompletion({ activateOnTyping: true, maxRenderedOptions: 40, icons: true });
     const override: CompletionSource[] = [];
-    // The LaTeX sources apply to manuscript files only; code files complete from their own grammar.
-    const manuscriptOnly = (src: CompletionSource): CompletionSource => (ctx) => (isManuscript(live.currentFile()) ? src(ctx) : null);
-    if (s.citeComplete) override.push(manuscriptOnly(projectSource(live)));
-    if (s.autocomplete) override.push(manuscriptOnly(commandSource(latexCompletionSource(true) as CompletionSource, live)));
+    if (s.citeComplete) override.push(projectSource(live));
+    if (s.autocomplete) override.push(commandSource(latexCompletionSource(true) as CompletionSource, live));
     return autocompletion({ override, activateOnTyping: true, maxRenderedOptions: 40, icons: true });
   };
 
@@ -243,7 +245,7 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
         indentOnInput(), bracketMatching(), closeBrackets(), highlightSelectionMatches(),
         goToDefinition(() => assistRef.current),
         completeComp.current.of(completionExt(settings)), search({ top: true }),
-        langComp.current.of(languageExt(pathRef.current, () => assistRef.current)),
+        langComp.current.of(languageExt(pathRef.current, () => assistRef.current)), lspComp.current.of([]),
         prefsComp.current.of(prefs(settings)),
         modeComp.current.of(modeExt(visual, pathRef.current)),
         collabComp.current.of([]),
@@ -292,7 +294,14 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
     const path = assist.currentFile();
     if (path === pathRef.current) return;
     pathRef.current = path;
-    view.current?.dispatch({ effects: [langComp.current.reconfigure(languageExt(path, () => assistRef.current)), modeComp.current.reconfigure(modeExt(visual, path)), spellComp.current.reconfigure(spellCfg(settings, dictionary, path))] });
+    view.current?.dispatch({ effects: [langComp.current.reconfigure(languageExt(path, () => assistRef.current)), lspComp.current.reconfigure([]), modeComp.current.reconfigure(modeExt(visual, path)), spellComp.current.reconfigure(spellCfg(settings, dictionary, path)), completeComp.current.reconfigure(completionExt(settings))] });
+    // A language server, when one is installed for this kind of file; the answer may arrive after another file opened.
+    const root = assist.root();
+    if (path && root && !isManuscript(path)) {
+      languageServerFor(root, `${root}/${path}`).then((got) => {
+        if (got && pathRef.current === path) view.current?.dispatch({ effects: lspComp.current.reconfigure(got.extension) });
+      }).catch(() => {});
+    }
   }, [assist]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { view.current?.dispatch({ effects: [prefsComp.current.reconfigure(prefs(settings)), completeComp.current.reconfigure(completionExt(settings))] }); }, [settings]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { view.current?.dispatch({ effects: spellComp.current.reconfigure(spellCfg(settings, dictionary, pathRef.current)) }); }, [settings, dictionary]); // eslint-disable-line react-hooks/exhaustive-deps

@@ -288,7 +288,7 @@ export function Document(p: Props) {
         {showPdf && <div className="scroll pdfpane">{pdf}</div>}
       </div>
 
-      {terminal.open && project && <TerminalPane cwd={project.root} onClose={onToggleTerminal} focusStamp={terminal.focusStamp} />}
+      {terminal.open && project && <TerminalPane cwd={project.root} remote={project.remote ?? null} onClose={onToggleTerminal} focusStamp={terminal.focusStamp} />}
 
       {showLog && (
         <section className="log" aria-label="Compile log">

@@ -88,6 +88,8 @@ export interface AssistSources {
   goTo: (file: string, line: number) => void;
   /** The paper's main file, relative to the root; null when unknown. */
   main: () => string | null;
+  /** The paper's folder, absolute; null before a paper is open. */
+  root: () => string | null;
 }
 
 const CITE = /\\(?:cite[tp]?\*?|citeauthor|citeyear|parencite|textcite|autocite|nocite|citealp|citealt)\{([^}]*?)$/;
