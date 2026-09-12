@@ -8,10 +8,10 @@ import { Decoration, EditorView, ViewPlugin, hoverTooltip, type DecorationSet, t
 /** A dictionary id from public/dict/index.json, such as "en-GB" or "de". */
 export type SpellLanguage = string;
 
-export interface Speller { correct(word: string): boolean; suggest(word: string): string[] }
+/** A dictionary in the worker: lookups are batched and asynchronous, so the editor never blocks on them. */
+export interface Speller { check(words: string[]): Promise<boolean[]>; suggest(word: string): Promise<string[]> }
 export interface Dictionary { id: SpellLanguage; label: string }
 
-const engines = new Map<string, Promise<Speller>>();
 let manifest: Promise<Dictionary[]> | null = null;
 
 /** The dictionaries shipped with the app: drop a Hunspell pair into public/dict and list it in index.json. */
@@ -22,49 +22,38 @@ export function dictionaries(): Promise<Dictionary[]> {
   return manifest;
 }
 
-/** The dictionary for one language, loaded once from the app's own files. */
+// One worker for every dictionary; requests are matched to replies by id.
+let worker: Worker | null = null;
+let nextId = 1;
+const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
+function ask<T>(msg: Record<string, unknown>): Promise<T> {
+  if (!worker) {
+    worker = new Worker(new URL("./spell.worker.ts", import.meta.url), { type: "module" });
+    worker.onmessage = (e: MessageEvent<{ id: number; ok: boolean; result?: unknown; error?: string }>) => {
+      const p = pending.get(e.data.id); if (!p) return;
+      pending.delete(e.data.id);
+      if (e.data.ok) p.resolve(e.data.result); else p.reject(new Error(e.data.error));
+    };
+    worker.onerror = () => { for (const p of pending.values()) p.reject(new Error("spelling worker failed")); pending.clear(); worker = null; };
+  }
+  const id = nextId++;
+  return new Promise<T>((resolve, reject) => { pending.set(id, { resolve: resolve as (v: unknown) => void, reject }); worker!.postMessage({ id, ...msg }); });
+}
+
+const engines = new Map<string, Promise<Speller>>();
+
+/** The dictionary for one language, loaded once in the worker from the app's own files. */
 export function loadSpeller(lang: SpellLanguage): Promise<Speller> {
   let p = engines.get(lang);
   if (!p) {
-    p = (async () => {
-      const file = async (ext: string) => { const r = await fetch(`/dict/${lang}.${ext}`); if (!r.ok) throw new Error(`No ${lang} dictionary`); return r.text(); };
-      const [{ default: nspell }, aff, dic] = await Promise.all([import("nspell"), file("aff"), file("dic")]);
-      const engine = nspell(aff, dic);
-      return { correct: (w) => engine.correct(w), suggest: (w) => rank(w, engine) };
-    })();
+    p = ask<void>({ type: "load", lang, base: location.origin }).then(() => ({
+      check: (words) => ask<boolean[]>({ type: "check", lang, words }),
+      suggest: (word) => ask<string[]>({ type: "suggest", lang, word }),
+    }));
     engines.set(lang, p);
     p.catch(() => engines.delete(lang));
   }
   return p;
-}
-
-/** Damerau–Levenshtein distance: one swap of adjacent letters counts as a single edit. */
-function distance(a: string, b: string): number {
-  const m = a.length, n = b.length;
-  const d: number[][] = Array.from({ length: m + 1 }, (_, i) => Array.from({ length: n + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0)));
-  for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) {
-    const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost);
-    if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
-  }
-  return d[m][n];
-}
-
-/** Hunspell's list misses simple letter swaps (teh → the); add them and order everything by how small the edit is. */
-export function rank(word: string, engine: Speller): string[] {
-  const seen = new Set<string>(), out: string[] = [];
-  const push = (s: string) => { if (s && s !== word && !seen.has(s)) { seen.add(s); out.push(s); } };
-  const lower = word.toLowerCase(), cap = word[0] === word[0].toUpperCase();
-  const cased = (s: string) => (cap ? s[0].toUpperCase() + s.slice(1) : s);
-  for (let i = 0; i + 1 < lower.length; i++) {
-    const swapped = lower.slice(0, i) + lower[i + 1] + lower[i] + lower.slice(i + 2);
-    if (engine.correct(swapped) || engine.correct(cased(swapped))) push(cased(swapped));
-  }
-  for (const s of engine.suggest(word)) push(s);
-  return out
-    .map((s, i) => ({ s, i, d: distance(lower, s.toLowerCase()) }))
-    .sort((x, y) => x.d - y.d || x.i - y.i)
-    .map((x) => x.s);
 }
 
 // ---------------------------------------------------------------- tokeniser
@@ -170,19 +159,6 @@ export function checkable(word: string): boolean {
   return true;
 }
 
-/** A word passes when the dictionary knows it, or its lowercase form at a sentence start, or, for elisions
- *  such as l'image and dell'acqua, both halves around the apostrophe. */
-function accept(sp: Speller, word: string): boolean {
-  if (sp.correct(word)) return true;
-  if (word[0] === word[0].toUpperCase() && sp.correct(word.toLowerCase())) return true;
-  const cut = word.indexOf("'");
-  if (cut > 0 && cut < word.length - 1) {
-    const a = word.slice(0, cut + 1), b = word.slice(cut + 1);
-    return (sp.correct(a) || sp.correct(a.toLowerCase()) || sp.correct(a.slice(0, -1)) || sp.correct(a.slice(0, -1).toLowerCase())) && (sp.correct(b) || sp.correct(b.toLowerCase()));
-  }
-  return false;
-}
-
 // ---------------------------------------------------------------- editor extension
 
 export interface SpellConfig {
@@ -227,18 +203,27 @@ const checker = ViewPlugin.fromClass(class {
       catch { return; }
     }
     const sp = this.speller;
+    const gen = ++this.gen;
     const text = this.view.state.doc.toString();
     const own = new Set(cfg.words.map((w) => w.toLowerCase()));
     const head = this.view.state.selection.main.head;
-    const bad: { from: number; to: number }[] = [];
+    const candidates: { from: number; to: number; word: string }[] = [];
     for (const w of proseWords(text)) {
       if (w.to === head || (w.from <= head && head < w.to)) continue;  // being typed
       const word = w.word.replace(/’/g, "'");
       if (!checkable(word) || own.has(word.toLowerCase()) || ignored.has(word.toLowerCase())) continue;
-      let ok = this.cache.get(word);
-      if (ok === undefined) { ok = accept(sp, word); this.cache.set(word, ok); }
-      if (!ok) bad.push({ from: w.from, to: w.to });
+      candidates.push({ from: w.from, to: w.to, word });
     }
+    // Words the cache has not seen go to the worker in one batch; the document may change meanwhile,
+    // in which case a newer run supersedes this one and its answer is only kept in the cache.
+    const unknown = [...new Set(candidates.filter((c) => !this.cache.has(c.word)).map((c) => c.word))];
+    if (unknown.length) {
+      let verdicts: boolean[];
+      try { verdicts = await sp.check(unknown); } catch { return; }
+      unknown.forEach((w, i) => this.cache.set(w, verdicts[i]));
+      if (gen !== this.gen || this.view.state.doc.toString() !== text) return;
+    }
+    const bad = candidates.filter((c) => this.cache.get(c.word) === false).map((c) => ({ from: c.from, to: c.to }));
     this.view.dispatch({ effects: setMisspellings.of(bad) });
   }
   destroy() { if (this.timer) clearTimeout(this.timer); }
@@ -260,14 +245,19 @@ const spellHover = hoverTooltip((view, pos) => {
       const dom = document.createElement("div");
       dom.className = "spell-card";
       const plugin = view.plugin(checker);
-      const suggestions = plugin?.speller ? plugin.speller.suggest(word).slice(0, 6) : [];
       const list = document.createElement("div"); list.className = "spell-suggestions";
-      if (!suggestions.length) { const none = document.createElement("span"); none.className = "spell-none"; none.textContent = "No suggestions"; list.appendChild(none); }
-      for (const s of suggestions) {
-        const b = document.createElement("button"); b.className = "spell-fix"; b.textContent = s;
-        b.onmousedown = (e) => { e.preventDefault(); view.dispatch({ changes: { from, to, insert: s }, userEvent: "input.spell" }); view.focus(); };
-        list.appendChild(b);
-      }
+      const none = document.createElement("span"); none.className = "spell-none"; none.textContent = "…"; list.appendChild(none);
+      // Suggestions come from the worker; the card shows them when they arrive.
+      (plugin?.speller ? plugin.speller.suggest(word) : Promise.resolve([] as string[])).then((all) => {
+        const suggestions = all.slice(0, 6);
+        list.replaceChildren();
+        if (!suggestions.length) { none.textContent = "No suggestions"; list.appendChild(none); }
+        for (const s of suggestions) {
+          const b = document.createElement("button"); b.className = "spell-fix"; b.textContent = s;
+          b.onmousedown = (e) => { e.preventDefault(); view.dispatch({ changes: { from, to, insert: s }, userEvent: "input.spell" }); view.focus(); };
+          list.appendChild(b);
+        }
+      }).catch(() => { none.textContent = "No suggestions"; });
       dom.appendChild(list);
       const row = document.createElement("div"); row.className = "spell-actions";
       const add = document.createElement("button"); add.className = "spell-act"; add.textContent = "Add to Dictionary"; add.title = "Saved with the paper in .dabir/dictionary.txt";
