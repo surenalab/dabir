@@ -3,5 +3,8 @@
   { "id": "en-US", "label": "English (US)" },
   { "id": "de", "label": "Deutsch" },
   { "id": "es", "label": "Español" },
-  { "id": "fr", "label": "Français" }
+  { "id": "fr", "label": "Français" },
+  { "id": "it", "label": "Italiano" },
+  { "id": "pt-PT", "label": "Português (Portugal)" },
+  { "id": "pt-BR", "label": "Português (Brasil)" }
 ]
