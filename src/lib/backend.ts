@@ -550,6 +550,10 @@ export async function lspAvailable(candidates: string[]): Promise<string[]> {
   if (!native) return [];
   return invoke<string[]>("lsp_available", { candidates }).catch(() => []);
 }
+export async function lspProbe(command: string, args: string[]): Promise<boolean> {
+  if (!native) return false;
+  return invoke<boolean>("lsp_probe", { command, args }).catch(() => false);
+}
 export async function lspStart(root: string, command: string, args: string[]): Promise<number | null> {
   if (!native) return null;
   return invoke<number>("lsp_start", { root, command, args }).catch(() => null);
