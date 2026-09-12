@@ -1,8 +1,8 @@
 # Dabir agent benchmark
 
-Twenty-one LaTeX repair, revision and one deliberately vague task on a fresh copy of `examples/score-anchor`. The runner reuses the same worktree + vendor CLI path as the app, and since 2026-09-10 sends the same prompt the app sends (the preamble with the brief, file map and context pack in front of the request), so it measures the prompt too.
+Thirty-one LaTeX repair and revision tasks, one deliberately vague. Tasks 01–21 run on a fresh copy of `examples/score-anchor` (a 52-line single-file paper); tasks 22–31 run on `examples/anchor-journal`, a journal-length version of the same paper split over `main.tex`, `macros.tex`, eight section files, two appendices, six tables and a 62-entry bibliography, where finding the right file is part of the job. The runner reuses the same worktree + vendor CLI path as the app and sends the same prompt the app sends (the preamble with the brief, paper map, editor position, file map and context pack in front of the request), so it measures the prompt too.
 
-`DABIR_BENCH_VERBOSE=1` prints every tool call and reply with its time; each result records the number of tool calls.
+`DABIR_BENCH_VERBOSE=1` prints every tool call and reply with its time. Each result records the number of tool calls and sorts them by what they did: `orient` (listing, searching, opening the brief or memory: the calls the preamble exists to remove), `read`, `edit`, `compile`, `run`. `DABIR_BENCH_BARE=1` leaves the paper map, the editor position and the memory blocks out of the preamble, to measure what they buy. `DABIR_BENCH_TASK` takes an id or a substring (`mf` runs the multi-file family).
 
 ## Run
 
@@ -31,6 +31,19 @@ Or from the repo root:
 Pass rates per vendor are the artifact that matters; publish them with a release note when the numbers stabilize.
 
 Running several providers at once is fine (each task works in its own temp copy), but build the test binary once first (`cargo test --no-run`) and start the runs from that binary, or the second `cargo test` will wait on the build lock and may rewrite the binary under the first.
+
+## Results, 2026-09-12, paper map and editor position in the preamble
+
+The preamble now carries a paper map (every section, label, figure, table, equation and macro with its file and line, built by following `\input`), the author's editor position and selection when the request comes from the app, the decisions on record and the artefact commands, and a context pack that chunks along paragraphs and floats, drops LaTeX command names from its tokens and labels each hit with its section. Claude Code, full suite:
+
+| Tasks | Passed | Mean per task | Tool calls per task | Orientation calls (suite) |
+|---|---|---|---|---|
+| 01–21 single file, before (2026-09-10) | 21/21 | 16 s | 3.0 | not measured |
+| 01–21 single file, now | 21/21 | 14.7 s | 2.8 | 8 |
+| 22–31 multi-file, `DABIR_BENCH_BARE=1` | 9/10 | 16.7 s | 2.8 | 5 |
+| 22–31 multi-file, full preamble | 10/10 | 21.1 s (this run; 16 s in the earlier one) | 2.6 | 4 |
+
+The vague task fell from 49 s to 37 s. On the multi-file paper the map turns "change a word in the kappa sweep caption" from read → edit → verify (3 calls) into a single edit at `sections/ablations.tex:10`; the bare preamble fails the one task that says "add a sentence here", because without the editor position "here" has no referent, and passes it with the position in the prompt. Claude in `-p` mode does everything through Bash, so the remaining reads are `sed -n` of the lines the map named rather than searches.
 
 ## Results, 2026-09-10, third run (preamble in the loop)
 
@@ -74,6 +87,8 @@ Each `tasks/<id>.json`:
 |---|---|
 | `id` | Stable slug |
 | `kind` | `revision`, `repair` or `vague` |
+| `fixture` | Folder under `examples/` to copy (default `score-anchor`) |
+| `focus` | Optional `{file, line, endLine?, selection?}`: the editor position the app would send |
 | `prompt` | Exact agent request |
 | `mutate` | Optional `{file, find, replace}` applied before the run (for repair) |
 | `expect_files` | Paths that must appear in the worktree diff |

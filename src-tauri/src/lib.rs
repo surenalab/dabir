@@ -8,6 +8,7 @@ mod agents;
 mod export;
 mod git;
 mod memory;
+mod paper;
 mod refs;
 mod relay;
 mod synctex;
@@ -1159,6 +1160,7 @@ struct FollowUp {
 
 /// Start an agent run on a fresh worktree. Events stream on the `agent-event` channel.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 fn agent_run(
     app: AppHandle,
     root: String,
@@ -1167,6 +1169,7 @@ fn agent_run(
     model: Option<String>,
     effort: Option<String>,
     follow_up: Option<FollowUp>,
+    focus: Option<Focus>,
 ) -> Result<RunStarted, String> {
     let root_p = PathBuf::from(&root);
     // A follow-up keeps the worktree of the run under review: its changes stay in place and the next
@@ -1193,13 +1196,13 @@ fn agent_run(
                 if carried.is_empty() { String::new() } else { format!("\nSince then the author edited {} by hand; those edits are already in the files.", carried.join(", ")) },
                 prompt
             );
-            let full = agent_preamble(&root_p, &cwd, &ask);
+            let full = agent_preamble(&root_p, &cwd, &ask, &prompt, focus.as_ref());
             (f.run_id, cwd, full)
         }
         None => {
             let run_id = uuid::Uuid::new_v4().to_string()[..8].to_string();
             let wt = git::worktree_add(&root_p, &run_id)?;
-            let full = agent_preamble(&root_p, &wt, &prompt);
+            let full = agent_preamble(&root_p, &wt, &prompt, &prompt, focus.as_ref());
             (run_id, wt, full)
         }
     };
@@ -1235,7 +1238,7 @@ async fn agent_complete(
 Reply with only the text that should come next: finish the current sentence if it is unfinished, otherwise write the one sentence that follows. \
 Match the voice, tense and markup conventions already in use. No quotation marks, no commentary, no headings, and do not edit or create any file.\n\n<<<\n{context}\n>>>"
         );
-        let full = agent_preamble(&root_p, &wt, &ask);
+        let full = agent_preamble(&root_p, &wt, &ask, &ask, None);
         let (tx, rx) = std::sync::mpsc::channel::<agents::AgentEvent>();
         let steer = agents::Steer { model, effort };
         let result = (|| {
@@ -1293,13 +1296,76 @@ fn clean_continuation(raw: &str) -> String {
     first.trim().to_string()
 }
 
+/// Where the author is in the editor when they ask: the open file, the cursor line and any selection.
+/// "This paragraph", "here" and "the sentence above" resolve against it.
+#[derive(serde::Deserialize, Clone, Debug, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct Focus {
+    /// Path relative to the paper's root.
+    pub file: String,
+    /// 1-based line of the cursor (or the selection's first line).
+    pub line: usize,
+    /// Last line of the selection, when there is one.
+    #[serde(default)]
+    pub end_line: Option<usize>,
+    /// The selected text, if any, cut to a few hundred characters by the caller.
+    #[serde(default)]
+    pub selection: Option<String>,
+}
+
+impl Focus {
+    fn describe(&self, map: &paper::PaperMap) -> String {
+        // The deepest heading at or above the cursor in the same file.
+        let section = map
+            .headings
+            .iter()
+            .rev()
+            .find(|h| h.file == self.file && h.line <= self.line)
+            .map(|h| format!(", in the section “{}” ({}:{})", h.title, h.file, h.line))
+            .unwrap_or_default();
+        let range = match self.end_line {
+            Some(e) if e > self.line => format!("lines {}-{}", self.line, e),
+            _ => format!("line {}", self.line),
+        };
+        let mut s = format!("The editor is open at {} {}{}.", self.file, range, section);
+        match &self.selection {
+            Some(sel) if !sel.trim().is_empty() => {
+                let cut: String = sel.chars().take(600).collect();
+                s.push_str(&format!(
+                    " The author has this text selected; a request that says this, here or the selection means it:\n<<<\n{}{}\n>>>",
+                    cut,
+                    if sel.chars().count() > 600 { "…" } else { "" }
+                ));
+            }
+            _ => s.push_str(
+                " A request that says this, here or this paragraph refers to that place.",
+            ),
+        }
+        s
+    }
+}
+
 /// The minimal context every run starts with: who the paper is, where to read more,
 /// the environment prefix, and the passages most likely relevant to this request.
 /// The brief an agent gets before the request. It carries everything a first turn would otherwise
 /// spend tool calls on: where the paper is and where it ends, the project file, the file map, the
 /// likely relevant lines, and what is on PATH. `cwd` is the paper's folder inside the run's worktree.
-fn agent_preamble(root: &Path, cwd: &Path, prompt: &str) -> String {
-    let main = find_main_tex(root)
+/// `query` is the text retrieval ranks against: the author's new words alone, so a follow-up's
+/// boilerplate about the previous run does not drown them.
+fn agent_preamble(
+    root: &Path,
+    cwd: &Path,
+    prompt: &str,
+    query: &str,
+    focus: Option<&Focus>,
+) -> String {
+    let main_path = find_main_tex(root);
+    let map = main_path
+        .as_ref()
+        .map(|m| paper::build(root, m))
+        .unwrap_or_default();
+    let map_text = paper::render(&map, 5000);
+    let main = main_path
         .and_then(|p| {
             p.strip_prefix(root)
                 .ok()
@@ -1321,7 +1387,46 @@ fn agent_preamble(root: &Path, cwd: &Path, prompt: &str) -> String {
         })
         .unwrap_or_default();
     let files = memory::file_map(root, 80);
-    let pack = memory::context_pack(root, prompt, 2200);
+    // The author's own words, plus the selection if any: the ranking sees what they mean, not the
+    // preamble of a follow-up. The paper map already routes named sections and labels.
+    let query = match focus.and_then(|f| f.selection.as_deref()) {
+        Some(sel) => format!("{query}\n{sel}"),
+        None => query.to_string(),
+    };
+    let pack = memory::context_pack(root, &query, 2200);
+    // Durable decisions and the commands behind generated artefacts, one line each, so the agent
+    // neither opens .dabir/memory nor guesses how a figure was made.
+    let facts: Vec<String> = mem
+        .as_ref()
+        .map(|m| {
+            m.facts
+                .iter()
+                .take(12)
+                .map(|f| {
+                    let d = f.description.trim();
+                    let path = Path::new(&f.path)
+                        .strip_prefix(root)
+                        .map(|p| p.to_string_lossy().to_string())
+                        .unwrap_or_else(|_| f.path.clone());
+                    if d.is_empty() {
+                        format!("{} ({})", f.name, path)
+                    } else {
+                        format!("{}: {} ({})", f.name, d, path)
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let artefacts: Vec<String> = mem
+        .as_ref()
+        .map(|m| {
+            m.provenance
+                .iter()
+                .take(10)
+                .map(|a| format!("{} <- `{}`", a.artefact, a.command))
+                .collect()
+        })
+        .unwrap_or_default();
     // What happened before this run: the last runs (request, outcome, the agent's own report) and the
     // paper's last steps, so "make it bigger" or "undo that" has a referent.
     let runs = memory::recent_runs(root, 3);
@@ -1354,7 +1459,7 @@ fn agent_preamble(root: &Path, cwd: &Path, prompt: &str) -> String {
     out.push_str("This folder is the whole task. Directories above it belong to other projects: do not read, search or edit anything outside it, and ignore instruction files (AGENTS.md, CLAUDE.md) found above it.\n\n");
 
     out.push_str("How to work\n");
-    out.push_str("1. This message already holds the project brief, the file list and the likely relevant lines. Do not list directories, run git, or open AGENTS.md, CLAUDE.md, .dabir/PROJECT.md, .dabir/memory or .dabir/skills to orient yourself; open only the files you will change.\n");
+    out.push_str("1. This message already holds the project brief, the paper map (every section, label, figure, table, equation and macro with its file and line), the file list and the likely relevant lines. Do not list directories, search the tree, run git, or open AGENTS.md, CLAUDE.md, .dabir/PROJECT.md, .dabir/memory or .dabir/skills to orient yourself; go straight to the file and line the map gives and read only the lines around it.\n");
     out.push_str("2. Decide on one reading of the request and carry it out in one pass. If the request is short or ambiguous, choose the most useful reading given the paper as it stands and do not stop to ask. Prefer cheap paths: recorded commands, existing artefacts, TikZ or pgfplots for a schematic. No new experiments or long runs unless asked.\n");
     out.push_str("3. Make the smallest change that does the job. Never hand-edit generated artefacts (figures, tables, numbers copied from them); rerun their recorded command instead.\n");
     if let Some(p) = &prefix {
@@ -1397,6 +1502,28 @@ fn agent_preamble(root: &Path, cwd: &Path, prompt: &str) -> String {
         out.push('\n');
     } else {
         out.push_str(&format!("\nMain file: {main}\n"));
+    }
+    // DABIR_BENCH_BARE=1 leaves out the map, the author's position and the memory blocks, so the
+    // bench can measure what they buy; the app never sets it.
+    let bare = std::env::var("DABIR_BENCH_BARE").is_ok();
+    if !bare && !map_text.trim().is_empty() {
+        out.push_str("\nPaper map\n");
+        out.push_str(&map_text);
+    }
+    if let Some(f) = focus.filter(|_| !bare) {
+        out.push_str("\nWhere the author is\n");
+        out.push_str(&f.describe(&map));
+        out.push('\n');
+    }
+    if !bare && !facts.is_empty() {
+        out.push_str("\nDecisions on record (.dabir/memory; already applied, do not reopen)\n");
+        out.push_str(&facts.join("\n"));
+        out.push('\n');
+    }
+    if !bare && !artefacts.is_empty() {
+        out.push_str("\nGenerated artefacts and the command that makes each (rerun it; never edit the artefact)\n");
+        out.push_str(&artefacts.join("\n"));
+        out.push('\n');
     }
     if !files.is_empty() {
         out.push_str("\nFiles\n");
@@ -2214,7 +2341,7 @@ mod tests {
         )
         .unwrap();
         let cwd = dir.join(".dabir/worktrees/x");
-        let out = agent_preamble(&dir, &cwd, "add a figure");
+        let out = agent_preamble(&dir, &cwd, "add a figure", "add a figure", None);
         assert!(out.contains(&format!("`{}`", cwd.display())), "cwd named");
         assert!(out.contains("do not read, search or edit anything outside it"));
         assert!(
@@ -2226,6 +2353,31 @@ mod tests {
         assert!(out.contains("tectonic -X compile main.tex"));
         assert!(out.contains("do not stop to ask"));
         assert!(out.ends_with("Request\nadd a figure"));
+        assert!(out.contains("Paper map"), "{out}");
+        assert!(out.contains("Preamble main.tex:1-1"), "{out}");
+        // The editor position rides along and is resolved against the map.
+        fs::write(
+            dir.join("main.tex"),
+            "\\documentclass{article}\n\\begin{document}\n\\section{Intro}\nA.\n\\section{Method}\\label{sec:m}\nAnchoring holds a margin.\nMore.\n\\end{document}\n",
+        )
+        .unwrap();
+        let focus = Focus {
+            file: "main.tex".into(),
+            line: 6,
+            end_line: Some(6),
+            selection: Some("Anchoring holds a margin.".into()),
+        };
+        let with = agent_preamble(&dir, &cwd, "shorten this", "shorten this", Some(&focus));
+        assert!(with.contains("Where the author is"), "{with}");
+        assert!(
+            with.contains("main.tex line 6, in the section “Method” (main.tex:5)"),
+            "{with}"
+        );
+        assert!(
+            with.contains("<<<\nAnchoring holds a margin.\n>>>"),
+            "{with}"
+        );
+        assert!(with.contains("2 Method 5  [sec:m 5]"), "{with}");
         // A later run learns what the earlier one did and whether the author kept it.
         fs::create_dir_all(dir.join(".dabir/memory")).unwrap();
         memory::log_run_with(
@@ -2236,7 +2388,13 @@ mod tests {
             Some("Added a TikZ schematic of the clip."),
             "rejected",
         );
-        let again = agent_preamble(&dir, &cwd, "make the figure a plot instead");
+        let again = agent_preamble(
+            &dir,
+            &cwd,
+            "make the figure a plot instead",
+            "make the figure a plot instead",
+            None,
+        );
         assert!(again.contains("Previous agent runs"));
         assert!(
             again.contains(
@@ -2714,6 +2872,12 @@ mod tests {
         struct Task {
             id: String,
             prompt: String,
+            /// Folder under examples/ the task runs on; score-anchor unless said otherwise.
+            #[serde(default = "default_fixture")]
+            fixture: String,
+            /// Where the author's editor is, as the app would send it.
+            #[serde(default)]
+            focus: Option<Focus>,
             #[serde(default)]
             mutate: Vec<Mutate>,
             #[serde(default)]
@@ -2730,6 +2894,127 @@ mod tests {
         fn default_timeout() -> u64 {
             180
         }
+        fn default_fixture() -> String {
+            "score-anchor".into()
+        }
+        /// Copy a fixture without its git state, build output and worktrees.
+        fn copy_fixture(src: &Path, dst: &Path) {
+            let Ok(rd) = fs::read_dir(src) else { return };
+            for e in rd.flatten() {
+                let name = e.file_name().to_string_lossy().to_string();
+                if name == ".git" {
+                    continue;
+                }
+                let p = e.path();
+                let d = dst.join(&name);
+                if p.is_dir() {
+                    if name == ".dabir" {
+                        fs::create_dir_all(&d).unwrap();
+                        for sub in fs::read_dir(&p).unwrap().flatten() {
+                            let n = sub.file_name().to_string_lossy().to_string();
+                            if ["worktrees", "build", "index"].contains(&n.as_str()) {
+                                continue;
+                            }
+                            if sub.path().is_dir() {
+                                copy_fixture(&sub.path(), &d.join(&n));
+                            } else {
+                                let _ = fs::copy(sub.path(), d.join(&n));
+                            }
+                        }
+                    } else {
+                        copy_fixture(&p, &d);
+                    }
+                } else {
+                    fs::create_dir_all(dst).unwrap();
+                    let _ = fs::copy(&p, &d);
+                }
+            }
+        }
+        /// What a tool call was for. Orientation calls (listing, searching, opening the brief or
+        /// memory) are the waste the preamble exists to remove; reads and edits are the work.
+        fn classify(tool: &str, text: &str) -> &'static str {
+            let n = tool.to_lowercase();
+            let t = text.to_lowercase();
+            // A shell-only agent does everything through Bash; sort its commands by what they do.
+            let mut first = t.trim_start();
+            if first.starts_with("cd ") {
+                first = first.split("&&").nth(1).unwrap_or("").trim_start();
+            }
+            let first = first.split("&&").next().unwrap_or("").trim();
+            let orient_cmd = first.starts_with("ls")
+                || first.starts_with("find ")
+                || first.starts_with("rg ")
+                || first.starts_with("grep ")
+                || first.starts_with("tree")
+                || first.starts_with("git ")
+                || first.starts_with("pwd");
+            let read_cmd = first.starts_with("cat ")
+                || first.starts_with("sed -n")
+                || first.starts_with("head ")
+                || first.starts_with("tail ")
+                || first.starts_with("nl ");
+            let edit_cmd = t.contains("sed -i")
+                || t.contains("perl -")
+                || t.contains(".write(")
+                || t.contains(".write_text(")
+                || (t.contains("open(") && (t.contains("'w'") || t.contains("\"w\"")))
+                || t.contains("cat >")
+                || t.contains("tee ");
+            let orient_file = t.contains("project.md")
+                || t.contains("agents.md")
+                || t.contains("claude.md")
+                || t.contains(".dabir/memory")
+                || t.contains("skill.md");
+            if n.contains("grep")
+                || n.contains("glob")
+                || n.contains("search")
+                || n.contains("ls")
+                || n.contains("list")
+            {
+                "orient"
+            } else if n.contains("read") || n.contains("view") || n.contains("open") {
+                if orient_file {
+                    "orient"
+                } else {
+                    "read"
+                }
+            } else if n.contains("edit")
+                || n.contains("write")
+                || n.contains("create")
+                || n.contains("replace")
+                || n.contains("patch")
+                || n.contains("apply")
+                || n.contains("multi")
+            {
+                "edit"
+            } else if n.contains("bash")
+                || n.contains("shell")
+                || n.contains("command")
+                || n.contains("exec")
+                || n.contains("terminal")
+                || n.contains("run")
+            {
+                if first.contains("tectonic")
+                    || first.contains("typst")
+                    || first.contains("latexmk")
+                    || first.contains("pdflatex")
+                {
+                    "compile"
+                } else if edit_cmd {
+                    "edit"
+                } else if orient_file {
+                    "orient"
+                } else if read_cmd {
+                    "read"
+                } else if orient_cmd {
+                    "orient"
+                } else {
+                    "run"
+                }
+            } else {
+                "other"
+            }
+        }
 
         let provider = std::env::var("DABIR_LIVE_PROVIDER").unwrap_or_else(|_| "claude".into());
         let only = std::env::var("DABIR_BENCH_TASK").ok();
@@ -2745,16 +3030,18 @@ mod tests {
             .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("json"))
             .collect();
         paths.sort();
-        let src = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples/score-anchor");
         let mut report =
             serde_json::json!({ "provider": provider, "at": chrono_like(), "tasks": [] });
         let mut passed = 0usize;
         let mut total = 0usize;
+        let mut all_tools = 0usize;
+        let mut all_orient = 0usize;
 
         for path in paths {
             let task: Task = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+            // DABIR_BENCH_TASK picks one task by id or a family by a substring such as "mf".
             if let Some(ref id) = only {
-                if &task.id != id {
+                if !task.id.contains(id.as_str()) {
                     continue;
                 }
             }
@@ -2768,48 +3055,16 @@ mod tests {
             ));
             let _ = fs::remove_dir_all(&dir);
             fs::create_dir_all(&dir).unwrap();
-            for f in [
-                "main.tex",
-                "refs.bib",
-                "dabir.toml",
-                "AGENTS.md",
-                "CLAUDE.md",
-                ".gitignore",
-            ] {
-                let _ = fs::copy(src.join(f), dir.join(f));
-            }
-            for d in [
-                "code",
-                "tables",
-                "figures",
-                ".dabir",
-                ".dabir/memory",
-                ".dabir/skills",
-            ] {
-                fs::create_dir_all(dir.join(d)).unwrap();
-            }
-            for f in [
-                "code/sweep.py",
-                "tables/psnr-sweep.tex",
-                "figures/psnr-vs-noise.pdf",
-                ".dabir/PROJECT.md",
-                ".dabir/provenance.json",
-                ".dabir/memory/reviewer-2-anchor-ratio.md",
-            ] {
-                let _ = fs::copy(src.join(f), dir.join(f));
-            }
-            // Copy skills so compile-and-fix etc. are discoverable.
-            if let Ok(skills) = fs::read_dir(src.join(".dabir/skills")) {
-                for sk in skills.flatten() {
-                    let name = sk.file_name();
-                    let dest = dir.join(".dabir/skills").join(&name);
-                    let _ = fs::create_dir_all(&dest);
-                    let skill_md = sk.path().join("SKILL.md");
-                    if skill_md.exists() {
-                        let _ = fs::copy(&skill_md, dest.join("SKILL.md"));
-                    }
-                }
-            }
+            let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../examples")
+                .join(&task.fixture);
+            assert!(
+                fixture.is_dir(),
+                "{}: fixture {} missing",
+                task.id,
+                task.fixture
+            );
+            copy_fixture(&fixture, &dir);
             for m in &task.mutate {
                 let p = dir.join(&m.file);
                 let body = fs::read_to_string(&p).unwrap_or_default();
@@ -2830,7 +3085,7 @@ mod tests {
             // The prompt the app would send, so the bench measures the preamble too.
             let launch = agents::run_with(
                 provider.clone(),
-                agent_preamble(&dir, &wt, &task.prompt),
+                agent_preamble(&dir, &wt, &task.prompt, &task.prompt, task.focus.as_ref()),
                 wt.clone(),
                 run_id.clone(),
                 agents::Steer::default(),
@@ -2841,6 +3096,7 @@ mod tests {
             let mut ok_agent = false;
             let mut err = String::new();
             let mut tools = 0usize;
+            let mut kinds: std::collections::BTreeMap<&'static str, usize> = Default::default();
             if let Err(e) = launch {
                 err = e;
             } else {
@@ -2848,6 +3104,9 @@ mod tests {
                 {
                     if e.kind == "tool" {
                         tools += 1;
+                        *kinds
+                            .entry(classify(e.tool.as_deref().unwrap_or(""), &e.text))
+                            .or_default() += 1;
                     }
                     if verbose && (e.kind == "tool" || e.kind == "text") {
                         eprintln!(
@@ -2948,26 +3207,40 @@ mod tests {
                 let _ = git::worktree_remove(&dir, &run_id);
             }
             let secs = started.elapsed().as_secs_f64();
+            let orient = kinds.get("orient").copied().unwrap_or(0);
+            let kinds_text = kinds
+                .iter()
+                .map(|(k, v)| format!("{k} {v}"))
+                .collect::<Vec<_>>()
+                .join(", ");
             if ok {
                 passed += 1;
-                eprintln!("PASS {} ({:.1}s, {} tool calls)", task.id, secs, tools);
+                eprintln!(
+                    "PASS {} ({:.1}s, {} tool calls: {})",
+                    task.id, secs, tools, kinds_text
+                );
             } else {
                 eprintln!(
-                    "FAIL {} ({:.1}s, {} tool calls): {}",
-                    task.id, secs, tools, detail
+                    "FAIL {} ({:.1}s, {} tool calls: {}): {}",
+                    task.id, secs, tools, kinds_text, detail
                 );
             }
+            all_tools += tools;
+            all_orient += orient;
             report["tasks"]
                 .as_array_mut()
                 .unwrap()
                 .push(serde_json::json!({
-                    "id": task.id, "ok": ok, "secs": secs, "tools": tools, "detail": detail,
+                    "id": task.id, "ok": ok, "secs": secs, "tools": tools, "orient": orient,
+                    "kinds": kinds, "detail": detail,
                 }));
             let _ = fs::remove_dir_all(&dir);
         }
 
         report["passed"] = passed.into();
         report["total"] = total.into();
+        report["tools"] = all_tools.into();
+        report["orient"] = all_orient.into();
         report["rate"] = if total == 0 {
             0.0.into()
         } else {
@@ -2979,7 +3252,10 @@ mod tests {
             None => results_dir.join(format!("{provider}.json")),
         };
         fs::write(&out, serde_json::to_string_pretty(&report).unwrap()).unwrap();
-        eprintln!("\n{passed}/{total} passed → {}", out.display());
+        eprintln!(
+            "\n{passed}/{total} passed, {all_tools} tool calls of which {all_orient} orientation → {}",
+            out.display()
+        );
         assert!(total > 0, "no tasks ran");
         // Soft: do not fail the cargo test on a low rate; the JSON is the artifact.
         fn chrono_like() -> String {

@@ -1,0 +1,14 @@
+\begin{table}[t]
+  \centering
+  \caption{Anchoring across samplers, sparse-view CT at $\sigma = 0.1$.}
+  \label{tab:sampler}
+  \begin{tabular}{lcc}
+    \toprule
+    Sampler & Unanchored & Anchored \\
+    \midrule
+    DDIM, 100 steps & 31.0 & 32.9 \\
+    Predictor--corrector, 1000 steps & 31.7 & 33.8 \\
+    EDM stochastic, 50 steps & 31.4 & 32.8 \\
+    \bottomrule
+  \end{tabular}
+\end{table}

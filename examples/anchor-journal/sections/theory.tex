@@ -1,0 +1,35 @@
+\section{Theory}
+\label{sec:theory}
+We show that the anchored update is a contraction towards the posterior mode under a smoothness assumption on the score. Proofs are in \cref{app:proofs}.
+
+\begin{assumption}[Smooth score]
+\label{ass:smooth}
+For every $t$, the score $\score(\cdot, t)$ is $L_t$-Lipschitz: $\norm{\score(x, t) - \score(x', t)}_2 \le L_t \norm{x - x'}_2$ for all $x, x' \in \R^n$.
+\end{assumption}
+
+\begin{assumption}[Bounded likelihood curvature]
+\label{ass:curv}
+The Hessian of $\tfrac12 \norm{\meas - \fwd \xhat(x)}_2^2$ has spectral norm at most $M$ on the support of $p_t$.
+\end{assumption}
+
+\begin{lemma}[Anchoring is non-expansive]
+\label{lem:nonexp}
+The map $g \mapsto g \cdot \min(1, c / \norm{g}_2)$ is $1$-Lipschitz for every $c > 0$.
+\end{lemma}
+
+\begin{theorem}[Contraction]
+\label{thm:contraction}
+Under \cref{ass:smooth,ass:curv}, one anchored reverse step with step size $h_t \le 1 / (L_t + \kap M)$ satisfies
+\begin{equation}
+  \E \norm{x_{t-1} - x^\star_{t-1}}_2 \le (1 - h_t \mu_t) \norm{x_t - x^\star_t}_2 + \sigma_t \sqrt{2 h_t n},
+  \label{eq:contraction}
+\end{equation}
+where $x^\star_t$ is the posterior mode at level $t$ and $\mu_t$ its strong convexity constant.
+\end{theorem}
+
+\begin{corollary}
+\label{cor:budget}
+The number of steps to reach accuracy $\epsilon$ scales as $O(\kap M / \mu \log(1/\epsilon))$, so a larger anchor ratio buys nothing once the guidance no longer saturates the clip.
+\end{corollary}
+
+The unanchored update has no such guarantee: when $\norm{g_t}$ exceeds $\norm{\score}$ by a factor larger than $1/(h_t M)$ the step overshoots and the iterate leaves the region where \cref{ass:smooth} holds, which is exactly the failure mode reported in~\cite{morales2023}.

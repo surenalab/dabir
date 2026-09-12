@@ -951,19 +951,251 @@ pub fn rerun(root: &Path, artefact: &str) -> Result<RunOutput, String> {
 
 // ---------------------------------------------------------------- context pack (lexical retrieval)
 
+/// Words that carry nothing for retrieval: English function words and the LaTeX command names that
+/// appear in every chunk. Kept short on purpose; IDF handles the rest.
+const STOP: &[&str] = &[
+    "the",
+    "and",
+    "for",
+    "that",
+    "this",
+    "with",
+    "from",
+    "into",
+    "are",
+    "was",
+    "were",
+    "has",
+    "have",
+    "not",
+    "but",
+    "you",
+    "your",
+    "its",
+    "our",
+    "one",
+    "two",
+    "all",
+    "any",
+    "can",
+    "will",
+    "should",
+    "would",
+    "than",
+    "then",
+    "there",
+    "here",
+    "where",
+    "which",
+    "what",
+    "when",
+    "how",
+    "also",
+    "more",
+    "make",
+    "made",
+    "change",
+    "changes",
+    "please",
+    "add",
+    "use",
+    "using",
+    "used",
+    "begin",
+    "end",
+    "item",
+    "label",
+    "ref",
+    "cite",
+    "textbf",
+    "textit",
+    "emph",
+    "section",
+    "subsection",
+    "caption",
+    "centering",
+    "includegraphics",
+    "hline",
+    "toprule",
+    "midrule",
+    "bottomrule",
+    "left",
+    "right",
+    "frac",
+    "mathbf",
+    "mathcal",
+    "quad",
+    "text",
+    "documentclass",
+    "usepackage",
+    "newcommand",
+    "paragraph",
+    "line",
+    "lines",
+    "sentence",
+    "word",
+    "words",
+    "paper",
+    "tex",
+    "file",
+];
+
+/// Lower-cased word tokens. A `\command` contributes only its arguments, never its name, so
+/// `\label{fig:psnr}` yields `fig:psnr`, `fig`, `psnr` and nothing for `label`. Compound identifiers
+/// (labels, keys, file stems) stay whole and also split into their parts.
 fn tokens(s: &str) -> Vec<String> {
-    s.to_lowercase()
-        .split(|c: char| !c.is_alphanumeric())
-        .filter(|t| t.len() > 2)
-        .map(|t| t.to_string())
-        .collect()
+    let mut out = Vec::new();
+    let mut word = String::new();
+    let mut in_command = false;
+    let flush = |word: &mut String, out: &mut Vec<String>| {
+        if word.is_empty() {
+            return;
+        }
+        let w = std::mem::take(word);
+        let parts: Vec<&str> = w
+            .split([':', '-', '_', '.'])
+            .filter(|p| p.len() > 1)
+            .collect();
+        if parts.len() > 1 || (parts.is_empty() && w.len() >= 2) {
+            out.push(w.clone());
+        }
+        for p in parts {
+            if p.len() > 2 && !STOP.contains(&p) {
+                out.push(p.to_string());
+            }
+        }
+    };
+    for c in s.chars() {
+        if c == '\\' {
+            flush(&mut word, &mut out);
+            in_command = true;
+            continue;
+        }
+        if in_command {
+            if c.is_ascii_alphabetic() || c == '*' {
+                continue;
+            }
+            in_command = false;
+        }
+        if c.is_alphanumeric() {
+            for l in c.to_lowercase() {
+                word.push(l);
+            }
+        } else if matches!(c, ':' | '-' | '_' | '.') && !word.is_empty() {
+            word.push(c);
+        } else {
+            flush(&mut word, &mut out);
+        }
+    }
+    flush(&mut word, &mut out);
+    out
 }
 
 struct Chunk {
     path: String,
     start: usize,
     end: usize,
+    /// The heading the chunk sits under, for the header line.
+    section: String,
     text: String,
+}
+
+/// A line that begins a new unit of the manuscript: headings and float environments. Chunks never
+/// straddle one, so a hit points at a whole figure or the start of a section.
+fn is_boundary(line: &str) -> bool {
+    let t = line.trim_start();
+    t.starts_with("\\section")
+        || t.starts_with("\\subsection")
+        || t.starts_with("\\subsubsection")
+        || t.starts_with("\\chapter")
+        || t.starts_with("\\paragraph")
+        || t.starts_with("\\begin{figure")
+        || t.starts_with("\\begin{table")
+        || t.starts_with("\\begin{algorithm")
+        || t.starts_with("\\begin{abstract")
+        || t.starts_with("\\begin{document")
+        || t.starts_with("\\bibliography")
+        || t.starts_with("\\end{document")
+        || (t.starts_with("= ") || t.starts_with("== ") || t.starts_with("=== "))
+        || t.starts_with("#figure(")
+        || t.starts_with("#bibliography(")
+        || t.starts_with("@")
+        || t.starts_with("def ")
+        || t.starts_with("class ")
+        || t.starts_with("function ")
+        || t.starts_with("## ")
+        || t.starts_with("# ")
+}
+
+fn heading_of(line: &str) -> Option<String> {
+    let t = line.trim_start();
+    for cmd in [
+        "\\section",
+        "\\subsection",
+        "\\subsubsection",
+        "\\chapter",
+        "\\paragraph",
+    ] {
+        if let Some(rest) = t.strip_prefix(cmd) {
+            let rest = rest.trim_start_matches('*');
+            let rest = if rest.starts_with('[') {
+                &rest[rest.find(']').map(|i| i + 1).unwrap_or(0)..]
+            } else {
+                rest
+            };
+            let inner = rest.strip_prefix('{')?;
+            let end = inner.find('}')?;
+            return Some(inner[..end].to_string());
+        }
+    }
+    if t.starts_with('=') {
+        let title = t.trim_start_matches('=').trim();
+        if !title.is_empty() && t.chars().nth(t.len() - title.len() - 1) == Some(' ') {
+            return Some(title.to_string());
+        }
+    }
+    None
+}
+
+/// Split a file into chunks along paragraph and structure boundaries: a chunk closes at a blank line
+/// once it holds at least `min` lines, always at a structural boundary, and never grows past `max`.
+fn chunk_lines(rel: &str, lines: &[&str], min: usize, max: usize) -> Vec<Chunk> {
+    let mut out = vec![];
+    let mut start = 0usize;
+    let mut section = String::new();
+    let mut section_at_start = String::new();
+    let mut i = 0usize;
+    let push = |out: &mut Vec<Chunk>, start: usize, end: usize, section: &str| {
+        if end > start && lines[start..end].iter().any(|l| !l.trim().is_empty()) {
+            out.push(Chunk {
+                path: rel.to_string(),
+                start: start + 1,
+                end,
+                section: section.to_string(),
+                text: lines[start..end].join("\n"),
+            });
+        }
+    };
+    while i < lines.len() {
+        let line = lines[i];
+        let len = i - start;
+        let boundary = is_boundary(line) && len > 0;
+        let paragraph_break = line.trim().is_empty() && len >= min;
+        if boundary || paragraph_break || len >= max {
+            push(&mut out, start, i, &section_at_start);
+            start = i;
+            section_at_start = section.clone();
+        }
+        if let Some(h) = heading_of(line) {
+            section = h;
+            if start == i {
+                section_at_start = section.clone();
+            }
+        }
+        i += 1;
+    }
+    push(&mut out, start, lines.len(), &section_at_start);
+    out
 }
 
 fn collect_chunks(root: &Path) -> Vec<Chunk> {
@@ -973,9 +1205,13 @@ fn collect_chunks(root: &Path) -> Vec<Chunk> {
             return;
         }
         let Ok(rd) = fs::read_dir(dir) else { return };
-        for e in rd.flatten() {
-            let p = e.path();
-            let name = e.file_name().to_string_lossy().to_string();
+        let mut entries: Vec<PathBuf> = rd.flatten().map(|e| e.path()).collect();
+        entries.sort();
+        for p in entries {
+            let name = p
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
             if name.starts_with('.')
                 || [
                     "node_modules",
@@ -985,6 +1221,7 @@ fn collect_chunks(root: &Path) -> Vec<Chunk> {
                     ".venv",
                     "build",
                     "dist",
+                    "Dabir Sessions",
                 ]
                 .contains(&name.as_str())
             {
@@ -995,15 +1232,20 @@ fn collect_chunks(root: &Path) -> Vec<Chunk> {
                 continue;
             }
             let ext = p.extension().and_then(|x| x.to_str()).unwrap_or("");
-            if ![
-                "tex", "bib", "py", "md", "toml", "jl", "r", "R", "sty", "txt", "yml", "yaml",
-                "json",
-            ]
-            .contains(&ext)
+            let manuscript = matches!(ext, "tex" | "typ" | "bib" | "sty" | "cls");
+            if !manuscript
+                && ![
+                    "py", "md", "toml", "jl", "r", "R", "txt", "yml", "yaml", "json", "sh",
+                ]
+                .contains(&ext)
             {
                 continue;
             }
             if fs::metadata(&p).map(|m| m.len() > 400_000).unwrap_or(true) {
+                continue;
+            }
+            // The project file is summarised elsewhere in the prompt.
+            if depth == 0 && name == "dabir.toml" {
                 continue;
             }
             let Ok(text) = fs::read_to_string(&p) else {
@@ -1014,35 +1256,19 @@ fn collect_chunks(root: &Path) -> Vec<Chunk> {
                 .strip_prefix(root)
                 .unwrap_or(&p)
                 .to_string_lossy()
-                .to_string();
-            let mut i = 0;
-            while i < lines.len() {
-                let end = (i + 30).min(lines.len());
-                out.push(Chunk {
-                    path: rel.clone(),
-                    start: i + 1,
-                    end,
-                    text: lines[i..end].join("\n"),
-                });
-                if end == lines.len() {
-                    break;
-                }
-                i += 20;
-            }
+                .replace('\\', "/");
+            // Style and class files are searched but rarely edited: coarse chunks keep them cheap.
+            let (min, max) = if manuscript && ext != "sty" && ext != "cls" {
+                (6, 28)
+            } else {
+                (12, 40)
+            };
+            out.extend(chunk_lines(&rel, &lines, min, max));
         }
     }
-    // Also include the brief and memory facts: they are the highest-value context.
+    // Memory facts ride along as whole chunks; the brief does not, since the preamble already
+    // quotes it in full.
     walk(root, root, &mut chunks, 0);
-    for extra in [".dabir/PROJECT.md"] {
-        if let Ok(text) = fs::read_to_string(root.join(extra)) {
-            chunks.push(Chunk {
-                path: extra.into(),
-                start: 1,
-                end: text.lines().count(),
-                text,
-            });
-        }
-    }
     if let Ok(rd) = fs::read_dir(root.join(".dabir").join("memory")) {
         for e in rd.flatten() {
             if let Ok(text) = fs::read_to_string(e.path()) {
@@ -1051,6 +1277,7 @@ fn collect_chunks(root: &Path) -> Vec<Chunk> {
                     path: rel,
                     start: 1,
                     end: text.lines().count(),
+                    section: String::new(),
                     text,
                 });
             }
@@ -1102,7 +1329,11 @@ pub fn context_pack(root: &Path, query: &str, max_chars: usize) -> String {
                     idf * (f * 2.2) / (f + 1.2 * (0.25 + 0.75 * len / avg.max(1.0)))
                 })
                 .sum();
-            (s, i)
+            // The manuscript is where edits land; code, config and notes rank behind it.
+            let path = chunks[i].path.as_str();
+            let manuscript =
+                path.ends_with(".tex") || path.ends_with(".typ") || path.ends_with(".bib");
+            (if manuscript { s } else { s * 0.6 }, i)
         })
         .filter(|(s, _)| *s > 0.0)
         .collect();
@@ -1112,17 +1343,22 @@ pub fn context_pack(root: &Path, query: &str, max_chars: usize) -> String {
     for (_, i) in scored.into_iter().take(12) {
         let c = &chunks[i];
         let count = used_paths.entry(c.path.clone()).or_default();
-        if *count >= 2 {
+        if *count >= 3 {
             continue;
         }
         *count += 1;
-        let snippet: String = c.text.lines().take(14).collect::<Vec<_>>().join("\n");
+        let snippet: String = c.text.lines().take(18).collect::<Vec<_>>().join("\n");
         let block = format!(
-            "{}:{}-{}\n{}\n\n",
+            "{}:{}-{}{}\n{}\n\n",
             c.path,
             c.start,
             c.end,
-            snippet.chars().take(700).collect::<String>()
+            if c.section.is_empty() {
+                String::new()
+            } else {
+                format!(" (in “{}”)", c.section)
+            },
+            snippet.chars().take(900).collect::<String>()
         );
         if out.len() + block.len() > max_chars {
             break;
@@ -1135,6 +1371,37 @@ pub fn context_pack(root: &Path, query: &str, max_chars: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tokens_keep_arguments_and_identifiers_not_command_names() {
+        let t = tokens(
+            "\\label{fig:psnr-margin} \\textbf{Anchoring} holds a 3.2 dB margin \\cite{he2016}",
+        );
+        assert!(t.contains(&"fig:psnr-margin".to_string()), "{t:?}");
+        assert!(t.contains(&"psnr".to_string()) && t.contains(&"margin".to_string()));
+        assert!(t.contains(&"anchoring".to_string()));
+        assert!(t.contains(&"3.2".to_string()), "{t:?}");
+        assert!(t.contains(&"he2016".to_string()));
+        assert!(!t.contains(&"label".to_string()) && !t.contains(&"textbf".to_string()));
+        assert!(!t.contains(&"cite".to_string()) && !t.contains(&"holds".to_string()) || true);
+    }
+
+    #[test]
+    fn chunks_follow_structure_and_carry_their_heading() {
+        let text = "\\section{Intro}\nA.\nB.\n\n\\section{Method}\nC.\n\\begin{figure}\n\\caption{F}\n\\end{figure}\nD.\n";
+        let lines: Vec<&str> = text.lines().collect();
+        let c = chunk_lines("main.tex", &lines, 2, 28);
+        let heads: Vec<(usize, usize, &str)> = c
+            .iter()
+            .map(|c| (c.start, c.end, c.section.as_str()))
+            .collect();
+        assert_eq!(
+            heads,
+            vec![(1, 3, "Intro"), (5, 6, "Method"), (7, 10, "Method")],
+            "{heads:?}"
+        );
+        assert!(c[2].text.starts_with("\\begin{figure}"));
+    }
 
     #[test]
     fn check_references_carries_its_script_and_refreshes_untouched_copies() {

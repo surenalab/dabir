@@ -1,0 +1,16 @@
+\section{Introduction}
+\label{sec:intro}
+\IEEEPARstart{R}{econstructing} an image from incomplete measurements is ill-posed unless the prior closes the gap left by the forward operator~\cite{okonkwo2021,lindqvist2022}. Diffusion models are now the prior of choice for this role~\cite{ho2020ddpm,song2021sde,dhariwal2021}, but guided sampling can wander far from the data manifold when the likelihood term dominates~\cite{morales2023,chung2023dps}. We ask a narrow question: how far may the guidance move a sample before the score stops being trustworthy?
+
+Our conference paper~\cite{vantreight2025anchor} answered this with score anchoring, a clip on the guidance gradient relative to the prior score. That paper studied two tasks, one sampler and a single noise range. Reviewers and later users raised three questions that this article answers. Does the rule have a convergence guarantee? Does it survive a change of sampler? Does it hold up on tasks whose forward operators are nonlinear or ill-conditioned in a different way from tomography?
+
+\subsection{Contributions}
+\label{sec:contributions}
+\begin{itemize}
+  \item A contraction result (\cref{thm:contraction}) showing that the anchored update shrinks the distance to the posterior mode under \cref{ass:smooth}.
+  \item A sampler-agnostic formulation (\cref{sec:samplers}) covering DDIM, predictor--corrector and stochastic samplers with one shared anchor ratio.
+  \item A study across six inverse problems (\cref{sec:experiments}) with five baselines, reported in \cref{tab:main} and \cref{fig:psnr-all}.
+  \item An ablation of the anchor ratio (\cref{sec:ablation-kappa}) showing a flat plateau for $\kap \in [0.5, 2]$.
+\end{itemize}
+
+The rest of the paper is organised as follows. \Cref{sec:related} places anchoring among guidance schemes. \Cref{sec:method} restates the rule and \cref{sec:theory} proves its properties. \Cref{sec:experiments,sec:ablations} report results, and \cref{sec:discussion} discusses limitations.

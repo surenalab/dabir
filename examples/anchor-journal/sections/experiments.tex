@@ -1,0 +1,47 @@
+\section{Experiments}
+\label{sec:experiments}
+\subsection{Setup}
+\label{sec:setup}
+We evaluate on six inverse problems: sparse-view CT with 30 views~\cite{okonkwo2021}, $4\times$ accelerated MRI on fastMRI knees~\cite{zbontar2018fastmri}, Gaussian deblurring with a $61 \times 61$ kernel, box inpainting of a $128 \times 128$ region, $4\times$ super-resolution, and Fourier phase retrieval with $2\times$ oversampling. Baselines are DPS~\cite{chung2023dps}, $\Pi$GDM~\cite{song2023pigdm}, DDRM~\cite{kawar2022ddrm}, MCG~\cite{chung2022mcg} and RED-diff~\cite{mardani2023red}. All methods share the same pretrained score network per dataset and the same 1000-step schedule. We report PSNR and SSIM over 100 test images and five seeds; noise levels range over $\sigma \in \{0.05, 0.1, 0.2, 0.3\}$.
+
+\subsection{Main results}
+\label{sec:main-results}
+\input{tables/main-results}
+\Cref{tab:main} reports PSNR at $\sigma = 0.1$. Anchoring is best or within 0.1 dB of best on every task, and the margin over the strongest baseline grows with noise (\cref{fig:psnr-all}). Across all noise levels the anchored sampler is the only method whose reconstructions remain sharp at $\sigma = 0.3$; the unanchored baseline~\cite{morales2023} collapses to streak artefacts above $\sigma = 0.2$.
+
+\begin{figure*}[t]
+  \centering
+  \begin{subfigure}[b]{0.32\textwidth}
+    \includegraphics[width=\linewidth]{figures/psnr-vs-noise.pdf}
+    \caption{Sparse-view CT}
+    \label{fig:psnr-ct}
+  \end{subfigure}
+  \begin{subfigure}[b]{0.32\textwidth}
+    \includegraphics[width=\linewidth]{figures/psnr-vs-noise-mri.pdf}
+    \caption{Accelerated MRI}
+    \label{fig:psnr-mri}
+  \end{subfigure}
+  \begin{subfigure}[b]{0.32\textwidth}
+    \includegraphics[width=\linewidth]{figures/psnr-vs-noise-deblur.pdf}
+    \caption{Deblurring}
+    \label{fig:psnr-deblur}
+  \end{subfigure}
+  \caption{PSNR against noise level $\sigma$ on three of the six tasks. Shaded bands are one standard deviation over five seeds. The remaining tasks are in \cref{fig:psnr-rest}.}
+  \label{fig:psnr-all}
+\end{figure*}
+
+\subsection{Qualitative results}
+\label{sec:qualitative}
+\Cref{fig:qual} shows reconstructions at $\sigma = 0.3$. DPS and MCG produce streaks along the dominant projection angles; $\Pi$GDM oversmooths; anchoring keeps fine trabecular structure in the CT case and the cartilage boundary in the MRI case.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figures/qualitative.pdf}
+  \caption{Reconstructions at $\sigma = 0.3$ for sparse-view CT (top) and accelerated MRI (bottom). Columns: ground truth, DPS, $\Pi$GDM, MCG, ours.}
+  \label{fig:qual}
+\end{figure}
+
+\subsection{Compute}
+\label{sec:compute}
+Anchoring adds two norms per step, about 0.3\% of the wall-clock time of a step dominated by the network evaluation. \Cref{tab:compute} lists times per image on one A100.
+\input{tables/compute}
