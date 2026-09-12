@@ -229,7 +229,9 @@ export function Document(p: Props) {
     );
   }
 
-  const isTex = !p.file || /\.(tex|sty|cls|bib|md|txt|toml|py|json|typ)$/i.test(p.file);
+  // Anything textual opens in the editor; the LaTeX formatting bar and the word count belong to manuscript and notes.
+  const isTex = !p.file || /\.(tex|sty|cls|bib|md|txt|toml|py|json|typ|jl|r|sh|bash|zsh|yml|yaml|csv|tsv|cfg|ini|rst|markdown|ltx|dtx|bbx|cbx)$/i.test(p.file);
+  const isProse = !p.file || /\.(tex|sty|cls|bib|typ|md|txt|rst|markdown|ltx)$/i.test(p.file);
   const showEditor = mode !== "pdf";
   const showPdf = mode === "pdf" || mode === "split";
   const rv = p.review;
@@ -275,7 +277,7 @@ export function Document(p: Props) {
           <button className="btn" disabled={rv.busy} onClick={rv.onReject}><X aria-hidden /> Reject</button>
         </div>
       )}
-      {showEditor && isTex && !previewing && <FormatBar api={p.editorRef.current} onFind={p.onFind} onComment={p.onCommentSelection} canComment={p.hasSelection} suggesting={p.settings.suggesting} onToggleSuggesting={p.onToggleSuggesting} pending={p.changes.length} />}
+      {showEditor && isProse && !previewing && <FormatBar api={p.editorRef.current} onFind={p.onFind} onComment={p.onCommentSelection} canComment={p.hasSelection} suggesting={p.settings.suggesting} onToggleSuggesting={p.onToggleSuggesting} pending={p.changes.length} />}
       <div className={`panes ${mode === "split" ? "split" : ""}`} ref={splitRef} style={mode === "split" ? { "--split": `${Math.round(p.splitRatio * 100)}%` } as React.CSSProperties : undefined}>
         <div className="scroll" hidden={!showEditor}>{editor}</div>
         {mode === "split" && <div className={`vdivider ${dragging ? "dragging" : ""}`} onPointerDown={() => setDragging(true)} role="separator" aria-orientation="vertical" aria-label="Resize editor and PDF" />}
@@ -297,7 +299,7 @@ export function Document(p: Props) {
         {result && <button onClick={p.onToggleLog} data-p="2">{showLog ? "Hide log" : "Show log"}</button>}
         <button data-p="1" className={`toggle ${p.compileOnSave ? "on" : ""}`} aria-pressed={p.compileOnSave} onClick={p.onToggleCompileOnSave} title="Compile every time you save (⌘S)">{p.compileOnSave ? "Compiles on save" : "Compile on save"}</button>
         <span className="grow" />
-        {mode !== "pdf" && source != null && <span data-p="3" title={`${source.split("\n").length} lines`}>{wordCount.toLocaleString()} words</span>}
+        {mode !== "pdf" && source != null && (isProse ? <span data-p="3" title={`${source.split("\n").length} lines`}>{wordCount.toLocaleString()} words</span> : <span data-p="3">{source.split("\n").length} lines</span>)}
         {mode !== "pdf" && (
           <button data-p="2" className="toggle writing" onClick={p.onOpenSettings} title="Spelling, grammar, completion and prediction. Click to change in Settings (⌘,)">
             {[p.settings.spellcheck ? "spelling" : null, p.settings.grammar !== "off" ? "grammar" : null, p.settings.autocomplete || p.settings.citeComplete ? "completion" : null, p.settings.prediction ? "prediction" : null].filter(Boolean).join(" · ") || "writing aids off"}

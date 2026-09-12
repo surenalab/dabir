@@ -159,7 +159,7 @@ export default function App() {
     try { const p = await openProject(project.root); setProject(p); loadBib(p); loadMap(p.root); refreshGit(p); } catch (e) { setError(String(e)); }
   }, [project, loadBib, loadMap, refreshGit]);
 
-  // Browser preview only: ?open=sample&view=split&inspector=1&demo=run opens the sample in a given state,
+  // Browser preview only: ?open=sample&view=split&inspector=1&file=code/sweep.py&demo=run opens the sample in a given state,
   // so documentation screenshots can be taken headlessly. Ignored in the native app.
   const [autoRun, setAutoRun] = useState<string | null>(null);
   useEffect(() => {
@@ -172,6 +172,7 @@ export default function App() {
       const v = q.get("view"); if (v === "visual" || v === "source" || v === "pdf" || v === "split") setMode(v);
       if (q.get("inspector") === "1") setInspectorOpen(true);
       if (q.get("nav") === "0") setNavOpen(false);
+      const f = q.get("file"); if (f) await selectFile(`${folder}/${f}`);
       if (q.get("demo") === "run") setTimeout(() => setAutoRun("Rerun the sweep with a finer noise grid and update Table 1 and the abstract."), 400);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps

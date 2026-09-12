@@ -320,6 +320,8 @@ button { background: none; border: 0; padding: 0; cursor: default; }
 .tok-env { color: var(--ok); }
 .tok-str { color: var(--ink-2); }
 .tok-num { color: var(--warn); }
+.tok-strong { font-weight: 600; }
+.tok-em { font-style: italic; }
 
 /* PDF view */
 .pdf { padding: var(--space-5) var(--space-4) 160px; display: flex; flex-direction: column; align-items: center; gap: var(--space-4); background: var(--paper-2); min-height: 100%; }
