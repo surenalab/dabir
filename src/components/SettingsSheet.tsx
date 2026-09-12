@@ -36,7 +36,7 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
 
         <section className="share-section">
           <h3>Writing</h3>
-          <Row label="Spelling" hint="Dabir's own dictionary works offline and reads LaTeX: commands, maths, keys and paths are never flagged. Hover a word for replacements; Add to Dictionary keeps the word with the paper in .dabir/dictionary.txt. Dictionaries for English (UK and US), German, Spanish and French ship with the app; the system checker covers other languages.">
+          <Row label="Spelling" hint="Dabir's own dictionary works offline and reads LaTeX: commands, maths, keys and paths are never flagged. Hover a word for replacements; Add to Dictionary keeps the word with the paper in .dabir/dictionary.txt. Dictionaries for English (UK and US), German, Spanish, French, Italian and Portuguese (Portugal and Brazil) ship with the app and run off the main thread; the system checker covers other languages.">
             <Toggle on={s.spellcheck} onChange={(v) => updateSettings({ spellcheck: v })} label="Spelling" />
           </Row>
           {s.spellcheck && (
