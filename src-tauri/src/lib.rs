@@ -7,6 +7,7 @@
 mod agents;
 mod export;
 mod git;
+mod lsp;
 mod memory;
 mod paper;
 mod refs;
@@ -59,6 +60,8 @@ pub struct Project {
     pub tree: Vec<Entry>,
     /// True when the folder held more files than the tree shows (a home folder, not a paper).
     pub tree_truncated: bool,
+    /// Where the code runs when `dabir.toml [remote]` names a host.
+    pub remote: Option<memory::Remote>,
 }
 
 /// The most files the sidebar tree will list. A paper has hundreds; a home folder has hundreds of thousands.
@@ -392,6 +395,7 @@ fn open_project(path: String) -> Result<Project, String> {
         has_memory: root.join(".dabir").join("PROJECT.md").exists(),
         tree,
         tree_truncated: budget == 0,
+        remote: memory::remote(&root),
     })
 }
 
@@ -1168,8 +1172,9 @@ fn term_open(
     cwd: String,
     cols: u16,
     rows: u16,
+    remote: Option<memory::Remote>,
 ) -> Result<u32, String> {
-    terminal::open(&app, &terms, Path::new(&cwd), cols, rows)
+    terminal::open(&app, &terms, Path::new(&cwd), cols, rows, remote.as_ref())
 }
 
 #[tauri::command]
@@ -1190,6 +1195,149 @@ fn term_resize(
 #[tauri::command]
 fn term_close(terms: tauri::State<terminal::Shared>, id: u32) {
     terminal::close(&terms, id)
+}
+
+// ---- find in paper
+
+#[derive(Serialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchHit {
+    pub file: String,
+    pub line: usize,
+    /// Column of the match in characters, for highlighting.
+    pub col: usize,
+    pub len: usize,
+    /// The line, or a window of it around the match when the line is long.
+    pub text: String,
+    /// True when `text` starts after the line's beginning.
+    pub cut: bool,
+}
+
+const SEARCH_EXTS: &[&str] = &[
+    "tex", "sty", "cls", "bib", "typ", "md", "txt", "rst", "py", "jl", "r", "m", "sh", "bash",
+    "zsh", "yml", "yaml", "json", "toml", "csv", "tsv", "js", "ts", "rs", "cfg", "ini",
+];
+const SEARCH_CAP: usize = 400;
+const SEARCH_FILE_CAP: u64 = 4 << 20;
+
+/// Every text file of the paper that contains `query`, as a line list. Case-insensitive unless the
+/// query has an upper-case letter (smart case); files the sidebar skips are skipped here too.
+fn search_files(root: &Path, query: &str) -> Vec<SearchHit> {
+    let query = query.trim();
+    if query.is_empty() {
+        return vec![];
+    }
+    let smart = query.chars().any(|c| c.is_uppercase());
+    let needle = if smart {
+        query.to_string()
+    } else {
+        query.to_lowercase()
+    };
+    let mut hits = Vec::new();
+    let mut files = Vec::new();
+    collect_text_files(root, 0, &mut files);
+    files.sort();
+    for path in files {
+        if hits.len() >= SEARCH_CAP {
+            break;
+        }
+        let Ok(text) = fs::read_to_string(&path) else {
+            continue;
+        };
+        let rel = path
+            .strip_prefix(root)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .to_string();
+        for (i, line) in text.lines().enumerate() {
+            let hay = if smart {
+                line.to_string()
+            } else {
+                line.to_lowercase()
+            };
+            if let Some(b) = hay.find(&needle) {
+                let col = hay[..b].chars().count();
+                let start = if col > 80 { col - 40 } else { 0 };
+                hits.push(SearchHit {
+                    file: rel.clone(),
+                    line: i + 1,
+                    col: col - start,
+                    len: needle.chars().count(),
+                    text: line.trim_end().chars().skip(start).take(300).collect(),
+                    cut: start > 0,
+                });
+                if hits.len() >= SEARCH_CAP {
+                    break;
+                }
+            }
+        }
+    }
+    hits
+}
+
+fn collect_text_files(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
+    if depth > 6 || out.len() > TREE_BUDGET {
+        return;
+    }
+    let Ok(read) = fs::read_dir(dir) else {
+        return;
+    };
+    for e in read.filter_map(|e| e.ok()) {
+        let path = e.path();
+        let name = e.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') || SKIP_DIRS.contains(&name.as_str()) {
+            continue;
+        }
+        if path.is_dir() {
+            collect_text_files(&path, depth + 1, out);
+        } else {
+            let ext = path
+                .extension()
+                .and_then(|x| x.to_str())
+                .map(|x| x.to_ascii_lowercase())
+                .unwrap_or_default();
+            let small = e
+                .metadata()
+                .map(|m| m.len() <= SEARCH_FILE_CAP)
+                .unwrap_or(false);
+            if SEARCH_EXTS.contains(&ext.as_str()) && small {
+                out.push(path);
+            }
+        }
+    }
+}
+
+#[tauri::command]
+fn search_paper(root: String, query: String) -> Vec<SearchHit> {
+    search_files(Path::new(&root), &query)
+}
+
+// ---- language servers for code files
+
+#[tauri::command]
+fn lsp_available(candidates: Vec<String>) -> Vec<String> {
+    lsp::available(&candidates)
+}
+
+#[tauri::command]
+fn lsp_start(
+    app: AppHandle,
+    servers: tauri::State<lsp::Shared>,
+    root: String,
+    command: String,
+    args: Vec<String>,
+) -> Result<u32, String> {
+    lsp::start(&app, &servers, Path::new(&root), &command, &args)
+}
+
+#[tauri::command]
+fn lsp_send(servers: tauri::State<lsp::Shared>, id: u32, message: String) -> Result<(), String> {
+    lsp::send(&servers, id, &message)
+}
+
+#[tauri::command]
+fn lsp_stop(servers: tauri::State<lsp::Shared>, id: u32) {
+    lsp::stop(&servers, id)
 }
 
 /// The paper's structure for the editor: sections, labels, floats, macros and bibliographies with
@@ -1507,6 +1655,9 @@ fn agent_preamble(
     out.push_str("3. Make the smallest change that does the job. Never hand-edit generated artefacts (figures, tables, numbers copied from them); rerun their recorded command instead.\n");
     if let Some(p) = &prefix {
         out.push_str(&format!("   Run code with the prefix `{p}`.\n"));
+    }
+    if let Some(r) = memory::remote(root) {
+        out.push_str(&format!("   The code runs on the host `{h}` in `{d}`, not here: run every experiment or artefact command as `ssh {h} 'cd {d} && <command>'` and copy results back with `scp {h}:{d}/<path> <path>`. The repository there is a clone of this one; push or pull before running if the code changed.\n", h = r.host, d = r.dir));
     }
     if is_typst {
         out.push_str(&format!("4. If `typst` is on PATH, compile once at the end with `typst compile {main}` and fix what it reports. Do not install anything, inspect the PDF or explore the build folder: Dabir compiles and reviews the result.\n"));
@@ -1845,6 +1996,11 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
                 .accelerator("CmdOrCtrl+F")
                 .build(app)?,
         )
+        .item(
+            &MenuItemBuilder::with_id("find-paper", "Find in Paper…")
+                .accelerator("CmdOrCtrl+Shift+F")
+                .build(app)?,
+        )
         .separator()
         .item(
             &MenuItemBuilder::with_id("check-grammar", "Check Grammar")
@@ -2039,9 +2195,11 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(terminal::Shared::default())
+        .manage(lsp::Shared::default())
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {
                 terminal::close_all(&window.state::<terminal::Shared>());
+                lsp::stop_all(&window.state::<lsp::Shared>());
             }
         })
         .setup(|app| {
@@ -2068,6 +2226,11 @@ pub fn run() {
             term_write,
             term_resize,
             term_close,
+            search_paper,
+            lsp_available,
+            lsp_start,
+            lsp_send,
+            lsp_stop,
             read_text,
             write_text,
             read_binary,
@@ -2280,6 +2443,37 @@ mod tests {
         assert!(git::sync_working_copy(&dir, "f1").unwrap().is_empty());
         let _ = git::worktree_remove(&dir, "f1");
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn find_in_paper_is_smart_case_and_spans_files() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/anchor-journal");
+        let hits = search_files(&root, "\\kap");
+        assert!(hits.len() > 3, "{hits:?}");
+        let files: std::collections::HashSet<_> = hits.iter().map(|h| h.file.as_str()).collect();
+        assert!(files.len() >= 2, "{files:?}");
+        assert!(hits.iter().all(|h| h.text.contains("\\kap")));
+        let lower = search_files(&root, "anchor");
+        let upper = search_files(&root, "Anchor");
+        assert!(
+            lower.len() > upper.len(),
+            "{} vs {}",
+            lower.len(),
+            upper.len()
+        );
+        assert!(upper.iter().all(|h| h.text.contains("Anchor")), "{upper:?}");
+        assert!(lower.iter().any(|h| h.cut), "long lines are windowed");
+        assert!(search_files(&root, "   ").is_empty());
+        let one = &lower[0];
+        assert_eq!(
+            one.text
+                .to_lowercase()
+                .chars()
+                .skip(one.col)
+                .take(one.len)
+                .collect::<String>(),
+            "anchor"
+        );
     }
 
     #[test]

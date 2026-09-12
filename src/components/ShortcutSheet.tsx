@@ -24,7 +24,8 @@ const ROWS: [string, string[]][] = [
   ["Send to Agent", ["⌘", "↩"]],
   ["Continue Sentence with Agent", ["⇧", "⌘", "Space"]],
   ["Find in Source", ["⌘", "F"]],
-  ["Go to Definition (label, key, file, macro)", ["F12"]],
+  ["Go to Definition (label, key, file, macro; code with a language server)", ["F12"]],
+  ["Code: Find References · Rename · Format", ["⇧F12", "F2", "⇧⌥F"]],
   ["Fold · Unfold at Cursor", ["⌘⌥", "[ ]"]],
   ["Keyboard Shortcuts", ["⌘", "/"]],
 ];

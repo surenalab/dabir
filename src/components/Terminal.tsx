@@ -6,10 +6,13 @@ import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { X, Plus } from "lucide-react";
-import { termOpen, termWrite, termResize, termClose, onTerminalData, onTerminalExit } from "../lib/backend";
+import { termOpen, termWrite, termResize, termClose, onTerminalData, onTerminalExit, type Remote } from "../lib/backend";
+import { Segmented } from "./Segmented";
 
 interface Props {
   cwd: string;
+  /** The host the paper's code runs on, from dabir.toml [remote]; offers a shell there beside the local one. */
+  remote?: Remote | null;
   onClose: () => void;
   /** Bumps when the pane should take keyboard focus (opened from the menu or shortcut). */
   focusStamp: number;
@@ -46,13 +49,15 @@ function palette() {
   };
 }
 
-export function TerminalPane({ cwd, onClose, focusStamp }: Props) {
+export function TerminalPane({ cwd, remote, onClose, focusStamp }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const term = useRef<XTerm | null>(null);
   const fit = useRef<FitAddon | null>(null);
   const id = useRef<number | null>(null);
   const [gone, setGone] = useState(false);
   const [generation, setGeneration] = useState(0);
+  const [where, setWhere] = useState<"local" | "remote">("local");
+  const onHost = where === "remote" && remote ? remote : null;
 
   useEffect(() => {
     const el = host.current; if (!el) return;
@@ -66,7 +71,7 @@ export function TerminalPane({ cwd, onClose, focusStamp }: Props) {
     setGone(false);
     let alive = true;
     let opened: number | null = null;
-    termOpen(cwd, x.cols, x.rows).then((got) => {
+    termOpen(cwd, x.cols, x.rows, onHost).then((got) => {
       if (!alive) { if (got != null) termClose(got); return; }
       opened = got; id.current = got;
       if (got == null) x.writeln("\x1b[2mThe terminal runs in the app; the browser preview has no shell.\x1b[0m");
@@ -91,7 +96,7 @@ export function TerminalPane({ cwd, onClose, focusStamp }: Props) {
       id.current = null;
       x.dispose(); term.current = null; fit.current = null;
     };
-  }, [cwd, generation]);
+  }, [cwd, generation, onHost]);
 
   useEffect(() => { term.current?.focus(); }, [focusStamp]);
 
@@ -99,8 +104,9 @@ export function TerminalPane({ cwd, onClose, focusStamp }: Props) {
   return (
     <section className="terminal" aria-label="Terminal">
       <header>
-        <span className="title">Terminal <span className="where" title={cwd}>{folder}</span></span>
+        <span className="title">Terminal <span className="where" title={onHost ? `${onHost.host}:${onHost.dir}` : cwd}>{onHost ? `${onHost.host}:${onHost.dir}` : folder}</span></span>
         <span className="grow" />
+        {remote && <Segmented label="Where the shell runs" value={where} onChange={(v) => setWhere(v as "local" | "remote")} options={[{ value: "local", label: "This Mac", title: cwd }, { value: "remote", label: remote.host, title: `ssh ${remote.host}, in ${remote.dir}` }]} />}
         {gone && <button className="btn" onClick={() => setGeneration((g) => g + 1)} title="Start a new shell"><Plus aria-hidden /> New shell</button>}
         <button className="btn icon" onClick={onClose} title="Hide terminal (⌃`)" aria-label="Hide terminal"><X aria-hidden /></button>
       </header>

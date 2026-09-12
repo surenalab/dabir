@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { DEFAULTS, resetSettings, updateSettings, useSettings } from "../lib/settings";
 import { dictionaries, type Dictionary } from "../lib/spell";
+import { availableServers, serversFor } from "../lib/lsp";
+
+const CODE_KINDS: [string, string][] = [["Python", "x.py"], ["Typst", "x.typ"], ["Shell", "x.sh"], ["YAML", "x.yml"], ["Julia", "x.jl"], ["R", "x.r"]];
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -19,6 +22,8 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
   const s = useSettings();
   const [dicts, setDicts] = useState<Dictionary[]>([{ id: "en-GB", label: "English (UK)" }, { id: "en-US", label: "English (US)" }]);
   useEffect(() => { dictionaries().then(setDicts); }, []);
+  const [servers, setServers] = useState<Set<string> | null>(null);
+  useEffect(() => { availableServers().then(setServers).catch(() => setServers(new Set())); }, []);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
@@ -79,6 +84,19 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
           </Row>
           <Row label="Predictive text" hint="Grey text after the cursor finishes the word or phrase from this paper's own wording. Tab accepts all of it, ⌘→ one word, Escape dismisses. Nothing leaves the machine. For a whole sentence from the chosen agent, press ⇧⌘Space at any point; that one request goes to the agent's CLI.">
             <Toggle on={s.prediction} onChange={(v) => updateSettings({ prediction: v })} label="Predictive text" />
+          </Row>
+        </section>
+
+        <section className="share-section">
+          <h3>Code files</h3>
+          <Row label="Language servers" hint="Python, Typst, shell, YAML and the rest open with their own grammar. When a language server is installed, its completion, errors, hover and go-to-definition (F12, ⇧F12 references, F2 rename) appear too. Servers are found on the same PATH the agents use.">
+            <ul className="server-list" aria-label="Language servers">
+              {CODE_KINDS.map(([name, sample]) => {
+                const specs = serversFor(sample);
+                const have = servers ? specs.find((sp) => servers.has(sp.command)) : null;
+                return <li key={name}><span>{name}</span><span className={have ? "ok" : "off"}>{servers === null ? "…" : have ? have.command : `not installed · ${specs[0]?.install}`}</span></li>;
+              })}
+            </ul>
           </Row>
         </section>
 
