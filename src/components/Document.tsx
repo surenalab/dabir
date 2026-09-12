@@ -7,6 +7,7 @@ import type { ViewMode } from "./Toolbar";
 import type { CompileState } from "../App";
 import { SourceEditor, type CommentRange, type EditorApi } from "./SourceEditor";
 import { FormatBar } from "./FormatBar";
+import { TerminalPane } from "./Terminal";
 import { Problems, groupProblems } from "./Problems";
 import type * as Y from "yjs";
 import type { Awareness } from "y-protocols/awareness";
@@ -74,6 +75,9 @@ interface Props {
   pdfTarget: (PdfPos & { stamp: number }) | null;
   onDismissError: () => void;
   onToggleLog: () => void;
+  /** The terminal pane: shown or not, and a stamp that bumps when it should take focus. */
+  terminal: { open: boolean; focusStamp: number };
+  onToggleTerminal: () => void;
   onOpen: () => void;
   onImport: () => void;
   onClone: () => void;
@@ -141,7 +145,7 @@ export interface DocReview {
 }
 
 export function Document(p: Props) {
-  const { project, source, mode, compileState, showLog, error } = p;
+  const { project, source, mode, compileState, showLog, error, terminal, onToggleTerminal } = p;
   const macros = useMemo(() => (source ? collectMacros(source) : {}), [source]);
   const [dragging, setDragging] = useState(false);
   const splitRef = useRef<HTMLDivElement>(null);
@@ -284,6 +288,8 @@ export function Document(p: Props) {
         {showPdf && <div className="scroll pdfpane">{pdf}</div>}
       </div>
 
+      {terminal.open && project && <TerminalPane cwd={project.root} onClose={onToggleTerminal} focusStamp={terminal.focusStamp} />}
+
       {showLog && (
         <section className="log" aria-label="Compile log">
           <header><span>Compile log{result ? ` · ${result.engine}` : ""}</span><button className="btn" onClick={p.onToggleLog} style={{ height: 22 }}>Hide</button></header>
@@ -297,6 +303,7 @@ export function Document(p: Props) {
         {result && result.ok && errors === 0 && <span className={`state ${warnings ? "warn" : "ok"}`}><CheckCircle2 aria-hidden /> Compiled {compileState.status === "done" && compileState.agent ? `${compileState.agent}'s version ` : ""}in {(result.millis / 1000).toFixed(1)} s{warnings ? `, ${warnings} warning${warnings > 1 ? "s" : ""}` : ""}</span>}
         {result && (!result.ok || errors > 0) && <span className="state error"><AlertCircle aria-hidden /> {compileState.status === "done" && compileState.agent ? `${compileState.agent}'s version failed to compile` : "Compile failed"}{errors ? `, ${errors} error${errors > 1 ? "s" : ""}` : ""}</span>}
         {result && <button onClick={p.onToggleLog} data-p="2">{showLog ? "Hide log" : "Show log"}</button>}
+        {project && <button onClick={onToggleTerminal} data-p="2" title="A shell in the paper's folder (⌃`)">{terminal.open ? "Hide terminal" : "Terminal"}</button>}
         <button data-p="1" className={`toggle ${p.compileOnSave ? "on" : ""}`} aria-pressed={p.compileOnSave} onClick={p.onToggleCompileOnSave} title="Compile every time you save (⌘S)">{p.compileOnSave ? "Compiles on save" : "Compile on save"}</button>
         <span className="grow" />
         {mode !== "pdf" && source != null && (isProse ? <span data-p="3" title={`${source.split("\n").length} lines`}>{wordCount.toLocaleString()} words</span> : <span data-p="3">{source.split("\n").length} lines</span>)}
