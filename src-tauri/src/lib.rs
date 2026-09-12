@@ -1738,7 +1738,7 @@ fn agent_preamble(
         out.push('\n');
     }
     if !bare && !artefacts.is_empty() {
-        out.push_str("\nGenerated artefacts and the command that makes each (rerun it; never edit the artefact)\n");
+        out.push_str("\nGenerated artefacts and the command that makes each (to change one, change the code that writes it and rerun the command; edit the artefact itself only when the author asks, since the next run overwrites it)\n");
         out.push_str(&artefacts.join("\n"));
         out.push('\n');
     }
@@ -2030,6 +2030,7 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
                 .accelerator("CmdOrCtrl+Shift+G")
                 .build(app)?,
         )
+        .item(&MenuItemBuilder::with_id("unicode-tex", "Convert Unicode to LaTeX").build(app)?)
         .build()?;
 
     let view = SubmenuBuilder::new(app, "View")

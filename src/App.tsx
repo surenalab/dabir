@@ -22,6 +22,7 @@ import type { ManualProvider } from "./lib/manual";
 import { addComment as yAddComment, connect as yConnect, decodeRange, disconnect as yDisconnect, encodeRange, peers as yPeers, randomRoom, removeComment as yRemoveComment, resolveComment as yResolveComment, setCurrentFile, textFor, whenSynced, type Comment, type Peer, type Session, type Transport, replyComment as yReplyComment, userName, colorFor, markHost, hostPresent, publishProject, republishChanged, awaitSnapshot, sharedTexts, persist, setFileChanges } from "./lib/collab";
 import type { CommentRange } from "./components/SourceEditor";
 import { safeColor, type Change, type ChangeRange } from "./lib/changes";
+import { proseWords } from "./lib/spell";
 import {
   agentComplete, checkForUpdates, projectSnapshot, sessionMaterialize, checkpoint, checkpoints, checkpointRestore, checkpointUndo, gitDiscard, type Checkpoint, newPaper, templatesList, compile as runCompile, compileCancel, gitClone, gitPull, gitPush, gitRemoteAdd, gitRemoteUrl, isMac, onCompileProgress, relayStart, relayStop, gitCommit, gitInit, gitStatus, importOverleaf, native, onMenu, onWindowFocus,
   openProject, pickFolder, pickNewPaperPath, readText, setWindowTitle, synctexForward, synctexInverse, writeText,
@@ -152,6 +153,17 @@ export default function App() {
   // go-to-definition and the outline read. Rebuilt when the paper opens and after every save.
   const [map, setMap] = useState<PaperMap | null>(null);
   const loadMap = useCallback((root: string) => { paperMap(root).then(setMap).catch(() => setMap(null)); }, []);
+  // Prose words per manuscript file, for the whole-paper count in the status bar; recounted when the map reloads (every save).
+  const [paperWords, setPaperWords] = useState<{ root: string; words: Record<string, number> } | null>(null);
+  useEffect(() => {
+    if (!project || !map || map.files.length < 2) return;
+    let live = true;
+    const root = project.root;
+    Promise.all(map.files.map(async ([rel]) => [rel, proseWords(await readText(`${root}/${rel}`).catch(() => "")).length] as const))
+      .then((pairs) => { if (live) setPaperWords({ root, words: Object.fromEntries(pairs) }); });
+    return () => { live = false; };
+  }, [project, map]);
+  const paperWordsNow = project && map && map.files.length > 1 && paperWords?.root === project.root ? paperWords.words : null;
 
   const openFolder = useCallback(async (folder: string) => {
     stopLanguageServers();
@@ -690,6 +702,7 @@ export default function App() {
       case "zoom-out": setPdfZoom((z) => Math.max(0.3, (typeof z === "number" ? z : 1) * 0.85)); break;
       case "zoom-fit": setPdfZoom("fit"); break;
       case "check-grammar": runGrammar(); break;
+      case "unicode-tex": { const n = editorRef.current?.unicodeToTex() ?? 0; setNote(n ? `Rewrote ${n} symbol${n === 1 ? "" : "s"} as LaTeX.` : "Nothing to rewrite: no curly quotes, dashes or symbols LaTeX has a name for."); break; }
       case "check-updates":
         checkForUpdates(async (v, notes) => window.confirm(`Dabir ${v} is available.\n\n${notes}\n\nDownload and restart now?`)).then(setNote).catch((e) => setNote(String(e)));
         break;
@@ -891,7 +904,7 @@ export default function App() {
         onShare={() => setSheet("share")} live={!!live} />
       <Navigator project={project} current={file} outline={paperOutline(map) ?? outline} git={git} commitFocus={commitFocus} busy={gitBusy || historyBusy} draftMessage={commitDraft} onDiscard={discardChange} onHistory={() => { if (!inspectorOpen) toggleInspector(); setHistoryFocus(Date.now()); }} historyCount={versions.length}
         onSelect={selectFile} onJump={(l, f) => (f ? jumpToFile(f, l) : jumpTo(l))} onInitGit={initGit} onCommit={commitAll} find={findPaper} onCloseFind={closeFindPaper} />
-      <Document project={project} file={file} source={source} bib={bib} mode={mode} jumpLine={jumpLine} jumpStamp={jumpStamp}
+      <Document project={project} file={file} source={source} bib={bib} paperWords={paperWordsNow} mode={mode} jumpLine={jumpLine} jumpStamp={jumpStamp}
         compileState={compileState} progress={progress} showLog={showLog} onToggleLog={() => setShowLog((v) => !v)} terminal={terminal} onToggleTerminal={toggleTerminal} findRequest={findRequest}
         error={error ?? note} onDismissError={() => { setError(null); setNote(null); }} pdfTarget={pdfTarget}
         onOpen={open} onImport={importFromOverleaf} onClone={() => setSheet("clone")} onNew={openNew} starters={starters} onJoin={() => setSheet("share")} hostAway={hostAway} onOutline={setOutline}

@@ -63,6 +63,8 @@ interface Props {
   project: Project | null;
   file: string | null;
   source: string | null;
+  /** Prose words per manuscript file (relative paths), when the paper spans more than one; null otherwise. */
+  paperWords: Record<string, number> | null;
   bib: Record<string, BibEntry>;
   mode: ViewMode;
   jumpLine: number | null;
@@ -145,7 +147,7 @@ export interface DocReview {
 }
 
 export function Document(p: Props) {
-  const { project, source, mode, compileState, showLog, error, terminal, onToggleTerminal } = p;
+  const { project, source, mode, compileState, showLog, error, terminal, onToggleTerminal, paperWords, file } = p;
   const macros = useMemo(() => (source ? collectMacros(source) : {}), [source]);
   const [dragging, setDragging] = useState(false);
   const splitRef = useRef<HTMLDivElement>(null);
@@ -171,6 +173,14 @@ export function Document(p: Props) {
   useEffect(() => { p.onOutline(source ? parseDocument(source).outline : []); }, [source]); // eslint-disable-line react-hooks/exhaustive-deps
   // Prose words only: commands, math, comments and the arguments of \cite, \ref and paths do not count.
   const wordCount = useMemo(() => (source ? proseWords(source).length : 0), [source]);
+  // The whole paper: every manuscript file's saved count, with the open file's live count in place of its saved one.
+  const openFile = file;
+  const paperTotal = useMemo(() => {
+    if (!paperWords || !project) return null;
+    const rel = openFile && openFile.startsWith(project.root + "/") ? openFile.slice(project.root.length + 1) : openFile;
+    const total = Object.values(paperWords).reduce((a, b) => a + b, 0);
+    return rel && rel in paperWords ? total - paperWords[rel] + wordCount : null;
+  }, [paperWords, project, openFile, wordCount]);
 
   const result = compileState.status === "done" ? compileState.result : null;
   const diagnostics = result?.diagnostics ?? [];
@@ -235,7 +245,6 @@ export function Document(p: Props) {
 
   // Anything textual opens in the editor; the LaTeX formatting bar and the word count belong to manuscript and notes.
   const isTex = !p.file || /\.(tex|sty|cls|bib|md|txt|toml|py|json|typ|jl|r|sh|bash|zsh|yml|yaml|csv|tsv|cfg|ini|rst|markdown|ltx|dtx|bbx|cbx)$/i.test(p.file);
-  const file = p.file;
   const isProse = !file || /\.(tex|sty|cls|bib|typ|md|txt|rst|markdown|ltx)$/i.test(file);
   const markupLang = /\.typ$/i.test(file ?? "") ? "typst" as const : "tex" as const;
   const showEditor = mode !== "pdf";
@@ -308,7 +317,7 @@ export function Document(p: Props) {
         {project && <button onClick={onToggleTerminal} data-p="2" title="A shell in the paper's folder (⌃`)">{terminal.open ? "Hide terminal" : "Terminal"}</button>}
         <button data-p="1" className={`toggle ${p.compileOnSave ? "on" : ""}`} aria-pressed={p.compileOnSave} onClick={p.onToggleCompileOnSave} title="Compile every time you save (⌘S)">{p.compileOnSave ? "Compiles on save" : "Compile on save"}</button>
         <span className="grow" />
-        {mode !== "pdf" && source != null && (isProse ? <span data-p="3" title={`${source.split("\n").length} lines`}>{wordCount.toLocaleString()} words</span> : <span data-p="3">{source.split("\n").length} lines</span>)}
+        {mode !== "pdf" && source != null && (isProse ? <span data-p="3" title={`${source.split("\n").length} lines`}>{wordCount.toLocaleString()} words{paperTotal != null && <span className="paper-words" title={Object.entries(paperWords!).map(([f, n]) => `${f}: ${n.toLocaleString()}`).join("\n")}> · {paperTotal.toLocaleString()} in paper</span>}</span> : <span data-p="3">{source.split("\n").length} lines</span>)}
         {mode !== "pdf" && (
           <button data-p="2" className="toggle writing" onClick={p.onOpenSettings} title="Spelling, grammar, completion and prediction. Click to change in Settings (⌘,)">
             {[p.settings.spellcheck ? "spelling" : null, p.settings.grammar !== "off" ? "grammar" : null, p.settings.autocomplete || p.settings.citeComplete ? "completion" : null, p.settings.prediction ? "prediction" : null].filter(Boolean).join(" · ") || "writing aids off"}

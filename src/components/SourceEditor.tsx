@@ -18,6 +18,7 @@ import { typstCompletionSource } from "codemirror-lang-typst/lezer";
 import { languageServerFor } from "../lib/lsp";
 import { focusMode } from "../lib/focus";
 import { markup, headingLine, headingBody, listBlock, type FormatAction, type ManuscriptLang } from "../lib/markup";
+import { unicodeToTex } from "../lib/unicode-tex";
 import { vim } from "@replit/codemirror-vim";
 import type { GrammarMatch } from "../lib/grammar";
 import type { Settings } from "../lib/settings";
@@ -180,6 +181,7 @@ export interface EditorApi {
   focus: () => void;
   resolveChanges: (ids: string[] | null, accept: boolean) => void;  // accept or reject suggestions; null means all
   continueSentence: () => void;                   // ask the agent for the next sentence as ghost text
+  unicodeToTex: () => number;                     // rewrite pasted symbols in the selection (or the file) as LaTeX; how many changed
 }
 
 const modeExt = (visual: Props["visual"], path: string | null) => (visual === "typst" ? typstVisualExtensions() : visual ? visualExtensions() : sourceOnly(path));
@@ -449,6 +451,15 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
     focus() { view.current?.focus(); },
     resolveChanges(ids, accept) { if (view.current) resolveChanges(view.current, ids, accept); },
     continueSentence() { void continueSentence(); },
+    unicodeToTex() {
+      const v = view.current; if (!v || lang() === "typst") return 0;
+      const sel = v.state.selection.main;
+      const [from, to] = sel.empty ? [0, v.state.doc.length] : [sel.from, sel.to];
+      const { text, count } = unicodeToTex(v.state.doc.sliceString(from, to));
+      if (count) v.dispatch({ changes: { from, to, insert: text }, userEvent: "input.format" });
+      v.focus();
+      return count;
+    },
   }), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return <div className={`editor ${visual ? "visual" : ""}`} ref={host} />;
