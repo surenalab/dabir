@@ -509,3 +509,35 @@ export function onWindowFocus(handler: (focused: boolean) => void): () => void {
   getCurrentWindow().onFocusChanged(({ payload }) => handler(payload)).then((u) => { un = u; });
   return () => un?.();
 }
+
+// ---- terminal pane: a shell in the paper's folder
+
+/** Start a shell in `cwd`; output arrives through `onTerminalData`. Null in the browser preview. */
+export async function termOpen(cwd: string, cols: number, rows: number): Promise<number | null> {
+  if (!native) return null;
+  return invoke<number>("term_open", { cwd, cols, rows });
+}
+export async function termWrite(id: number, data: string): Promise<void> {
+  if (!native) return;
+  await invoke("term_write", { id, data });
+}
+export async function termResize(id: number, cols: number, rows: number): Promise<void> {
+  if (!native) return;
+  await invoke("term_resize", { id, cols, rows }).catch(() => {});
+}
+export async function termClose(id: number): Promise<void> {
+  if (!native) return;
+  await invoke("term_close", { id }).catch(() => {});
+}
+export function onTerminalData(handler: (e: { id: number; data: string }) => void): () => void {
+  if (!native) return () => {};
+  let un: (() => void) | null = null;
+  listen<{ id: number; data: string }>("term-data", (e) => handler(e.payload)).then((u) => { un = u; });
+  return () => { un?.(); };
+}
+export function onTerminalExit(handler: (e: { id: number; code: number | null }) => void): () => void {
+  if (!native) return () => {};
+  let un: (() => void) | null = null;
+  listen<{ id: number; code: number | null }>("term-exit", (e) => handler(e.payload)).then((u) => { un = u; });
+  return () => { un?.(); };
+}
