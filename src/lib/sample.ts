@@ -101,7 +101,7 @@ def sweep(sigma_max: float, seeds: int):
     for m in METHODS:
         rows[m] = []
         for s in sigmas:
-            vals = [psnr(m, s, random.Random(hash((m, s, k)) & 0xFFFF)) for k in range(seeds)]
+            vals = [psnr(m, s, random.Random(zlib.crc32(f"{m}:{s}:{k}".encode()))) for k in range(seeds)]
             rows[m].append(sum(vals) / seeds)
     return sigmas, rows
 
