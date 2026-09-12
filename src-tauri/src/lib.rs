@@ -13,6 +13,7 @@ mod refs;
 mod relay;
 mod synctex;
 mod templates;
+mod terminal;
 mod texlog;
 
 use serde::Serialize;
@@ -1158,6 +1159,39 @@ struct FollowUp {
     reply: String,
 }
 
+// ---- terminal pane: a shell in the paper's folder
+
+#[tauri::command]
+fn term_open(
+    app: AppHandle,
+    terms: tauri::State<terminal::Shared>,
+    cwd: String,
+    cols: u16,
+    rows: u16,
+) -> Result<u32, String> {
+    terminal::open(&app, &terms, Path::new(&cwd), cols, rows)
+}
+
+#[tauri::command]
+fn term_write(terms: tauri::State<terminal::Shared>, id: u32, data: String) -> Result<(), String> {
+    terminal::write(&terms, id, &data)
+}
+
+#[tauri::command]
+fn term_resize(
+    terms: tauri::State<terminal::Shared>,
+    id: u32,
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
+    terminal::resize(&terms, id, cols, rows)
+}
+
+#[tauri::command]
+fn term_close(terms: tauri::State<terminal::Shared>, id: u32) {
+    terminal::close(&terms, id)
+}
+
 /// The paper's structure for the editor: sections, labels, floats, macros and bibliographies with
 /// their file and line, following \input from the main file.
 #[tauri::command]
@@ -1953,6 +1987,11 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
                 .accelerator("CmdOrCtrl+Shift+J")
                 .build(app)?,
         )
+        .item(
+            &MenuItemBuilder::with_id("show-terminal", "Show Terminal")
+                .accelerator("Ctrl+`")
+                .build(app)?,
+        )
         .separator()
         .item(
             &MenuItemBuilder::with_id("commit", "Commit…")
@@ -1999,6 +2038,12 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(terminal::Shared::default())
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Destroyed = event {
+                terminal::close_all(&window.state::<terminal::Shared>());
+            }
+        })
         .setup(|app| {
             build_menu(app.handle())?;
             if let Some(dir) = find_tectonic().and_then(|p| p.parent().map(Path::to_path_buf)) {
@@ -2019,6 +2064,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             open_project,
             paper_map,
+            term_open,
+            term_write,
+            term_resize,
+            term_close,
             read_text,
             write_text,
             read_binary,

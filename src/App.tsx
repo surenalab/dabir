@@ -64,6 +64,8 @@ export default function App() {
   const [progress, setProgress] = useState<string | null>(null);
   const [pdfTarget, setPdfTarget] = useState<(PdfPos & { stamp: number }) | null>(null);
   const [showLog, setShowLog] = useState(false);
+  const [terminal, setTerminal] = useState({ open: false, focusStamp: 0 });
+  const toggleTerminal = useCallback(() => setTerminal((t) => ({ open: !t.open, focusStamp: Date.now() })), []);
   const [focused, setFocused] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -173,6 +175,7 @@ export default function App() {
       if (q.get("inspector") === "1") setInspectorOpen(true);
       if (q.get("nav") === "0") setNavOpen(false);
       const f = q.get("file"); if (f) await selectFile(`${folder}/${f}`);
+      if (q.get("terminal") === "1") setTerminal({ open: true, focusStamp: 0 });
       if (q.get("demo") === "run") setTimeout(() => setAutoRun("Rerun the sweep with a finer noise grid and update Table 1 and the abstract."), 400);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -638,6 +641,7 @@ export default function App() {
       case "save": save(); break;
       case "compile": compile(); break;
       case "show-log": setShowLog((v) => !v); break;
+      case "show-terminal": toggleTerminal(); break;
       case "sync-pdf": showInPdf(); break;
       case "commit": if (!navOpen) toggleNav(); setCommitFocus((n) => n + 1); break;
       case "view-visual": setMode("visual"); break;
@@ -674,7 +678,7 @@ export default function App() {
         checkForUpdates(async (v, notes) => window.confirm(`Dabir ${v} is available.\n\n${notes}\n\nDownload and restart now?`)).then(setNote).catch((e) => setNote(String(e)));
         break;
     }
-  }, [open, importFromOverleaf, save, compile, showInPdf, toggleNav, toggleInspector, inspectorOpen, navOpen, runGrammar, mode]);
+  }, [open, importFromOverleaf, save, compile, showInPdf, toggleNav, toggleInspector, toggleTerminal, inspectorOpen, navOpen, runGrammar, mode]);
 
   useEffect(() => onMenu(command), [command]);
   useEffect(() => onCompileProgress((line) => setProgress(line.length > 90 ? line.slice(0, 87) + "…" : line)), []);
@@ -686,6 +690,7 @@ export default function App() {
   useEffect(() => {
     if (native) return;
     const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey && !e.metaKey && e.key === "`") { e.preventDefault(); command("show-terminal"); return; }
       if (!e.metaKey) return;
       const k = e.key.toLowerCase();
       const map: Record<string, string> = { o: "open", n: "new", s: "save", b: "compile", "1": "view-visual", "2": "view-source", "3": "view-pdf", "4": "view-split", j: "ask-agent", f: "find", "/": "shortcuts", ",": "settings", k: "fmt-link" };
@@ -870,7 +875,7 @@ export default function App() {
       <Navigator project={project} current={file} outline={paperOutline(map) ?? outline} git={git} commitFocus={commitFocus} busy={gitBusy || historyBusy} draftMessage={commitDraft} onDiscard={discardChange} onHistory={() => { if (!inspectorOpen) toggleInspector(); setHistoryFocus(Date.now()); }} historyCount={versions.length}
         onSelect={selectFile} onJump={(l, f) => (f ? jumpToFile(f, l) : jumpTo(l))} onInitGit={initGit} onCommit={commitAll} />
       <Document project={project} file={file} source={source} bib={bib} mode={mode} jumpLine={jumpLine} jumpStamp={jumpStamp}
-        compileState={compileState} progress={progress} showLog={showLog} onToggleLog={() => setShowLog((v) => !v)} findRequest={findRequest}
+        compileState={compileState} progress={progress} showLog={showLog} onToggleLog={() => setShowLog((v) => !v)} terminal={terminal} onToggleTerminal={toggleTerminal} findRequest={findRequest}
         error={error ?? note} onDismissError={() => { setError(null); setNote(null); }} pdfTarget={pdfTarget}
         onOpen={open} onImport={importFromOverleaf} onClone={() => setSheet("clone")} onNew={openNew} starters={starters} onJoin={() => setSheet("share")} hostAway={hostAway} onOutline={setOutline}
         onSourceChange={onSourceChange} onSave={save} onCursorLine={setCursorLine} onSelectFile={selectFile} onJump={jumpTo} onPdfClick={onPdfClick}
