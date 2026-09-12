@@ -6,20 +6,17 @@ import { createHunspellFromStrings, type Hunspell } from "hunspell-wasm";
 import { acceptWord, rankSuggestions, type Checker } from "./spell-rules";
 
 type Req =
-  | { id: number; type: "load"; lang: string; base: string }
+  | { id: number; type: "load"; lang: string; aff: string; dic: string }
   | { id: number; type: "check"; lang: string; words: string[] }
   | { id: number; type: "suggest"; lang: string; word: string };
 
 const engines = new Map<string, Promise<Hunspell>>();
 
-function engine(lang: string, base: string): Promise<Hunspell> {
+// The dictionary text comes from the main thread, which fetches it over the app's own scheme; the worker holds the engine.
+function engine(lang: string, aff: string, dic: string): Promise<Hunspell> {
   let p = engines.get(lang);
   if (!p) {
-    p = (async () => {
-      const file = async (ext: string) => { const r = await fetch(`${base}/dict/${lang}.${ext}`); if (!r.ok) throw new Error(`No ${lang} dictionary`); return r.text(); };
-      const [aff, dic] = await Promise.all([file("aff"), file("dic")]);
-      return createHunspellFromStrings(aff, dic);
-    })();
+    p = createHunspellFromStrings(aff, dic);
     engines.set(lang, p);
     p.catch(() => engines.delete(lang));
   }
@@ -32,7 +29,7 @@ self.onmessage = async (e: MessageEvent<Req>) => {
   const m = e.data;
   try {
     if (m.type === "load") {
-      await engine(m.lang, m.base);
+      await engine(m.lang, m.aff, m.dic);
       self.postMessage({ id: m.id, ok: true });
     } else if (m.type === "check") {
       const h = asChecker(await engines.get(m.lang)!);

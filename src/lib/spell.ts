@@ -46,10 +46,15 @@ const engines = new Map<string, Promise<Speller>>();
 export function loadSpeller(lang: SpellLanguage): Promise<Speller> {
   let p = engines.get(lang);
   if (!p) {
-    p = ask<void>({ type: "load", lang, base: location.origin }).then(() => ({
-      check: (words) => ask<boolean[]>({ type: "check", lang, words }),
-      suggest: (word) => ask<string[]>({ type: "suggest", lang, word }),
-    }));
+    p = (async () => {
+      const file = async (ext: string) => { const r = await fetch(`/dict/${lang}.${ext}`); if (!r.ok) throw new Error(`No ${lang} dictionary`); return r.text(); };
+      const [aff, dic] = await Promise.all([file("aff"), file("dic")]);
+      await ask<void>({ type: "load", lang, aff, dic });
+      return {
+        check: (words) => ask<boolean[]>({ type: "check", lang, words }),
+        suggest: (word) => ask<string[]>({ type: "suggest", lang, word }),
+      } as Speller;
+    })();
     engines.set(lang, p);
     p.catch(() => engines.delete(lang));
   }
