@@ -263,6 +263,10 @@ impl Walker<'_> {
                         | "subfigure" | "figure*" | "table*" => {
                             let kind = if env.starts_with("table") {
                                 "table"
+                            } else if env == "algorithm" {
+                                "algorithm"
+                            } else if env == "listing" {
+                                "listing"
                             } else {
                                 "figure"
                             };
@@ -870,6 +874,47 @@ mod tests {
             "{short}"
         );
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// The journal-length fixture the multi-file bench runs on: the map must follow every \input,
+    /// place labels under their sections and read the macros the editor completes.
+    #[test]
+    fn anchor_journal_fixture_maps_completely() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/anchor-journal");
+        let m = build(&root, &root.join("main.tex"));
+        let files: Vec<&str> = m.files.iter().map(|(f, _)| f.as_str()).collect();
+        assert!(files.contains(&"main.tex") && files.contains(&"macros.tex"));
+        assert!(files.iter().filter(|f| f.starts_with("sections/")).count() >= 8);
+        assert!(files.iter().filter(|f| f.starts_with("appendix/")).count() >= 2);
+        let titles: Vec<&str> = m.headings.iter().map(|h| h.title.as_str()).collect();
+        for t in ["Introduction", "Method", "Experiments", "Conclusion"] {
+            assert!(titles.contains(&t), "missing heading {t}: {titles:?}");
+        }
+        let macros: Vec<&str> = m
+            .anchors
+            .iter()
+            .filter(|a| a.kind == "macro")
+            .map(|a| a.name.as_str())
+            .collect();
+        for name in ["\\norm", "\\score", "\\anchor", "\\kap"] {
+            assert!(macros.contains(&name), "missing macro {name}: {macros:?}");
+        }
+        let figs: Vec<&Anchor> = m.anchors.iter().filter(|a| a.kind == "figure").collect();
+        assert!(!figs.is_empty());
+        assert!(
+            figs.iter().all(|f| f.section.is_some()),
+            "every figure sits under a heading"
+        );
+        assert!(
+            figs.iter().any(|f| !f.detail.is_empty()),
+            "captions are read"
+        );
+        let labels: Vec<&Anchor> = m.anchors.iter().filter(|a| a.kind != "macro").collect();
+        assert!(labels.iter().any(|a| a.file.starts_with("sections/")));
+        assert!(!m.bibs.is_empty() && m.cites > 20);
+        if let Ok(out) = std::env::var("DABIR_MAP_DUMP") {
+            fs::write(out, serde_json::to_string_pretty(&m).unwrap()).unwrap();
+        }
     }
 
     #[test]
