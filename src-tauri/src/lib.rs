@@ -1158,6 +1158,15 @@ struct FollowUp {
     reply: String,
 }
 
+/// The paper's structure for the editor: sections, labels, floats, macros and bibliographies with
+/// their file and line, following \input from the main file.
+#[tauri::command]
+fn paper_map(root: String) -> Result<paper::PaperMap, String> {
+    let root = PathBuf::from(&root);
+    let main = find_main_tex(&root).ok_or("no main file")?;
+    Ok(paper::build(&root, &main))
+}
+
 /// Start an agent run on a fresh worktree. Events stream on the `agent-event` channel.
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
@@ -2009,6 +2018,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             open_project,
+            paper_map,
             read_text,
             write_text,
             read_binary,

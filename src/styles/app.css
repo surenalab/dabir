@@ -288,6 +288,20 @@ button { background: none; border: 0; padding: 0; cursor: default; }
 .editor .cm-selectionBackground, .editor .cm-editor ::selection { background: var(--selection) !important; }
 .editor .cm-cursor { border-left-color: var(--accent); }
 .editor .cm-matchingBracket { background: var(--accent-wash); outline: 0; }
+.editor .cm-env-match { background: var(--accent-wash); border-radius: var(--radius-sm); }
+/* Fold markers: quiet until the gutter is hovered, so line numbers stay the only thing in view. */
+.editor .cm-foldGutter { width: 14px; }
+.editor .cm-foldGutter .cm-gutterElement { color: transparent; cursor: pointer; padding: 0 2px; transition: color var(--dur) var(--ease-out); }
+.editor .cm-gutters:hover .cm-foldGutter .cm-gutterElement, .editor .cm-foldGutter .cm-gutterElement:hover { color: var(--ink-4); }
+.editor .cm-foldGutter .cm-gutterElement:hover { color: var(--ink-2); }
+.editor .cm-foldPlaceholder { background: var(--paper-2); border: 1px solid var(--line); color: var(--ink-3); border-radius: var(--radius-sm); padding: 0 6px; margin: 0 2px; font-family: var(--font-ui); font-size: var(--text-xs); }
+/* Completion rows: the label in mono, the detail (a glyph, a macro's body, a label's kind and section) quiet. */
+.editor .cm-tooltip-autocomplete ul li { padding: 3px 8px; font-family: var(--font-mono); font-size: var(--mono-size, 13px); }
+.editor .cm-tooltip-autocomplete .cm-completionDetail { font-family: var(--font-ui); font-style: normal; color: var(--ink-3); margin-left: var(--space-3); }
+.editor .cm-tooltip-autocomplete .cm-completionMatchedText { text-decoration: none; color: var(--accent); font-weight: 600; }
+.editor .cm-tooltip.cm-completionInfo { font-family: var(--font-ui); font-size: var(--text-sm); color: var(--ink-2); padding: var(--space-2) var(--space-3); max-width: 360px; white-space: pre-line; }
+.editor .cm-snippetField { background: var(--accent-wash); border-radius: var(--radius-sm); }
+.editor .cm-snippetFieldPosition { border-left: 1.5px solid var(--accent); }
 .editor .cm-panels { background: var(--paper-2); color: var(--ink); border-color: var(--line); font-family: var(--font-ui); font-size: var(--text-sm); }
 .editor .cm-panels input, .editor .cm-panels button { font: inherit; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--raised); color: var(--ink); padding: 2px 6px; }
 .editor .cm-searchMatch { background: var(--warn-wash); outline: 1px solid var(--warn); }
