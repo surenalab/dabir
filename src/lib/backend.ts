@@ -11,7 +11,9 @@ import { applyPatch } from "./review";
 
 export type EntryKind = "dir" | "tex" | "bib" | "code" | "figure" | "data" | "other";
 export interface Entry { name: string; path: string; kind: EntryKind; children: Entry[] }
-export interface Project { root: string; name: string; mainTex: string | null; hasGit: boolean; hasMemory: boolean; tree: Entry[]; treeTruncated?: boolean }
+/** Where the code runs when `dabir.toml [remote]` names a host: an ssh destination and the repository's path there. */
+export interface Remote { host: string; dir: string }
+export interface Project { root: string; name: string; mainTex: string | null; hasGit: boolean; hasMemory: boolean; tree: Entry[]; treeTruncated?: boolean; remote?: Remote | null }
 
 export interface Diagnostic { severity: "error" | "warning" | "info"; category: string; file: string | null; line: number | null; message: string; context: string | null }
 export interface CompileResult { ok: boolean; pdf: string | null; log: string; diagnostics: Diagnostic[]; engine: string; millis: number }
@@ -513,9 +515,9 @@ export function onWindowFocus(handler: (focused: boolean) => void): () => void {
 // ---- terminal pane: a shell in the paper's folder
 
 /** Start a shell in `cwd`; output arrives through `onTerminalData`. Null in the browser preview. */
-export async function termOpen(cwd: string, cols: number, rows: number): Promise<number | null> {
+export async function termOpen(cwd: string, cols: number, rows: number, remote: Remote | null = null): Promise<number | null> {
   if (!native) return null;
-  return invoke<number>("term_open", { cwd, cols, rows });
+  return invoke<number>("term_open", { cwd, cols, rows, remote });
 }
 export async function termWrite(id: number, data: string): Promise<void> {
   if (!native) return;
@@ -540,4 +542,44 @@ export function onTerminalExit(handler: (e: { id: number; code: number | null })
   let un: (() => void) | null = null;
   listen<{ id: number; code: number | null }>("term-exit", (e) => handler(e.payload)).then((u) => { un = u; });
   return () => { un?.(); };
+}
+
+// ---- language servers for code files
+
+export async function lspAvailable(candidates: string[]): Promise<string[]> {
+  if (!native) return [];
+  return invoke<string[]>("lsp_available", { candidates }).catch(() => []);
+}
+export async function lspStart(root: string, command: string, args: string[]): Promise<number | null> {
+  if (!native) return null;
+  return invoke<number>("lsp_start", { root, command, args }).catch(() => null);
+}
+export async function lspSend(id: number, message: string): Promise<void> {
+  if (!native) return;
+  await invoke("lsp_send", { id, message }).catch(() => {});
+}
+export async function lspStop(id: number): Promise<void> {
+  if (!native) return;
+  await invoke("lsp_stop", { id }).catch(() => {});
+}
+export function onLspMessage(handler: (e: { id: number; message: string }) => void): () => void {
+  if (!native) return () => {};
+  let un: (() => void) | null = null;
+  listen<{ id: number; message: string }>("lsp-message", (e) => handler(e.payload)).then((u) => { un = u; });
+  return () => { un?.(); };
+}
+export function onLspExit(handler: (e: { id: number }) => void): () => void {
+  if (!native) return () => {};
+  let un: (() => void) | null = null;
+  listen<{ id: number }>("lsp-exit", (e) => handler(e.payload)).then((u) => { un = u; });
+  return () => { un?.(); };
+}
+
+// ---- find in paper
+
+export interface SearchHit { file: string; line: number; col: number; len: number; text: string; cut: boolean }
+/** Every text file of the paper that contains `query` (smart case), at most 400 lines. Empty in the browser preview. */
+export async function searchPaper(root: string, query: string): Promise<SearchHit[]> {
+  if (!native) return [];
+  return invoke<SearchHit[]>("search_paper", { root, query }).catch(() => []);
 }

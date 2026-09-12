@@ -60,6 +60,7 @@ pub fn open(
     cwd: &Path,
     cols: u16,
     rows: u16,
+    remote: Option<&crate::memory::Remote>,
 ) -> Result<u32, String> {
     let data = app.clone();
     let exit = app.clone();
@@ -68,6 +69,7 @@ pub fn open(
         cwd,
         cols,
         rows,
+        remote,
         move |id, text| {
             let _ = data.emit("term-data", Data { id, data: text });
         },
@@ -83,6 +85,7 @@ pub fn spawn(
     cwd: &Path,
     cols: u16,
     rows: u16,
+    remote: Option<&crate::memory::Remote>,
     on_data: impl Fn(u32, String) + Send + 'static,
     on_exit: impl FnOnce(u32) + Send + 'static,
 ) -> Result<u32, String> {
@@ -95,10 +98,25 @@ pub fn spawn(
             pixel_height: 0,
         })
         .map_err(|e| e.to_string())?;
-    let mut cmd = CommandBuilder::new(shell());
-    if !cfg!(windows) {
-        cmd.arg("-l");
-    }
+    // A remote terminal is `ssh -t host` landing in the repository there, in that host's login shell.
+    let mut cmd = match remote {
+        Some(r) => {
+            let mut c = CommandBuilder::new("ssh");
+            c.args(["-t", "-o", "ConnectTimeout=15", &r.host]);
+            c.arg(format!(
+                "cd {} && exec \"${{SHELL:-/bin/sh}}\" -l",
+                crate::memory::remote_dir_quoted(r)
+            ));
+            c
+        }
+        None => {
+            let mut c = CommandBuilder::new(shell());
+            if !cfg!(windows) {
+                c.arg("-l");
+            }
+            c
+        }
+    };
     cmd.cwd(cwd);
     cmd.env("PATH", crate::agents::agent_path());
     cmd.env("TERM", "xterm-256color");
@@ -220,6 +238,7 @@ mod tests {
             &cwd,
             80,
             24,
+            None,
             move |_, text| {
                 let _ = tx.send(text);
             },

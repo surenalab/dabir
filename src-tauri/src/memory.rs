@@ -111,6 +111,68 @@ pub fn env_prefix(root: &Path) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
+/// Where the paper's code runs when not on this machine: `dabir.toml [remote]` with `host` (an ssh
+/// destination, usually a name from ~/.ssh/config) and `dir` (the repository's path on that host).
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Remote {
+    pub host: String,
+    pub dir: String,
+}
+
+pub fn remote(root: &Path) -> Option<Remote> {
+    let t = toml_table(root)?;
+    let r = t.get("remote")?;
+    let host = r.get("host")?.as_str()?.trim().to_string();
+    if host.is_empty() {
+        return None;
+    }
+    let dir = r
+        .get("dir")
+        .and_then(|d| d.as_str())
+        .map(|d| d.trim().to_string())
+        .filter(|d| !d.is_empty())
+        .unwrap_or_else(|| ".".into());
+    Some(Remote { host, dir })
+}
+
+/// `cd dir && command` for `ssh host`, quoted so the remote login shell sees it unchanged.
+pub fn remote_command(remote: &Remote, command: &str) -> Vec<String> {
+    vec![
+        "-o".into(),
+        "BatchMode=yes".into(),
+        "-o".into(),
+        "ConnectTimeout=15".into(),
+        remote.host.clone(),
+        format!("cd {} && {}", shell_quote(&remote.dir), command),
+    ]
+}
+
+pub fn remote_dir_quoted(remote: &Remote) -> String {
+    shell_quote(&remote.dir)
+}
+
+/// Single-quote for POSIX shells; `~` and `~user` prefixes stay unquoted so they still expand.
+fn shell_quote(s: &str) -> String {
+    let (tilde, rest) = match s.strip_prefix('~') {
+        Some(r) => {
+            let cut = r.find('/').unwrap_or(r.len());
+            (&s[..1 + cut], &r[cut..])
+        }
+        None => ("", s),
+    };
+    if rest.is_empty() {
+        return tilde.to_string();
+    }
+    if rest
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || "/._-".contains(c))
+    {
+        return format!("{tilde}{rest}");
+    }
+    format!("{tilde}'{}'", rest.replace('\'', "'\\''"))
+}
+
 fn section(brief: &str, heading: &str) -> Option<String> {
     let start = brief.find(&format!("## {}", heading))?;
     let body = &brief[start..];
@@ -574,7 +636,7 @@ pub fn setup(root: &Path, main_tex: Option<&Path>) -> Result<Vec<String>, String
     let existing_toml = fs::read_to_string(&toml_path).unwrap_or_default();
     if !existing_toml.contains("[env]") {
         let prefix = det.prefix.clone().unwrap_or_default();
-        let block = format!("{}{}\n[env]\n# Prepended to every provenance command and suggested to agents. Examples: \"conda run -n myenv\", \"uv run\", \".venv/bin/python -m\".\nprefix = \"{}\"\n", existing_toml, if existing_toml.is_empty() || existing_toml.ends_with('\n') { "" } else { "\n" }, prefix);
+        let block = format!("{}{}\n[env]\n# Prepended to every provenance command and suggested to agents. Examples: \"conda run -n myenv\", \"uv run\", \".venv/bin/python -m\".\nprefix = \"{}\"\n\n# Where the code runs when not on this machine. Uncomment to run recorded commands and the\n# terminal's remote shell over ssh; artefacts are copied back with scp after each run.\n# [remote]\n# host = \"gpu-box\"        # a name from ~/.ssh/config, or user@host\n# dir = \"~/work/paper\"    # the repository's path on that host\n", existing_toml, if existing_toml.is_empty() || existing_toml.ends_with('\n') { "" } else { "\n" }, prefix);
         let header = if existing_toml.is_empty() {
             format!(
                 "[paper]\nmain = \"{}\"\nengine = \"tectonic\"\n",
@@ -905,14 +967,52 @@ pub fn rerun(root: &Path, artefact: &str) -> Result<RunOutput, String> {
         _ => a.command.clone(),
     };
     let started = std::time::Instant::now();
-    let out = Command::new("sh")
-        .arg("-lc")
-        .arg(&cmd)
-        .current_dir(root)
-        .output()
-        .map_err(|e| e.to_string())?;
+    let remote = remote(root);
+    let out = match &remote {
+        Some(r) => Command::new("ssh")
+            .args(remote_command(r, &cmd))
+            .current_dir(root)
+            .output()
+            .map_err(|e| format!("ssh: {e}"))?,
+        None => Command::new("sh")
+            .arg("-lc")
+            .arg(&cmd)
+            .current_dir(root)
+            .output()
+            .map_err(|e| e.to_string())?,
+    };
+    let mut ok = out.status.success();
+    let mut fetched = String::new();
+    // Level one of remote work: the code runs there, the artefact is copied back here so the paper
+    // can include it. Absolute artefact paths stay on the host.
+    if ok {
+        if let Some(r) = &remote {
+            if !Path::new(artefact).is_absolute() && !artefact.contains("..") {
+                let local = root.join(artefact);
+                if let Some(parent) = local.parent() {
+                    let _ = fs::create_dir_all(parent);
+                }
+                let from = format!("{}:{}/{}", r.host, r.dir.trim_end_matches('/'), artefact);
+                let scp = Command::new("scp")
+                    .args(["-q", "-o", "BatchMode=yes", "-r", &from])
+                    .arg(&local)
+                    .output()
+                    .map_err(|e| format!("scp: {e}"))?;
+                if scp.status.success() {
+                    fetched = format!("\n(copied {} from {})\n", artefact, r.host);
+                } else {
+                    ok = false;
+                    fetched = format!(
+                        "\n(could not copy {} back from {}: {})\n",
+                        artefact,
+                        r.host,
+                        String::from_utf8_lossy(&scp.stderr).trim()
+                    );
+                }
+            }
+        }
+    }
     let millis = started.elapsed().as_millis();
-    let ok = out.status.success();
     if ok {
         let path = root.join(".dabir").join("provenance.json");
         let mut v: serde_json::Value = fs::read_to_string(&path)
@@ -940,10 +1040,15 @@ pub fn rerun(root: &Path, artefact: &str) -> Result<RunOutput, String> {
     Ok(RunOutput {
         ok,
         output: format!(
-            "$ {}\n{}{}",
+            "$ {}{}\n{}{}{}",
+            remote
+                .as_ref()
+                .map(|r| format!("[{}] ", r.host))
+                .unwrap_or_default(),
             cmd,
             String::from_utf8_lossy(&out.stdout),
-            String::from_utf8_lossy(&out.stderr)
+            String::from_utf8_lossy(&out.stderr),
+            fetched
         ),
         millis,
     })
@@ -1370,6 +1475,40 @@ pub fn context_pack(root: &Path, query: &str, max_chars: usize) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn remote_comes_from_dabir_toml() {
+        let dir = std::env::temp_dir().join(format!("dabir-remote-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        assert_eq!(super::remote(&dir), None);
+        std::fs::write(
+            dir.join("dabir.toml"),
+            "[env]\nprefix = \"uv run\"\n[remote]\nhost = \"gpu-box\"\ndir = \"~/work/paper code\"\n",
+        )
+        .unwrap();
+        let r = super::remote(&dir).unwrap();
+        assert_eq!(r.host, "gpu-box");
+        assert_eq!(r.dir, "~/work/paper code");
+        let args = super::remote_command(&r, "uv run python code/sweep.py");
+        assert_eq!(args[args.len() - 2], "gpu-box");
+        assert_eq!(
+            args[args.len() - 1],
+            "cd ~'/work/paper code' && uv run python code/sweep.py"
+        );
+        std::fs::write(dir.join("dabir.toml"), "[remote]\nhost = \"box\"\n").unwrap();
+        assert_eq!(super::remote(&dir).unwrap().dir, ".");
+        std::fs::write(dir.join("dabir.toml"), "[remote]\nhost = \"\"\n").unwrap();
+        assert_eq!(super::remote(&dir), None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn shell_quote_keeps_plain_paths_and_tildes() {
+        assert_eq!(super::shell_quote("~/repo"), "~/repo");
+        assert_eq!(super::shell_quote("~"), "~");
+        assert_eq!(super::shell_quote("/srv/a-b_c.d"), "/srv/a-b_c.d");
+        assert_eq!(super::shell_quote("it's here"), "'it'\\''s here'");
+        assert_eq!(super::shell_quote("~bob/x y"), "~bob'/x y'");
+    }
     use super::*;
 
     #[test]

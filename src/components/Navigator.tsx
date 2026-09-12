@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronRight, FileText, BookMarked, Code2, Image, Database, File, Folder, GitCommitHorizontal, Undo2, History as HistoryIcon } from "lucide-react";
-import type { Entry, GitStatus, Project } from "../lib/backend";
+import { ChevronRight, FileText, BookMarked, Code2, Image, Database, File, Folder, GitCommitHorizontal, Undo2, History as HistoryIcon, X } from "lucide-react";
+import { searchPaper, type Entry, type GitStatus, type Project, type SearchHit } from "../lib/backend";
 import type { OutlineItem } from "../lib/latex";
 
 const ICON = { tex: FileText, bib: BookMarked, code: Code2, figure: Image, data: Database, other: File, dir: Folder } as const;
@@ -24,6 +24,47 @@ function Node({ entry, current, onSelect, depth }: { entry: Entry; current: stri
       </button>
       {isDir && open && <ul role="group">{entry.children.map((c) => <Node key={c.path} entry={c} current={current} onSelect={onSelect} depth={depth + 1} />)}</ul>}
     </li>
+  );
+}
+
+/** Find in Paper: one field, every file of the paper, results grouped by file; Enter or a click jumps to the line. */
+function FindSection({ root, stamp, onJump, onClose }: { root: string; stamp: number; onJump: (line: number, file: string) => void; onClose: () => void }) {
+  const input = useRef<HTMLInputElement>(null);
+  const [query, setQuery] = useState("");
+  const [hits, setHits] = useState<SearchHit[] | null>(null);
+  useEffect(() => { input.current?.focus(); input.current?.select(); }, [stamp]);
+  useEffect(() => {
+    if (!query.trim()) return;
+    let live = true;
+    const t = setTimeout(() => { searchPaper(root, query).then((h) => { if (live) setHits(h); }); }, 180);
+    return () => { live = false; clearTimeout(t); };
+  }, [root, query]);
+  const groups: { file: string; hits: SearchHit[] }[] = [];
+  for (const h of hits ?? []) {
+    const g = groups[groups.length - 1];
+    if (g && g.file === h.file) g.hits.push(h); else groups.push({ file: h.file, hits: [h] });
+  }
+  return (
+    <section className="nav-section find-paper">
+      <div className="nav-heading"><span>Find in Paper</span>{hits && <span className="count">{hits.length >= 400 ? "400+" : hits.length} in {groups.length} {groups.length === 1 ? "file" : "files"}</span>}</div>
+      <div className="find-field">
+        <input ref={input} value={query} onChange={(e) => { setQuery(e.target.value); if (!e.target.value.trim()) setHits(null); }} placeholder="Text in any file" aria-label="Find in paper" spellCheck={false}
+          onKeyDown={(e) => { if (e.key === "Escape") { onClose(); } else if (e.key === "Enter" && hits?.[0]) onJump(hits[0].line, hits[0].file); }} />
+        <button className="btn icon" onClick={onClose} title="Close (Esc)" aria-label="Close find in paper"><X aria-hidden /></button>
+      </div>
+      {hits && hits.length === 0 && <div className="empty-nav">Nothing in the paper matches “{query}”. Lower-case searches ignore case; a capital letter makes it exact.</div>}
+      {groups.map((g) => (
+        <div className="find-group" key={g.file}>
+          <div className="find-file" title={g.file}>{g.file}</div>
+          {g.hits.map((h) => (
+            <button key={`${h.line}-${h.col}`} className="outline-row find-hit" onClick={() => onJump(h.line, h.file)} title={`${g.file}:${h.line}`}>
+              <span className="num">{h.line}</span>
+              <span className="text">{h.cut && "…"}{h.text.slice(0, h.col)}<mark>{h.text.slice(h.col, h.col + h.len)}</mark>{h.text.slice(h.col + h.len)}</span>
+            </button>
+          ))}
+        </div>
+      ))}
+    </section>
   );
 }
 
@@ -53,9 +94,12 @@ interface Props {
   /** Open the History tab in the inspector. */
   onHistory: () => void;
   historyCount: number;
+  /** Find in Paper is open; `stamp` bumps to refocus the field. */
+  find: { open: boolean; stamp: number };
+  onCloseFind: () => void;
 }
 
-export function Navigator({ project, current, outline, git, commitFocus, busy, onSelect, onJump, onInitGit, onCommit, draftMessage, onDiscard, onHistory, historyCount }: Props) {
+export function Navigator({ project, current, outline, git, commitFocus, busy, onSelect, onJump, onInitGit, onCommit, draftMessage, onDiscard, onHistory, historyCount, find, onCloseFind }: Props) {
   const ref = useRef<HTMLElement>(null);
   const commitInput = useRef<HTMLInputElement>(null);
   const [message, setMessage] = useState("");
@@ -85,6 +129,7 @@ export function Navigator({ project, current, outline, git, commitFocus, busy, o
 
   return (
     <aside className="navigator" ref={ref} onKeyDown={onKey}>
+      {find.open && <FindSection root={project.root} stamp={find.stamp} onJump={(l, f) => onJump(l, f)} onClose={onCloseFind} />}
       <section className="nav-section">
         <div className="nav-heading"><span>Files</span><span className="count" title={project.treeTruncated ? "This folder holds more files than the sidebar lists. Open the paper's own folder to see all of it." : undefined}>{countFiles(project.tree)}{project.treeTruncated ? "+" : ""}</span></div>
         <ul className="tree" role="tree" aria-label="Project files" tabIndex={0}
