@@ -32,6 +32,19 @@ Pass rates per vendor are the artifact that matters; publish them with a release
 
 Running several providers at once is fine (each task works in its own temp copy), but build the test binary once first (`cargo test --no-run`) and start the runs from that binary, or the second `cargo test` will wait on the build lock and may rewrite the binary under the first.
 
+## Results, 2026-09-12, evening: files by role and deny rules
+
+The preamble's file list is grouped by role (manuscript with main first, bibliography, generated artefacts with their command, code, figures, data, other), and Claude and Grok runs carry a deny list for the tools the prompt makes redundant (`git log/status/diff/show/branch/stash/checkout/reset`, `tree`; Claude `--disallowedTools`, Grok `--deny`). Full suites, one CLI at a time:
+
+| CLI | Passed | Single file (01–21) | Multi-file (22–31) | Vague task | Orientation calls (suite) |
+|---|---|---|---|---|---|
+| Claude Code | 31/31 | 14.5 s, 2.8 calls (20 tasks; see below for 11) | 19.3 s, 2.6 calls | 38 s, 3 calls | 16 |
+| Grok | 31/31 | 20.6 s, 2.7 calls | 21.1 s, 2.9 calls | 112 s, 7 calls | 3 |
+
+Grok made no orientation call at all on the multi-file paper and three in the whole suite; its `--deny` was checked live before the run (a denied `git log` comes back refused and the agent goes on without it). Claude's orientation calls are `git diff --stat` after an edit and the odd `ls`; the deny list turned its `git checkout` attempts into `git restore`, which is not on the list, so the list is a nudge rather than a wall.
+
+Task 11 (append two words to the caption of `tables/psnr-sweep.tex`, a file the sweep script writes) exposed two things. The role map said "generated (rerun the command, never edit)", and the sample's script seeded its toy numbers with Python's salted string hash, so every rerun changed the table; Claude reran, saw the numbers move, reverted, and spent 150 s on a script that searched for a seed reproducing the committed table before editing the caption (230 s, 11 calls; it passed). Two fixes: the sweep seeds with a CRC of the key and its outputs are regenerated from it, and the map and the artefact heading now say what to do ("change the code that writes it and rerun; hand-edit only when asked") rather than only what not to. On rerun Claude edits the caption string in `code/sweep.py`, reruns the sweep, and confirms the table: 44 s, 8 calls. Grok edited the caption where the request pointed.
+
 ## Results, 2026-09-12, paper map and editor position in the preamble
 
 The preamble now carries a paper map (every section, label, figure, table, equation and macro with its file and line, built by following `\input`), the author's editor position and selection when the request comes from the app, the decisions on record and the artefact commands, and a context pack that chunks along paragraphs and floats, drops LaTeX command names from its tokens and labels each hit with its section. Claude Code, full suite:
