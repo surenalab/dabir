@@ -56,6 +56,35 @@ pub fn available(candidates: &[String]) -> Vec<String> {
         .collect()
 }
 
+/// Whether `command args` exits successfully within `timeout`: how a launcher such as `julia -e
+/// 'using LanguageServer'` or `R -e 'library(languageserver)'` shows the package behind it is installed.
+pub fn probe(command: &str, args: &[String], timeout: std::time::Duration) -> bool {
+    let Ok(mut child) = Command::new(command)
+        .args(args)
+        .env("PATH", crate::agents::agent_path())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+    else {
+        return false;
+    };
+    let started = std::time::Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return status.success(),
+            Ok(None) if started.elapsed() < timeout => {
+                std::thread::sleep(std::time::Duration::from_millis(50))
+            }
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return false;
+            }
+        }
+    }
+}
+
 /// Start `command args` in `root`; returns the server's id. Messages arrive as `lsp-message`.
 pub fn start(
     app: &AppHandle,
@@ -265,5 +294,20 @@ while True:
     fn available_filters_by_path() {
         let got = available(&["sh".into(), "definitely-not-a-program-xyz".into()]);
         assert_eq!(got, vec!["sh".to_string()]);
+    }
+
+    #[test]
+    fn probe_reports_exit_status_and_kills_on_timeout() {
+        let t = std::time::Duration::from_secs(5);
+        assert!(probe("sh", &["-c".into(), "exit 0".into()], t));
+        assert!(!probe("sh", &["-c".into(), "exit 1".into()], t));
+        assert!(!probe("definitely-not-a-program-xyz", &[], t));
+        let started = std::time::Instant::now();
+        assert!(!probe(
+            "sh",
+            &["-c".into(), "sleep 30".into()],
+            std::time::Duration::from_millis(300)
+        ));
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
     }
 }

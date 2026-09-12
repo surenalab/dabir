@@ -1319,6 +1319,16 @@ fn lsp_available(candidates: Vec<String>) -> Vec<String> {
     lsp::available(&candidates)
 }
 
+/// Whether a launcher command works: `julia -e 'using LanguageServer'` is only useful when the package is there.
+#[tauri::command]
+async fn lsp_probe(command: String, args: Vec<String>) -> bool {
+    tauri::async_runtime::spawn_blocking(move || {
+        lsp::probe(&command, &args, std::time::Duration::from_secs(30))
+    })
+    .await
+    .unwrap_or(false)
+}
+
 #[tauri::command]
 fn lsp_start(
     app: AppHandle,
@@ -2257,6 +2267,7 @@ pub fn run() {
             term_close,
             search_paper,
             lsp_available,
+            lsp_probe,
             lsp_start,
             lsp_send,
             lsp_stop,
