@@ -1197,6 +1197,39 @@ fn term_close(terms: tauri::State<terminal::Shared>, id: u32) {
     terminal::close(&terms, id)
 }
 
+/// A line from the web view into `~/Library/Logs/Dabir/ui.log` (or the platform's log folder): script
+/// errors, unhandled rejections and failures the UI could not show. The release build has no devtools,
+/// so this is how a "nothing happened" report becomes a cause.
+#[tauri::command]
+fn ui_log(app: AppHandle, message: String) {
+    use std::io::Write as _;
+    let Ok(dir) = app.path().app_log_dir() else {
+        return;
+    };
+    if std::fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+    let path = dir.join("ui.log");
+    // Keep the file small: start over past a megabyte.
+    if std::fs::metadata(&path).map(|m| m.len() > 1_000_000).unwrap_or(false) {
+        let _ = std::fs::remove_file(&path);
+    }
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+        let secs = std::time::SystemTime::now()
+            .duration_since(std::time::SystemTime::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let stamp = format!(
+            "{} {:02}:{:02}:{:02}Z",
+            memory::chrono_date(),
+            (secs / 3600) % 24,
+            (secs / 60) % 60,
+            secs % 60
+        );
+        let _ = writeln!(f, "{stamp} {}", message.replace('\n', "\n  "));
+    }
+}
+
 // ---- find in paper
 
 #[derive(Serialize, Debug, PartialEq)]
@@ -2262,6 +2295,7 @@ pub fn run() {
             open_project,
             paper_map,
             term_open,
+            ui_log,
             term_write,
             term_resize,
             term_close,

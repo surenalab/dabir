@@ -14,6 +14,17 @@ import { julia } from "@codemirror/legacy-modes/mode/julia";
 import { r } from "@codemirror/legacy-modes/mode/r";
 import { shell } from "@codemirror/legacy-modes/mode/shell";
 import { toml } from "@codemirror/legacy-modes/mode/toml";
+import { octave } from "@codemirror/legacy-modes/mode/octave";
+import { fortran } from "@codemirror/legacy-modes/mode/fortran";
+import { lua } from "@codemirror/legacy-modes/mode/lua";
+import { cmake } from "@codemirror/legacy-modes/mode/cmake";
+import { dockerFile } from "@codemirror/legacy-modes/mode/dockerfile";
+import { sql } from "@codemirror/legacy-modes/mode/sql";
+import { javascript } from "@codemirror/lang-javascript";
+import { cpp } from "@codemirror/lang-cpp";
+import { rust } from "@codemirror/lang-rust";
+import { css } from "@codemirror/lang-css";
+import { html } from "@codemirror/lang-html";
 
 export type FileKind = "tex" | "typst" | "bib" | "code" | "prose" | "data" | "text";
 
@@ -23,7 +34,8 @@ export function fileKind(path: string | null): FileKind {
   if (["tex", "sty", "cls", "ltx", "dtx", "bbx", "cbx"].includes(ext)) return "tex";
   if (ext === "typ") return "typst";
   if (ext === "bib") return "bib";
-  if (["py", "jl", "r", "sh", "bash", "zsh", "m", "js", "ts", "rs", "c", "cpp", "h"].includes(ext)) return "code";
+  if (["py", "pyi", "jl", "r", "sh", "bash", "zsh", "m", "js", "jsx", "mjs", "cjs", "ts", "tsx", "rs", "c", "cc", "cpp", "cxx", "h", "hh", "hpp", "cu", "cuh", "f", "f90", "f95", "lua", "sql", "css", "html", "htm", "svelte", "vue"].includes(ext)) return "code";
+  if (["cmake", "dockerfile"].includes(ext) || /(^|\/)(CMakeLists\.txt|Dockerfile|Makefile)$/.test(path ?? "")) return "code";
   if (["md", "markdown", "txt", "rst"].includes(ext)) return "prose";
   if (["yml", "yaml", "json", "toml", "csv", "tsv", "cfg", "ini"].includes(ext)) return "data";
   return "text";
@@ -37,9 +49,26 @@ export const hasProse = (path: string | null) => { const k = fileKind(path); ret
 
 /** The grammar for a non-LaTeX file; null when the file should keep the LaTeX language (tex, bib, sty). */
 export function codeLanguage(path: string | null): LanguageSupport | Extension | null {
-  const ext = (path ?? "").split(".").pop()?.toLowerCase() ?? "";
+  const name = (path ?? "").split("/").pop() ?? "";
+  if (name === "CMakeLists.txt") return StreamLanguage.define(cmake);
+  if (name === "Dockerfile") return StreamLanguage.define(dockerFile);
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
   switch (ext) {
-    case "py": return python();
+    case "py": case "pyi": return python();
+    case "js": case "mjs": case "cjs": return javascript();
+    case "jsx": return javascript({ jsx: true });
+    case "ts": return javascript({ typescript: true });
+    case "tsx": return javascript({ typescript: true, jsx: true });
+    case "c": case "h": case "cc": case "cpp": case "cxx": case "hh": case "hpp": case "cu": case "cuh": return cpp();
+    case "rs": return rust();
+    case "css": return css();
+    case "html": case "htm": case "svelte": case "vue": return html();
+    case "m": return StreamLanguage.define(octave);
+    case "f": case "f90": case "f95": return StreamLanguage.define(fortran);
+    case "lua": return StreamLanguage.define(lua);
+    case "sql": return StreamLanguage.define(sql({}));
+    case "cmake": return StreamLanguage.define(cmake);
+    case "dockerfile": return StreamLanguage.define(dockerFile);
     case "md": case "markdown": return markdown();
     case "yml": case "yaml": return yaml();
     case "json": return json();
