@@ -1,13 +1,14 @@
-// A shell in the paper's folder, below the editor. The same PATH the agents get, so a command that
-// works for them works here; output is the terminal's own, not a transcript.
+// The terminal panel below the editor, the way an IDE keeps one: several shells as tabs, a drag handle to
+// set its height, a shell on the paper's remote host beside the local ones. Each shell has the same PATH
+// the agents get, so a command that works for them works here; output is the terminal's own, not a transcript.
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
-import { X, Plus } from "lucide-react";
+import { X, Plus, ChevronDown } from "lucide-react";
 import { termOpen, termWrite, termResize, termClose, onTerminalData, onTerminalExit, type Remote } from "../lib/backend";
-import { Segmented } from "./Segmented";
+import { describe, logUi } from "../lib/diag";
 
 interface Props {
   cwd: string;
@@ -17,6 +18,11 @@ interface Props {
   /** Bumps when the pane should take keyboard focus (opened from the menu or shortcut). */
   focusStamp: number;
 }
+
+interface ShellTab { key: number; remote: Remote | null; gone: boolean }
+
+const HEIGHT_KEY = "dabir.terminalHeight";
+const MIN_H = 120;
 
 /** Read the app's tokens so the terminal is set in the paper's colours, in light and dark. */
 function palette() {
@@ -49,15 +55,108 @@ function palette() {
   };
 }
 
+function shellName(remote: Remote | null) {
+  if (remote) return remote.host;
+  const s = (navigator.userAgent.includes("Mac") ? "zsh" : "sh");
+  return s;
+}
+
 export function TerminalPane({ cwd, remote, onClose, focusStamp }: Props) {
+  const next = useRef(2);
+  const [shells, setShells] = useState<ShellTab[]>([{ key: 1, remote: null, gone: false }]);
+  const [active, setActive] = useState(1);
+  const [height, setHeight] = useState(() => { const n = Number(localStorage.getItem(HEIGHT_KEY)); return n >= MIN_H ? n : 240; });
+  const [dragging, setDragging] = useState(false);
+  const [hostMenu, setHostMenu] = useState(false);
+  const focusRef = useRef<Map<number, () => void>>(new Map());
+
+  const add = useCallback((on: Remote | null) => {
+    const key = next.current++;
+    setShells((s) => [...s, { key, remote: on, gone: false }]);
+    setActive(key);
+    setHostMenu(false);
+  }, []);
+  const remove = useCallback((key: number) => {
+    setShells((s) => {
+      const rest = s.filter((t) => t.key !== key);
+      if (rest.length === 0) { queueMicrotask(onClose); return s; }
+      setActive((a) => (a === key ? rest[Math.max(0, Math.min(s.findIndex((t) => t.key === key), rest.length - 1))].key : a));
+      return rest;
+    });
+  }, [onClose]);
+  const exited = useCallback((key: number) => setShells((s) => s.map((t) => (t.key === key ? { ...t, gone: true } : t))), []);
+
+  useEffect(() => { focusRef.current.get(active)?.(); }, [focusStamp, active]);
+
+  // Drag the top edge to set the height; the choice is kept for the next time the panel opens.
+  const onHandle = (e: React.PointerEvent) => {
+    e.preventDefault();
+    const startY = e.clientY, startH = height;
+    setDragging(true);
+    const move = (ev: PointerEvent) => setHeight(Math.max(MIN_H, Math.min(window.innerHeight * 0.8, startH + (startY - ev.clientY))));
+    const up = () => { setDragging(false); window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); setHeight((h) => { localStorage.setItem(HEIGHT_KEY, String(Math.round(h))); return h; }); };
+    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+  };
+
+  const folder = cwd.split("/").filter(Boolean).pop() ?? cwd;
+  return (
+    <section className={`terminal ${dragging ? "dragging" : ""}`} aria-label="Terminal" style={{ height }}>
+      <div className="hdivider" role="separator" aria-orientation="horizontal" aria-label="Resize terminal" onPointerDown={onHandle} />
+      <header>
+        <div className="shelltabs" role="tablist" aria-label="Shells">
+          {shells.map((t, i) => (
+            <div key={t.key} role="tab" aria-selected={t.key === active} className={`shelltab ${t.key === active ? "active" : ""} ${t.gone ? "gone" : ""}`}
+              onClick={() => setActive(t.key)} onAuxClick={(e) => { if (e.button === 1) remove(t.key); }}
+              title={t.remote ? `ssh ${t.remote.host}, in ${t.remote.dir}` : cwd}>
+              <span className="name">{shellName(t.remote)}{shells.filter((o) => (o.remote?.host ?? "") === (t.remote?.host ?? "")).length > 1 ? ` ${i + 1}` : ""}{t.gone ? " · exited" : ""}</span>
+              <button className="close" aria-label="Close shell" title="Close shell" onClick={(e) => { e.stopPropagation(); remove(t.key); }} tabIndex={-1}><X aria-hidden /></button>
+            </div>
+          ))}
+          <button className="btn icon" onClick={() => add(null)} title="New shell on this Mac" aria-label="New shell"><Plus aria-hidden /></button>
+          {remote && (
+            <span className="hostpick">
+              <button className="btn icon" onClick={() => setHostMenu((v) => !v)} title={`New shell on ${remote.host}`} aria-label="New shell on the remote host" aria-expanded={hostMenu}><ChevronDown aria-hidden /></button>
+              {hostMenu && (
+                <div className="menu" role="menu">
+                  <button role="menuitem" onClick={() => add(null)}>This Mac <span className="hint">{folder}</span></button>
+                  <button role="menuitem" onClick={() => add(remote)}>{remote.host} <span className="hint">ssh, in {remote.dir}</span></button>
+                </div>
+              )}
+            </span>
+          )}
+        </div>
+        <span className="grow" />
+        <span className="where" title={cwd}>{folder}</span>
+        <button className="btn icon" onClick={onClose} title="Hide terminal (⌃`)" aria-label="Hide terminal"><X aria-hidden /></button>
+      </header>
+      <div className="shells">
+        {shells.map((t) => (
+          <ShellView key={t.key} cwd={cwd} remote={t.remote} visible={t.key === active}
+            onExit={() => exited(t.key)}
+            register={(f) => { if (f) focusRef.current.set(t.key, f); else focusRef.current.delete(t.key); }} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+interface ShellProps {
+  cwd: string;
+  remote: Remote | null;
+  visible: boolean;
+  onExit: () => void;
+  register: (focus: (() => void) | null) => void;
+}
+
+/** One shell: an xterm bound to one pty in the app. Stays mounted while its tab is hidden so scrollback survives. */
+function ShellView({ cwd, remote, visible, onExit, register }: ShellProps) {
   const host = useRef<HTMLDivElement>(null);
   const term = useRef<XTerm | null>(null);
-  const fit = useRef<FitAddon | null>(null);
   const id = useRef<number | null>(null);
-  const [gone, setGone] = useState(false);
   const [generation, setGeneration] = useState(0);
-  const [where, setWhere] = useState<"local" | "remote">("local");
-  const onHost = where === "remote" && remote ? remote : null;
+  const [gone, setGone] = useState(false);
+  const exitRef = useRef(onExit);
+  useEffect(() => { exitRef.current = onExit; }, [onExit]);
 
   useEffect(() => {
     const el = host.current; if (!el) return;
@@ -66,22 +165,30 @@ export function TerminalPane({ cwd, remote, onClose, focusStamp }: Props) {
     const f = new FitAddon();
     x.loadAddon(f);
     x.open(el);
-    f.fit();
-    term.current = x; fit.current = f;
+    try { f.fit(); } catch { /* not laid out yet */ }
+    term.current = x;
+    register(() => x.focus());
     setGone(false);
     let alive = true;
     let opened: number | null = null;
-    termOpen(cwd, x.cols, x.rows, onHost).then((got) => {
+    termOpen(cwd, Math.max(2, x.cols), Math.max(1, x.rows), remote).then((got) => {
       if (!alive) { if (got != null) termClose(got); return; }
       opened = got; id.current = got;
       if (got == null) x.writeln("\x1b[2mThe terminal runs in the app; the browser preview has no shell.\x1b[0m");
+    }).catch((e: unknown) => {
+      // The shell could not start: say why in the pane instead of leaving it blank, and log it.
+      const why = describe(e);
+      x.writeln(`\x1b[31mCould not start a shell:\x1b[0m ${why}`);
+      x.writeln(`\x1b[2m${remote ? `ssh ${remote.host}` : "login shell"} in ${cwd}, ${x.cols}×${x.rows}\x1b[0m`);
+      logUi(`terminal: term_open failed in ${cwd} (${x.cols}x${x.rows}${remote ? `, ssh ${remote.host}` : ""}): ${why}`);
+      setGone(true); exitRef.current();
     });
     const offData = onTerminalData((e) => { if (e.id === id.current) x.write(e.data); });
-    const offExit = onTerminalExit((e) => { if (e.id === id.current) { setGone(true); x.writeln("\r\n\x1b[2m[shell exited]\x1b[0m"); } });
+    const offExit = onTerminalExit((e) => { if (e.id === id.current) { setGone(true); exitRef.current(); x.writeln("\r\n\x1b[2m[shell exited]\x1b[0m"); } });
     const onInput = x.onData((d) => { if (id.current != null) termWrite(id.current, d); });
     const ro = new ResizeObserver(() => {
-      if (!el.isConnected) return;
-      try { f.fit(); } catch { /* not laid out yet */ }
+      if (!el.isConnected || el.clientHeight === 0) return;
+      try { f.fit(); } catch { /* hidden */ }
       if (id.current != null) termResize(id.current, x.cols, x.rows);
     });
     ro.observe(el);
@@ -90,27 +197,21 @@ export function TerminalPane({ cwd, remote, onClose, focusStamp }: Props) {
     scheme.addEventListener("change", recolour);
     return () => {
       alive = false;
+      register(null);
       scheme.removeEventListener("change", recolour);
       ro.disconnect(); onInput.dispose(); offData(); offExit();
       const closing = id.current ?? opened; if (closing != null) termClose(closing);
       id.current = null;
-      x.dispose(); term.current = null; fit.current = null;
+      x.dispose(); term.current = null;
     };
-  }, [cwd, generation, onHost]);
+  }, [cwd, generation, remote]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { term.current?.focus(); }, [focusStamp]);
+  useEffect(() => { if (visible) term.current?.focus(); }, [visible]);
 
-  const folder = cwd.split("/").filter(Boolean).pop() ?? cwd;
   return (
-    <section className="terminal" aria-label="Terminal">
-      <header>
-        <span className="title">Terminal <span className="where" title={onHost ? `${onHost.host}:${onHost.dir}` : cwd}>{onHost ? `${onHost.host}:${onHost.dir}` : folder}</span></span>
-        <span className="grow" />
-        {remote && <Segmented label="Where the shell runs" value={where} onChange={(v) => setWhere(v as "local" | "remote")} options={[{ value: "local", label: "This Mac", title: cwd }, { value: "remote", label: remote.host, title: `ssh ${remote.host}, in ${remote.dir}` }]} />}
-        {gone && <button className="btn" onClick={() => setGeneration((g) => g + 1)} title="Start a new shell"><Plus aria-hidden /> New shell</button>}
-        <button className="btn icon" onClick={onClose} title="Hide terminal (⌃`)" aria-label="Hide terminal"><X aria-hidden /></button>
-      </header>
+    <div className="shell" hidden={!visible}>
       <div className="term-host" ref={host} onMouseDown={() => term.current?.focus()} />
-    </section>
+      {gone && <button className="btn restart" onClick={() => setGeneration((g) => g + 1)} title="Start a new shell in this tab"><Plus aria-hidden /> New shell</button>}
+    </div>
   );
 }

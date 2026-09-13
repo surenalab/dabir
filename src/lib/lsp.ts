@@ -27,6 +27,18 @@ const SERVERS: Record<string, ServerSpec[]> = {
   bash: [{ command: "bash-language-server", args: ["start"], languageId: "shellscript", install: "npm i -g bash-language-server" }],
   yml: [{ command: "yaml-language-server", args: ["--stdio"], languageId: "yaml", install: "npm i -g yaml-language-server" }],
   yaml: [{ command: "yaml-language-server", args: ["--stdio"], languageId: "yaml", install: "npm i -g yaml-language-server" }],
+  js: [{ command: "typescript-language-server", args: ["--stdio"], languageId: "javascript", install: "npm i -g typescript typescript-language-server" }],
+  jsx: [{ command: "typescript-language-server", args: ["--stdio"], languageId: "javascriptreact", install: "npm i -g typescript typescript-language-server" }],
+  ts: [{ command: "typescript-language-server", args: ["--stdio"], languageId: "typescript", install: "npm i -g typescript typescript-language-server" }],
+  tsx: [{ command: "typescript-language-server", args: ["--stdio"], languageId: "typescriptreact", install: "npm i -g typescript typescript-language-server" }],
+  c: [{ command: "clangd", args: [], languageId: "c", install: "brew install llvm (clangd)" }],
+  h: [{ command: "clangd", args: [], languageId: "c", install: "brew install llvm (clangd)" }],
+  cc: [{ command: "clangd", args: [], languageId: "cpp", install: "brew install llvm (clangd)" }],
+  cpp: [{ command: "clangd", args: [], languageId: "cpp", install: "brew install llvm (clangd)" }],
+  hpp: [{ command: "clangd", args: [], languageId: "cpp", install: "brew install llvm (clangd)" }],
+  cu: [{ command: "clangd", args: [], languageId: "cuda", install: "brew install llvm (clangd)" }],
+  rs: [{ command: "rust-analyzer", args: [], languageId: "rust", install: "rustup component add rust-analyzer" }],
+  lua: [{ command: "lua-language-server", args: [], languageId: "lua", install: "brew install lua-language-server" }],
 };
 
 const ext = (path: string) => path.split(".").pop()?.toLowerCase() ?? "";

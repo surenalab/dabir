@@ -133,13 +133,32 @@ export default function App() {
     try { setGit(await gitStatus(p.root)); } catch { setGit(null); }
   }, [project]);
 
+  // Files opened this session, as tabs above the editor.
+  const [openFiles, setOpenFiles] = useState<string[]>([]);
+  const flushRef = useRef<() => Promise<void>>(async () => {});
   const selectFile = useCallback(async (path: string) => {
     try {
+      await flushRef.current();   // an edit made in the last second must not be lost to the switch
       const text = await readText(path);
       setFile(path); setSource(text); setDirty(false); setJumpLine(null);
+      setOpenFiles((o) => (o.includes(path) ? o : [...o, path]));
       if (mode === "pdf") setMode("visual");
     } catch (e) { setError(String(e)); }
   }, [mode]);
+  const closeFile = useCallback((path: string) => {
+    setOpenFiles((o) => {
+      const i = o.indexOf(path);
+      if (i < 0) return o;
+      const rest = o.filter((f) => f !== path);
+      if (path === file) { const next = rest[Math.min(i, rest.length - 1)]; if (next) void selectFile(next); }
+      return rest;
+    });
+  }, [file, selectFile]);
+  const cycleFile = useCallback((dir: 1 | -1) => {
+    if (!file || openFiles.length < 2) return;
+    const i = openFiles.indexOf(file);
+    void selectFile(openFiles[(i + dir + openFiles.length) % openFiles.length]);
+  }, [file, openFiles, selectFile]);
 
   const loadBib = useCallback(async (p: Project) => {
     const bibs: string[] = [];
@@ -169,6 +188,8 @@ export default function App() {
     stopLanguageServers();
     const p = await openProject(folder);
     setProject(p); setCompileState({ status: "idle" }); setError(null); setPdfTarget(null);
+    setOpenFiles([]);
+    try { localStorage.setItem("dabir.lastPaper", p.root); } catch { /* private mode */ }
     setWindowTitle(p.name);
     loadBib(p);
     loadMap(p.root);
@@ -204,6 +225,16 @@ export default function App() {
       if (q.get("focus") === "1") { updateSettings({ focusMode: true }); setNavOpen(false); setInspectorOpen(false); }
       if (q.get("demo") === "run") setTimeout(() => setAutoRun("Rerun the sweep with a finer noise grid and update Table 1 and the abstract."), 400);
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Come back to the paper that was open last time, as an IDE does; a folder that has gone is forgotten quietly.
+  useEffect(() => {
+    if (!native) return;
+    const last = (() => { try { return localStorage.getItem("dabir.lastPaper"); } catch { return null; } })();
+    if (!last) return;
+    const t = window.setTimeout(() => { openFolder(last).catch(() => { try { localStorage.removeItem("dabir.lastPaper"); } catch { /* ignore */ } }); }, 0);
+    return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -667,7 +698,10 @@ export default function App() {
       case "save": save(); break;
       case "compile": compile(); break;
       case "show-log": setShowLog((v) => !v); break;
-      case "show-terminal": toggleTerminal(); break;
+      case "show-terminal": if (project) toggleTerminal(); else setNote("Open a paper first: the terminal runs in the paper's folder."); break;
+      case "next-file": cycleFile(1); break;
+      case "prev-file": cycleFile(-1); break;
+      case "close-file": if (file) closeFile(file); break;
       case "find-paper": openFindPaper(); break;
       case "focus-mode": toggleFocusMode(); break;
       case "sync-pdf": showInPdf(); break;
@@ -707,7 +741,7 @@ export default function App() {
         checkForUpdates(async (v, notes) => window.confirm(`Dabir ${v} is available.\n\n${notes}\n\nDownload and restart now?`)).then(setNote).catch((e) => setNote(String(e)));
         break;
     }
-  }, [open, importFromOverleaf, save, compile, showInPdf, toggleNav, toggleInspector, toggleTerminal, openFindPaper, toggleFocusMode, inspectorOpen, navOpen, runGrammar, mode]);
+  }, [open, importFromOverleaf, save, compile, showInPdf, toggleNav, toggleInspector, toggleTerminal, openFindPaper, toggleFocusMode, inspectorOpen, navOpen, runGrammar, mode, cycleFile, closeFile, file, project]);
 
   useEffect(() => onMenu(command), [command]);
   useEffect(() => onCompileProgress((line) => setProgress(line.length > 90 ? line.slice(0, 87) + "…" : line)), []);
@@ -725,6 +759,8 @@ export default function App() {
       const map: Record<string, string> = { o: "open", n: "new", s: "save", b: "compile", "1": "view-visual", "2": "view-source", "3": "view-pdf", "4": "view-split", j: "ask-agent", f: "find", "/": "shortcuts", ",": "settings", k: "fmt-link" };
       const shifted: Record<string, string> = { g: "check-grammar", b: "fmt-bold", i: "fmt-italic", e: "fmt-emph", m: "fmt-math", c: "fmt-cite", r: "fmt-ref", l: "show-log", j: "sync-pdf", s: "share", o: "clone", f: "find-paper" };
       if (e.shiftKey && !e.altKey && shifted[k]) { e.preventDefault(); command(shifted[k]); return; }
+      if (e.shiftKey && (e.key === "]" || e.key === "}" || e.code === "BracketRight")) { e.preventDefault(); command("next-file"); return; }
+      if (e.shiftKey && (e.key === "[" || e.key === "{" || e.code === "BracketLeft")) { e.preventDefault(); command("prev-file"); return; }
       if (e.altKey && k === "c") { e.preventDefault(); command("commit"); return; }
       if (e.altKey && (k === "e" || e.code === "KeyE")) { e.preventDefault(); command("export"); return; }
       if (e.altKey && (k === "r" || e.code === "KeyR")) { e.preventDefault(); command("references"); return; }
@@ -783,6 +819,7 @@ export default function App() {
     if (autosaveTimer.current) { clearTimeout(autosaveTimer.current); autosaveTimer.current = 0; }
     if (dirty && file && sourceRef.current != null) { await writeText(file, sourceRef.current); setDirty(false); setSaveState("saved"); recordStep(file); }
   }, [dirty, file, recordStep]);
+  useEffect(() => { flushRef.current = flush; }, [flush]);
   const [historyBusy, setHistoryBusy] = useState(false);
   const [historyFocus, setHistoryFocus] = useState(0);
   // Reload the open file and the project after history moved the working tree.
@@ -904,7 +941,7 @@ export default function App() {
         onShare={() => setSheet("share")} live={!!live} />
       <Navigator project={project} current={file} outline={paperOutline(map) ?? outline} git={git} commitFocus={commitFocus} busy={gitBusy || historyBusy} draftMessage={commitDraft} onDiscard={discardChange} onHistory={() => { if (!inspectorOpen) toggleInspector(); setHistoryFocus(Date.now()); }} historyCount={versions.length}
         onSelect={selectFile} onJump={(l, f) => (f ? jumpToFile(f, l) : jumpTo(l))} onInitGit={initGit} onCommit={commitAll} find={findPaper} onCloseFind={closeFindPaper} />
-      <Document project={project} file={file} source={source} bib={bib} paperWords={paperWordsNow} mode={mode} jumpLine={jumpLine} jumpStamp={jumpStamp}
+      <Document project={project} file={file} source={source} bib={bib} paperWords={paperWordsNow} openFiles={openFiles} dirty={dirty} onCloseFile={closeFile} mode={mode} jumpLine={jumpLine} jumpStamp={jumpStamp}
         compileState={compileState} progress={progress} showLog={showLog} onToggleLog={() => setShowLog((v) => !v)} terminal={terminal} onToggleTerminal={toggleTerminal} findRequest={findRequest}
         error={error ?? note} onDismissError={() => { setError(null); setNote(null); }} pdfTarget={pdfTarget}
         onOpen={open} onImport={importFromOverleaf} onClone={() => setSheet("clone")} onNew={openNew} starters={starters} onJoin={() => setSheet("share")} hostAway={hostAway} onOutline={setOutline}
