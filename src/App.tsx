@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Toolbar, type ViewMode } from "./components/Toolbar";
 import { Navigator } from "./components/Navigator";
 import { Document, type DocReview } from "./components/Document";
-import { Inspector, type ReviewHandle } from "./components/Inspector";
+import { Inspector, type ReviewHandle, type Tab as InspectorTab } from "./components/Inspector";
+import { Tour, type TourStep } from "./components/Tour";
 import { marksFromPatch } from "./lib/review";
 import { ShortcutSheet } from "./components/ShortcutSheet";
 import { CloneSheet } from "./components/CloneSheet";
@@ -24,8 +25,8 @@ import type { CommentRange } from "./components/SourceEditor";
 import { safeColor, type Change, type ChangeRange } from "./lib/changes";
 import { proseWords } from "./lib/spell";
 import {
-  agentComplete, checkForUpdates, projectSnapshot, sessionMaterialize, checkpoint, checkpoints, checkpointRestore, checkpointUndo, gitDiscard, type Checkpoint, newPaper, templatesList, compile as runCompile, compileCancel, gitClone, gitPull, gitPush, gitRemoteAdd, gitRemoteUrl, isMac, onCompileProgress, relayStart, relayStop, gitCommit, gitInit, gitStatus, importOverleaf, native, onMenu, onWindowFocus,
-  openProject, pickFolder, pickNewPaperPath, readText, setWindowTitle, synctexForward, synctexInverse, writeText,
+  agentComplete, checkForUpdates, projectSnapshot, sessionMaterialize, checkpoint, checkpoints, checkpointRestore, checkpointUndo, gitDiscard, type Checkpoint, newPaper, compile as runCompile, compileCancel, gitClone, gitPull, gitPush, gitRemoteAdd, gitRemoteUrl, isMac, onCompileProgress, relayStart, relayStop, gitCommit, gitInit, gitStatus, importOverleaf, native, onMenu, onWindowFocus,
+  openProject, pickFolder, pickNewPaperPath, readText, setWindowTitle, synctexForward, synctexInverse, writeText, openSample, openGuide,
   type CompileResult, type GitStatus, type PdfPos, type Project, type Focus, paperMap, type PaperMap, gitHeadText } from "./lib/backend";
 import { runRecipe, replCommand, formattersFor, formatText } from "./lib/code-tools";
 import { serversFor } from "./lib/lsp";
@@ -92,8 +93,9 @@ export default function App() {
   const [sheet, setSheet] = useState<"shortcuts" | "clone" | "share" | "new" | "settings" | "export" | "refs" | null>(null);
   // The template the New Paper chooser opens on, when a welcome-card starter was clicked.
   const [newTemplate, setNewTemplate] = useState<string | null>(null);
-  const [starters, setStarters] = useState<{ id: string; label: string }[]>([]);
-  useEffect(() => { templatesList().then((l) => setStarters(l.templates.filter((t) => t.featured).map((t) => ({ id: t.id, label: t.label })))).catch(() => {}); }, []);
+  // The guided tour: which stop is open, and the inspector tab it asks for.
+  const [tour, setTour] = useState<number | null>(null);
+  const [tabRequest, setTabRequest] = useState<{ tab: InspectorTab; stamp: number } | null>(null);
   const openNew = useCallback((template?: string) => { setNewTemplate(template ?? null); setSheet("new"); }, []);
   const settings = useSettings();
   const [grammar, setGrammar] = useState<GrammarMatch[]>([]);
@@ -132,8 +134,14 @@ export default function App() {
   const compileOnSave = settings.compileOnSave;
   const compileRef = useRef<() => void>(() => {});
   const autoCollapsed = useRef(false);
+  // The buffer as the disk should see it. `file`, `source` and `dirty` are React state, so a callback created before
+  // the last render can lag them; these refs are kept current synchronously (in render and in onSourceChange) and
+  // every write pairs the path and the text from the same moment.
   const sourceRef = useRef<string | null>(null);
   sourceRef.current = source;
+  fileRef.current = file;
+  const dirtyRef = useRef(false);
+  dirtyRef.current = dirty;
 
   const refreshGit = useCallback(async (p: Project | null = project) => {
     if (!p) { setGit(null); return; }
@@ -288,17 +296,18 @@ export default function App() {
     if (/\.bib$/.test(rel)) loadBib(project);
   }, [project, loadMap, loadBib]);
   const save = useCallback(async () => {
-    if (!file || sourceRef.current == null) return;
-    try { await writeText(file, sourceRef.current); setDirty(false); refreshGit(); recordStep(file); if (compileOnSave) compileRef.current(); }
+    const path = fileRef.current, text = sourceRef.current;
+    if (!path || text == null) return;
+    try { await writeText(path, text); if (fileRef.current === path) setDirty(false); refreshGit(); recordStep(path); if (compileOnSave) compileRef.current(); }
     catch (e) { setError(String(e)); }
-  }, [file, refreshGit, compileOnSave, recordStep]);
+  }, [refreshGit, compileOnSave, recordStep]);
 
   const compile = useCallback(async () => {
     if (!project?.mainTex || compileState.status === "running") return;
     // While reading the agent's version, compile that version from its worktree; nothing lands in the checkout.
     const agentBuild = review && reviewShowing && !session;
     const mainTex = agentBuild ? `${review.worktree}/${project.mainTex.slice(project.root.length + 1)}` : project.mainTex;
-    if (!agentBuild && dirty && sourceRef.current != null && file) { try { await writeText(file, sourceRef.current); setDirty(false); } catch (e) { setError(String(e)); return; } }
+    if (!agentBuild && dirtyRef.current) { try { await flushRef.current(); } catch (e) { setError(String(e)); return; } }
     setCompileState({ status: "running", startedAt: Date.now() });
     try {
       const result = await runCompile(mainTex);
@@ -307,7 +316,7 @@ export default function App() {
     } catch (e) {
       setCompileState({ status: "done", at: Date.now(), result: { ok: false, pdf: null, log: String(e), engine: "", millis: 0, diagnostics: [{ severity: "error", category: "other", file: null, line: null, message: String(e), context: null }] } });
     }
-  }, [project, dirty, file, compileState.status, review, reviewShowing, session]);
+  }, [project, compileState.status, review, reviewShowing, session]);
   compileRef.current = compile;
   /** For Export: the checked-in paper's PDF exists, compiling it now if it does not. */
   const ensurePdf = useCallback(async (): Promise<boolean> => {
@@ -495,7 +504,7 @@ export default function App() {
 
   // Every client writes shared files it does not have open to its own disk, so the host's checkout
   // and each joiner's mirror stay complete even for files only somebody else is editing.
-  useEffect(() => { projectRef.current = project; fileRef.current = file; }, [project, file]);
+  useEffect(() => { projectRef.current = project; }, [project]);
   useEffect(() => {
     if (!session) return;
     const written = new Map<string, string>();
@@ -744,6 +753,53 @@ export default function App() {
     (project && r ? gitHeadText(project.root, r) : Promise.resolve(null)).then((t) => { if (live) setHeadText(t); });
     return () => { live = false; };
   }, [project, file, rel, git]);
+  // The tour runs on the sample paper: a copy under Documents/Dabir the first time, reopened after that.
+  const startTour = useCallback(async () => {
+    try {
+      const folder = await openSample();
+      if (project?.root !== folder) await openFolder(folder);
+      setSheet(null); setNavOpen(true);
+      setTour(0);
+      try { localStorage.setItem("dabir.tourSeen", "1"); } catch { /* private mode */ }
+    } catch (e) { setError(String(e)); }
+  }, [project, openFolder]);
+  const tourSteps = useMemo<TourStep[]>(() => {
+    const root = project?.root ?? "";
+    const showMain = () => { if (project?.mainTex && fileRef.current !== project.mainTex) void selectFile(project.mainTex); };
+    return [
+      { id: "folder", target: ".navigator .nav-section:first-of-type", title: "A paper is a folder", enter: () => { setNavOpen(true); showMain(); setMode("visual"); setTerminal((t) => ({ ...t, open: false })); },
+        body: <><p>This is the sample: <code>main.tex</code>, a <code>refs.bib</code>, the figures and tables, and <code>code/sweep.py</code>, the script that made them. Dabir opens the folder in place. Nothing is uploaded or converted, and the folder stays yours to use with any other tool.</p><p>Click a file to open it. Open files become tabs above the editor.</p></> },
+      { id: "modes", target: ".titlebar .seg", title: "Four ways to look at it", enter: () => { showMain(); setMode("visual"); },
+        body: <><p><b>Visual</b> lays the LaTeX out as a page while you type, with the source one click away. <b>Source</b> is the raw file with highlighting, folding and completions. <b>PDF</b> is the compiled paper. <b>Split</b> puts source and PDF side by side; click a line in the PDF to jump to it in the source, and back.</p></>,
+        keys: [{ keys: "⌘1 – ⌘4", does: "switch" }] },
+      { id: "compile", target: '.titlebar .tb-btn[title^="Compile"]', title: "Compile", enter: showMain,
+        body: <><p>Compiles with the engine in <code>dabir.toml</code> (Tectonic downloads packages on first use, so nothing else needs installing). Errors are turned into plain sentences under Problems, each pointing at its line. <b>Compile on save</b> keeps the PDF current as you write.</p></>,
+        keys: [{ keys: "⌘B", does: "compile" }, { keys: "⌘S", does: "save" }] },
+      { id: "write", target: ".formatbar", title: "Writing with help", enter: () => { showMain(); setMode("visual"); },
+        body: <><p>The bar formats without you remembering the macro: bold, emphasis, inline math, sections, lists, citations and references. Type <code>\cite{"{"}</code> or <code>\ref{"{"}</code> and the entries and labels of this paper complete. Spelling and grammar are underlined; a suggestion is one click.</p></>,
+        keys: [{ keys: "⇧⌘Space", does: "the agent continues the sentence" }, { keys: "⌘F", does: "find in paper" }] },
+      { id: "outline", target: ".navigator .nav-section:nth-of-type(2)", title: "Outline and word count", enter: showMain,
+        body: <><p>The outline follows the sections of the whole paper, <code>\input</code>s included, and the word count at the bottom counts prose only: no preamble, no comments, no math. Click a heading to jump.</p></> },
+      { id: "agent", target: ".inspector textarea", title: "Ask an agent", enter: () => { setInspectorOpen(true); setTabRequest({ tab: "agent", stamp: Date.now() }); },
+        body: <><p>Claude Code, Codex, Cursor, Grok or OpenCode: whichever is installed. Each run gets a short preamble (the paper's map, your focus, the memory of past runs) rather than the whole folder, and works on a copy of the paper. When it finishes, the document shows its version with the changes marked. <b>Accept</b> lands them and takes a snapshot; <b>Reject</b> discards them. Try: <i>"Tighten the abstract to 150 words."</i></p></>,
+        keys: [{ keys: "⌘J", does: "ask" }, { keys: "⌘⏎", does: "send" }] },
+      { id: "memory", target: ".inspector-tabs", title: "Memory", enter: () => { setInspectorOpen(true); setTabRequest({ tab: "memory", stamp: Date.now() }); },
+        body: <><p>Agents remember through files in <code>.dabir/</code>: the project brief, decisions taken, a log of runs, and skills (recipes such as <i>address a reviewer</i> or <i>check the references</i>). They are plain Markdown in your repository, so you can read and edit them, and any agent can too.</p></> },
+      { id: "code", target: ".codebar", title: "Code lives here too", enter: () => { setMode("source"); void selectFile(`${root}/code/sweep.py`); },
+        body: <><p>Code files open with their grammar, a language server when one is installed, and Git marks in the gutter. The bar runs the file or the selection in the terminal, opens a REPL, and formats. <code>dabir.toml</code> records which command made each figure and table, so agents rerun the script instead of editing the numbers.</p></>,
+        keys: [{ keys: "⌃⏎", does: "run file" }, { keys: "⇧⏎", does: "run selection" }, { keys: "⇧⌥F", does: "format" }] },
+      { id: "terminal", target: ".terminal", title: "The terminal", enter: () => { setTerminal((t) => (t.open ? t : { ...t, open: true, focusStamp: Date.now() })); },
+        body: <><p>A real shell in the paper's folder, with tabs, and the same one agents can use. With <code>[remote]</code> in <code>dabir.toml</code>, a tab opens over SSH on the machine that runs the experiments. Drag the top edge to resize.</p></>,
+        keys: [{ keys: "⌃`", does: "show or hide" }] },
+      { id: "history", target: ".navigator .nav-section:last-of-type", title: "History and Git", enter: () => { setNavOpen(true); setTerminal((t) => ({ ...t, open: false })); },
+        body: <><p>Every save is a step you can return to, every accepted run a snapshot, and commits are yours: the message is drafted from the change, the author is you. The History tab in the inspector lists versions and restores any of them.</p></> },
+      { id: "together", target: '.titlebar .tb-btn[aria-label="Share"]', title: "Working together", enter: () => { setInspectorOpen(true); setTabRequest({ tab: "people", stamp: Date.now() }); },
+        body: <><p>Start a live session and send the invite code: coauthors edit the same paper peer to peer, with comments and suggested changes in the People tab. Overleaf projects pull and push as Git remotes, and Export makes an arXiv-ready bundle.</p></> },
+      { id: "done", target: null, title: "That is the tour",
+        body: <><p>Open your own paper's folder, or start one from a venue template. <kbd>⌘/</kbd> lists every shortcut, <kbd>⌘,</kbd> opens Settings (autosave, format on save, language servers, the agent's memory rules). The written guide covers each step in more depth.</p><p><button className="link" onClick={() => openGuide().catch(() => {})}>Open the user guide</button></p></> },
+    ];
+  }, [project, selectFile]);
+
   const command = useCallback((id: string) => {
     switch (id) {
       case "open": open(); break;
@@ -794,6 +850,8 @@ export default function App() {
       case "find": if (mode === "pdf") setPdfFindRequest((n) => n + 1); else { if (mode === "visual") setMode("source"); setFindRequest((n) => n + 1); } break;
       case "shortcuts": setSheet((v) => (v === "shortcuts" ? null : "shortcuts")); break;
       case "settings": setSheet("settings"); break;
+      case "tour": startTour(); break;
+      case "guide": openGuide().catch((e) => setNote(String(e))); break;
       case "zoom-in": setPdfZoom((z) => Math.min(4, (typeof z === "number" ? z : 1) * 1.18)); if (mode !== "pdf" && mode !== "split") setMode("pdf"); break;
       case "zoom-out": setPdfZoom((z) => Math.max(0.3, (typeof z === "number" ? z : 1) * 0.85)); break;
       case "zoom-fit": setPdfZoom("fit"); break;
@@ -803,7 +861,7 @@ export default function App() {
         checkForUpdates(async (v, notes) => window.confirm(`Dabir ${v} is available.\n\n${notes}\n\nDownload and restart now?`)).then(setNote).catch((e) => setNote(String(e)));
         break;
     }
-  }, [open, importFromOverleaf, save, compile, showInPdf, toggleNav, toggleInspector, toggleTerminal, openFindPaper, toggleFocusMode, inspectorOpen, navOpen, runGrammar, mode, cycleFile, closeFile, file, project, runFile, runSelection, openRepl, formatDocument, settings.formatOnSave]);
+  }, [open, startTour, importFromOverleaf, save, compile, showInPdf, toggleNav, toggleInspector, toggleTerminal, openFindPaper, toggleFocusMode, inspectorOpen, navOpen, runGrammar, mode, cycleFile, closeFile, file, project, runFile, runSelection, openRepl, formatDocument, settings.formatOnSave]);
 
   useEffect(() => onMenu(command), [command]);
   useEffect(() => onCompileProgress((line) => setProgress(line.length > 90 ? line.slice(0, 87) + "…" : line)), []);
@@ -862,6 +920,7 @@ export default function App() {
   }, [dragging]);
 
   const onSourceChange = useCallback((text: string) => {
+    sourceRef.current = text; dirtyRef.current = true;
     setSource(text); setDirty(true);
     if (!settings.autosave) return;
     setSaveState("unsaved");
@@ -881,8 +940,9 @@ export default function App() {
   // Put the open buffer on disk if it is dirty, and drop any pending autosave, so runs and Accept see what the author sees.
   const flush = useCallback(async () => {
     if (autosaveTimer.current) { clearTimeout(autosaveTimer.current); autosaveTimer.current = 0; }
-    if (dirty && file && sourceRef.current != null) { await writeText(file, sourceRef.current); setDirty(false); setSaveState("saved"); recordStep(file); }
-  }, [dirty, file, recordStep]);
+    const path = fileRef.current, text = sourceRef.current;
+    if (dirtyRef.current && path && text != null) { dirtyRef.current = false; await writeText(path, text); if (fileRef.current === path) { setDirty(false); setSaveState("saved"); } recordStep(path); }
+  }, [recordStep]);
   useEffect(() => { flushRef.current = flush; }, [flush]);
   const [historyBusy, setHistoryBusy] = useState(false);
   const [historyFocus, setHistoryFocus] = useState(0);
@@ -1007,7 +1067,7 @@ export default function App() {
       <Document project={project} file={file} source={source} bib={bib} paperWords={paperWordsNow} openFiles={openFiles} dirty={dirty} onCloseFile={closeFile} headText={headText} code={codeState} mode={mode} jumpLine={jumpLine} jumpStamp={jumpStamp}
         compileState={compileState} progress={progress} showLog={showLog} onToggleLog={() => setShowLog((v) => !v)} terminal={terminal} onToggleTerminal={toggleTerminal} findRequest={findRequest}
         error={error ?? note} onDismissError={() => { setError(null); setNote(null); }} pdfTarget={pdfTarget}
-        onOpen={open} onImport={importFromOverleaf} onClone={() => setSheet("clone")} onNew={openNew} starters={starters} onJoin={() => setSheet("share")} hostAway={hostAway} onOutline={setOutline}
+        onOpen={open} onImport={importFromOverleaf} onClone={() => setSheet("clone")} onNew={openNew} onTour={startTour} onJoin={() => setSheet("share")} hostAway={hostAway} onOutline={setOutline}
         onSourceChange={onSourceChange} onSave={save} onCursorLine={onCursor} onSelectFile={selectFile} onJump={jumpTo} onPdfClick={onPdfClick}
         compileOnSave={compileOnSave} onToggleCompileOnSave={toggleCompileOnSave}
         agentReady={agentReady} onJumpFile={jumpToFile} onFix={fixWithAgent}
@@ -1017,7 +1077,7 @@ export default function App() {
         onPdfComment={onPdfComment} pdfFindRequest={pdfFindRequest} editorRef={editorRef} onFind={() => command("find")} onCommentSelection={() => { if (!inspectorOpen) toggleInspector(); setAskFocus(0); setNote("Type the comment in the People tab; it attaches to your selection."); }} hasSelection={selection.to > selection.from}
         review={docReview} dictionary={dictionary} onAddWord={addWord} onContinue={continueWithAgent} splitRatio={splitRatio} onSplitRatio={setSplitRatio} onPin={(id) => { const c = allComments.find((x) => x.id === id); if (c) jumpToComment(c); }}
         assist={assist} />
-      <Inspector project={project} gitRepo={!!git?.isRepo} askFocus={askFocus} prefill={prefill} onProviderReady={setAgentReady} onChanged={onChanged} onBeforeRun={flush} onOpenFile={selectFile} history={versions} historyBusy={historyBusy} onRestoreStep={restoreVersion} onUndoStep={undoVersion} historyFocus={historyFocus} onNote={setNote} autoRun={autoRun} onReview={setReview}
+      <Inspector project={project} gitRepo={!!git?.isRepo} askFocus={askFocus} prefill={prefill} tabRequest={tabRequest} onProviderReady={setAgentReady} onChanged={onChanged} onBeforeRun={flush} onOpenFile={selectFile} history={versions} historyBusy={historyBusy} onRestoreStep={restoreVersion} onUndoStep={undoVersion} historyFocus={historyFocus} onNote={setNote} autoRun={autoRun} onReview={setReview}
         live={!!live} peers={peers} comments={allComments} currentFile={rel(file)} hasSelection={selection.to > selection.from} focus={agentFocus}
         changes={changeItems} suggesting={settings.suggesting} onToggleSuggesting={toggleSuggesting} onResolveChanges={resolveChange} onJumpChange={jumpToChange}
         onAddComment={(t) => addCommentAtSelection(t)} onResolveComment={resolveAnyComment} onReplyComment={replyAnyComment} onRemoveComment={removeAnyComment} onJumpComment={jumpToComment} onShare={() => setSheet("share")} />
@@ -1034,6 +1094,7 @@ export default function App() {
       {sheet === "export" && project && <ExportSheet project={project} onClose={() => setSheet(null)} ensurePdf={ensurePdf} onNote={setNote} />}
       {sheet === "new" && <NewPaperSheet onClose={() => setSheet(null)} onCreate={createPaper} initial={newTemplate} />}
       {sheet === "settings" && <SettingsSheet onClose={() => setSheet(null)} />}
+      {tour != null && <Tour steps={tourSteps} step={tour} onStep={setTour} onClose={() => setTour(null)} />}
     </div>
   );
 }

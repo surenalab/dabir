@@ -1,0 +1,40 @@
+name: Bug
+description: Something does not do what the guide or the interface says it does.
+labels: [bug, triage]
+body:
+  - type: markdown
+    attributes:
+      value: The smallest paper that shows the problem gets a fix fastest. The sample from the tour is a good base.
+  - type: input
+    id: version
+    attributes:
+      label: Dabir version and platform
+      placeholder: "0.1.1 · macOS 15.6 (Apple silicon)"
+    validations: { required: true }
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps
+      description: Numbered, from a fresh launch. Say which view (Visual, Source, PDF, Split) and which file.
+      placeholder: |
+        1. Take the tour
+        2. Open code/sweep.py, press ⌘Z
+        3. …
+    validations: { required: true }
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected, and what happened
+    validations: { required: true }
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: "`~/Library/Logs/com.surenalab.dabir/ui.log` (or the platform's log folder), and the compile log (⇧⌘L) when compiling is involved. Remove anything private."
+      render: text
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options: [Editor (Visual or Source), Compile and PDF, Agents and memory, Code and terminal, Git and history, Live sessions and comments, References, Templates and new paper, Settings and shortcuts, Install and updates, Other]
+    validations: { required: true }

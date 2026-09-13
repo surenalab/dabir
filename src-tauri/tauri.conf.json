@@ -54,7 +54,8 @@
       }
     },
     "resources": {
-      "../templates/**/*": "templates/"
+      "../templates/**/*": "templates/",
+      "../examples/score-anchor/**/*": "examples/score-anchor/"
     }
   },
   "plugins": {

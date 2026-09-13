@@ -1,0 +1,21 @@
+# Weekly, grouped, so an update is one pull request per ecosystem rather than one per package.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: weekly, day: monday }
+    groups:
+      codemirror: { patterns: ["@codemirror/*", "@lezer/*", "codemirror", "@replit/*", "@uiw/*"] }
+      tauri: { patterns: ["@tauri-apps/*"] }
+      minor-and-patch: { update-types: [minor, patch] }
+    open-pull-requests-limit: 5
+  - package-ecosystem: cargo
+    directory: /src-tauri
+    schedule: { interval: weekly, day: monday }
+    groups:
+      tauri: { patterns: ["tauri*"] }
+      minor-and-patch: { update-types: [minor, patch] }
+    open-pull-requests-limit: 5
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: monthly }

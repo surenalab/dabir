@@ -855,6 +855,89 @@ fn templates_dir(app: &AppHandle) -> Option<PathBuf> {
         })
 }
 
+/// The bundled sample paper (`examples/score-anchor`), from the app's resources or the source tree in development.
+fn sample_dir(app: &AppHandle) -> Option<PathBuf> {
+    app.path()
+        .resolve(
+            "examples/score-anchor",
+            tauri::path::BaseDirectory::Resource,
+        )
+        .ok()
+        .filter(|p| p.join("main.tex").is_file())
+        .or_else(|| {
+            let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples/score-anchor");
+            dev.join("main.tex").is_file().then_some(dev)
+        })
+}
+
+/// Copy the sample paper into `<Documents>/Dabir/score-anchor-sample` (or `parent` when given), with its own Git
+/// history and memory scaffold, and return the path. An existing copy is reopened as it is, so the tour can be
+/// taken again without losing what was tried in it. Build products, worktrees and indexes are not copied.
+fn sample_copy(from: &Path, dest: &Path) -> Result<(), String> {
+    fs::create_dir_all(dest).map_err(|e| e.to_string())?;
+    for e in fs::read_dir(from).map_err(|e| e.to_string())?.flatten() {
+        let name = e.file_name();
+        let p = e.path();
+        let to = dest.join(&name);
+        if p.is_dir() {
+            if name == ".git" {
+                continue;
+            }
+            if name == ".dabir" {
+                // Copy the memory scaffold but not the caches that live beside it.
+                for sub in fs::read_dir(&p).map_err(|e| e.to_string())?.flatten() {
+                    let sn = sub.file_name().to_string_lossy().to_string();
+                    if matches!(sn.as_str(), "build" | "worktrees" | "index") {
+                        continue;
+                    }
+                    let sp = sub.path();
+                    if sp.is_dir() {
+                        sample_copy(&sp, &to.join(&sn))?;
+                    } else {
+                        fs::create_dir_all(&to).map_err(|e| e.to_string())?;
+                        fs::copy(&sp, to.join(&sn)).map_err(|e| e.to_string())?;
+                    }
+                }
+                continue;
+            }
+            sample_copy(&p, &to)?;
+        } else {
+            fs::copy(&p, &to).map_err(|err| format!("{}: {}", p.display(), err))?;
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn open_sample(app: AppHandle, parent: Option<String>) -> Result<String, String> {
+    let src = sample_dir(&app).ok_or("The sample paper is missing from this build")?;
+    let parent = match parent {
+        Some(p) if !p.trim().is_empty() => PathBuf::from(p),
+        _ => app
+            .path()
+            .document_dir()
+            .unwrap_or_else(|_| std::env::temp_dir())
+            .join("Dabir"),
+    };
+    let dest = parent.join("score-anchor-sample");
+    if dest.join("main.tex").is_file() {
+        return Ok(dest.to_string_lossy().to_string());
+    }
+    if let Err(e) = sample_copy(&src, &dest) {
+        let _ = fs::remove_dir_all(&dest);
+        return Err(e);
+    }
+    let _ = fs::write(
+        dest.join(".gitignore"),
+        ".dabir/build/\n.dabir/index/\n.dabir/worktrees/\n*.aux\n*.log\n*.bbl\n*.blg\n*.out\n*.synctex.gz\n",
+    );
+    git::init(&dest)?;
+    let main = find_main_tex(&dest);
+    memory::setup(&dest, main.as_deref())?;
+    git::commit(&dest, "Sample paper from Dabir", None)?;
+    Ok(dest.to_string_lossy().to_string())
+}
+
 /// Fetched kits live here, keyed by id and version, so a paper can be started offline afterwards.
 fn templates_cache(app: &AppHandle) -> PathBuf {
     let dir = app
@@ -2013,9 +2096,17 @@ fn provenance_rerun(root: String, artefact: String) -> Result<memory::RunOutput,
 // ---------------------------------------------------------------- menu
 
 fn build_menu(app: &AppHandle) -> tauri::Result<()> {
+    // The "appropriate legal notice" the AGPL asks interactive programs to show: who holds the copyright, that
+    // there is no warranty, and where the licence is. A modified version must keep showing one.
     let about = AboutMetadata {
         name: Some("Dabir".into()),
+        version: Some(env!("CARGO_PKG_VERSION").into()),
+        authors: Some(vec!["Sadegh Salehi".into()]),
         comments: Some("A local-first workspace for scientific writing.".into()),
+        copyright: Some("© 2026 Sadegh Salehi. Free software: GNU AGPL v3, no warranty.".into()),
+        license: Some("AGPL-3.0-only".into()),
+        website: Some("https://github.com/surenalab/dabir".into()),
+        website_label: Some("Source and licence".into()),
         ..Default::default()
     };
     let app_menu = SubmenuBuilder::new(app, "Dabir")
@@ -2298,8 +2389,15 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
         )
         .build()?;
 
+    let help = SubmenuBuilder::new(app, "Help")
+        .item(&MenuItemBuilder::with_id("tour", "Guided Tour on the Sample Paper").build(app)?)
+        .item(&MenuItemBuilder::with_id("guide", "User Guide").build(app)?)
+        .build()?;
+
     let menu = MenuBuilder::new(app)
-        .items(&[&app_menu, &file, &edit, &format, &view, &paper, &window])
+        .items(&[
+            &app_menu, &file, &edit, &format, &view, &paper, &window, &help,
+        ])
         .build()?;
     app.set_menu(menu)?;
     Ok(())
@@ -2364,6 +2462,7 @@ pub fn run() {
             export_tools,
             export_paper,
             new_paper,
+            open_sample,
             bib_import_file,
             zotero_import,
             zotero_status,
@@ -2455,6 +2554,32 @@ mod tests {
         );
         fs::remove_dir_all(&root).ok();
         fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn sample_copy_takes_the_paper_and_its_memory_but_not_the_caches() {
+        let src = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples/score-anchor");
+        let dest = std::env::temp_dir().join(format!("dabir-sample-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dest);
+        fs::create_dir_all(src.join(".dabir/build")).unwrap();
+        fs::write(src.join(".dabir/build/stale.pdf"), b"x").unwrap();
+        sample_copy(&src, &dest).unwrap();
+        assert!(dest.join("main.tex").is_file());
+        assert!(dest.join("code/sweep.py").is_file());
+        assert!(
+            fs::read_to_string(dest.join("code/sweep.py"))
+                .unwrap()
+                .starts_with("\"\"\""),
+            "the sample's code is code"
+        );
+        assert!(dest.join(".dabir/PROJECT.md").is_file());
+        assert!(dest
+            .join(".dabir/skills/check-references/SKILL.md")
+            .is_file());
+        assert!(!dest.join(".dabir/build").exists());
+        assert!(!dest.join(".dabir/worktrees").exists());
+        let _ = fs::remove_dir_all(&dest);
+        let _ = fs::remove_file(src.join(".dabir/build/stale.pdf"));
     }
 
     #[test]

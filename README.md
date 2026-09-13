@@ -53,7 +53,7 @@ To preview the UI in a browser without Tauri (uses the bundled sample paper):
 npm run dev
 ```
 
-Open `examples/score-anchor` (File › Open Paper…) to see a real project with memory and provenance files. Run `python3 examples/score-anchor/code/sweep.py` to regenerate its figure and table, then ⌘B to compile.
+**Take the tour** on the welcome screen (or Help › Guided Tour) copies the bundled sample paper, `examples/score-anchor`, into your Documents folder and walks through the window on it in twelve steps: files, views, compile, writing help, the agent and its memory, code, the terminal, history and sharing. The step-by-step [user guide](docs/GUIDE.md) goes deeper. In a source checkout, `python3 examples/score-anchor/code/sweep.py` regenerates the sample's figure and table.
 
 ## Layout
 
