@@ -126,6 +126,9 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
           <Row label="Autosave" hint="Writes the file about a second after you stop typing, like Word. A snapshot of the whole paper is taken every five minutes and after each accepted agent change; Versions in the sidebar restores any of them. Your Git history is untouched until you commit.">
             <Toggle on={s.autosave} onChange={(v) => updateSettings({ autosave: v })} label="Autosave" />
           </Row>
+          <Row label="Format code on save" hint="On ⌘S, a code file is reformatted by the project's formatter when one is installed: ruff or black for Python, prettier for JavaScript, TypeScript, CSS, JSON and Markdown, rustfmt, clang-format, JuliaFormatter, styler, shfmt, stylua, taplo. Edit › Format Document (⇧⌥F) does it once. Autosave never reformats.">
+            <Toggle on={s.formatOnSave} onChange={(v) => updateSettings({ formatOnSave: v })} label="Format code on save" />
+          </Row>
           <Row label={s.autosave ? "Compile after changes settle" : "Compile on save"}>
             <Toggle on={s.compileOnSave} onChange={(v) => updateSettings({ compileOnSave: v })} label="Compile on save" />
           </Row>

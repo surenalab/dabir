@@ -17,6 +17,8 @@ interface Props {
   onClose: () => void;
   /** Bumps when the pane should take keyboard focus (opened from the menu or shortcut). */
   focusStamp: number;
+  /** A command to type into the active local shell, from Run File; the stamp makes repeats distinct. */
+  run?: { command: string; stamp: number } | null;
 }
 
 interface ShellTab { key: number; remote: Remote | null; gone: boolean }
@@ -61,7 +63,7 @@ function shellName(remote: Remote | null) {
   return s;
 }
 
-export function TerminalPane({ cwd, remote, onClose, focusStamp }: Props) {
+export function TerminalPane({ cwd, remote, onClose, focusStamp, run }: Props) {
   const next = useRef(2);
   const [shells, setShells] = useState<ShellTab[]>([{ key: 1, remote: null, gone: false }]);
   const [active, setActive] = useState(1);
@@ -69,6 +71,9 @@ export function TerminalPane({ cwd, remote, onClose, focusStamp }: Props) {
   const [dragging, setDragging] = useState(false);
   const [hostMenu, setHostMenu] = useState(false);
   const focusRef = useRef<Map<number, () => void>>(new Map());
+  const typeRef = useRef<Map<number, (text: string) => void>>(new Map());
+  const ranStamp = useRef(0);
+  const [pendingRun, setPendingRun] = useState<{ key: number; command: string } | null>(null);
 
   const add = useCallback((on: Remote | null) => {
     const key = next.current++;
@@ -85,6 +90,19 @@ export function TerminalPane({ cwd, remote, onClose, focusStamp }: Props) {
     });
   }, [onClose]);
   const exited = useCallback((key: number) => setShells((s) => s.map((t) => (t.key === key ? { ...t, gone: true } : t))), []);
+
+  // Run File: type the command into a local shell, opening one when every tab is remote or gone.
+  useEffect(() => {
+    if (!run || run.stamp === ranStamp.current) return;
+    ranStamp.current = run.stamp;
+    queueMicrotask(() => {
+      const current = shells.find((t) => t.key === active);
+      const target = current && !current.remote && !current.gone ? current : shells.find((t) => !t.remote && !t.gone);
+      if (!target) { setPendingRun({ key: next.current, command: run.command }); add(null); return; }   // the new shell runs it once it has a pty
+      setActive(target.key);
+      typeRef.current.get(target.key)?.(run.command);
+    });
+  }, [run]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { focusRef.current.get(active)?.(); }, [focusStamp, active]);
 
@@ -133,7 +151,9 @@ export function TerminalPane({ cwd, remote, onClose, focusStamp }: Props) {
         {shells.map((t) => (
           <ShellView key={t.key} cwd={cwd} remote={t.remote} visible={t.key === active}
             onExit={() => exited(t.key)}
-            register={(f) => { if (f) focusRef.current.set(t.key, f); else focusRef.current.delete(t.key); }} />
+            register={(f) => { if (f) focusRef.current.set(t.key, f); else focusRef.current.delete(t.key); }}
+            registerType={(f) => { if (f) typeRef.current.set(t.key, f); else typeRef.current.delete(t.key); }}
+            initialCommand={pendingRun?.key === t.key ? pendingRun.command : null} />
         ))}
       </div>
     </section>
@@ -146,10 +166,13 @@ interface ShellProps {
   visible: boolean;
   onExit: () => void;
   register: (focus: (() => void) | null) => void;
+  registerType: (type: ((text: string) => void) | null) => void;
+  /** A command to run as soon as the shell is up (a Run File that had to open a shell first). */
+  initialCommand: string | null;
 }
 
 /** One shell: an xterm bound to one pty in the app. Stays mounted while its tab is hidden so scrollback survives. */
-function ShellView({ cwd, remote, visible, onExit, register }: ShellProps) {
+function ShellView({ cwd, remote, visible, onExit, register, registerType, initialCommand }: ShellProps) {
   const host = useRef<HTMLDivElement>(null);
   const term = useRef<XTerm | null>(null);
   const id = useRef<number | null>(null);
@@ -157,6 +180,7 @@ function ShellView({ cwd, remote, visible, onExit, register }: ShellProps) {
   const [gone, setGone] = useState(false);
   const exitRef = useRef(onExit);
   useEffect(() => { exitRef.current = onExit; }, [onExit]);
+  const queued = useRef<string[]>(initialCommand ? [initialCommand] : []);
 
   useEffect(() => {
     const el = host.current; if (!el) return;
@@ -171,10 +195,16 @@ function ShellView({ cwd, remote, visible, onExit, register }: ShellProps) {
     setGone(false);
     let alive = true;
     let opened: number | null = null;
+    // Typed input, or the Run File command: sent to the pty once it exists, with a return to run it.
+    const type = (text: string) => { if (id.current != null) termWrite(id.current, text + "\r"); else queued.current.push(text); };
+    registerType(type);
     termOpen(cwd, Math.max(2, x.cols), Math.max(1, x.rows), remote).then((got) => {
       if (!alive) { if (got != null) termClose(got); return; }
       opened = got; id.current = got;
-      if (got == null) x.writeln("\x1b[2mThe terminal runs in the app; the browser preview has no shell.\x1b[0m");
+      if (got == null) { x.writeln("\x1b[2mThe terminal runs in the app; the browser preview has no shell.\x1b[0m"); for (const c of queued.current.splice(0)) x.writeln(`$ ${c}`); return; }
+      // Let the shell print its prompt before the command lands, so the transcript reads in order.
+      const pending = queued.current.splice(0);
+      if (pending.length) setTimeout(() => { for (const c of pending) type(c); }, 250);
     }).catch((e: unknown) => {
       // The shell could not start: say why in the pane instead of leaving it blank, and log it.
       const why = describe(e);
@@ -197,7 +227,7 @@ function ShellView({ cwd, remote, visible, onExit, register }: ShellProps) {
     scheme.addEventListener("change", recolour);
     return () => {
       alive = false;
-      register(null);
+      register(null); registerType(null);
       scheme.removeEventListener("change", recolour);
       ro.disconnect(); onInput.dispose(); offData(); offExit();
       const closing = id.current ?? opened; if (closing != null) termClose(closing);

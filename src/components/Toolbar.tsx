@@ -1,4 +1,4 @@
-import { PanelLeft, PanelRight, Play, Share2, Square } from "lucide-react";
+import { PanelLeft, PanelRight, Play, Share2, Square, SquareTerminal, CirclePlay } from "lucide-react";
 import type { Project } from "../lib/backend";
 import { Segmented } from "./Segmented";
 
@@ -21,9 +21,14 @@ interface Props {
   onCancelCompile: () => void;
   onShare: () => void;
   live: boolean;
+  terminalOpen: boolean;
+  onToggleTerminal: () => void;
+  /** The command that runs the open file, when Dabir has a recipe for it; null hides the Run button. */
+  run: { label: string; command: string } | null;
+  onRun: () => void;
 }
 
-export function Toolbar({ project, file, dirty, saveLabel, mode, navOpen, inspectorOpen, compiling, onMode, onToggleNav, onToggleInspector, onCompile, onCancelCompile, onShare, live }: Props) {
+export function Toolbar({ project, file, dirty, saveLabel, mode, navOpen, inspectorOpen, compiling, onMode, onToggleNav, onToggleInspector, onCompile, onCancelCompile, onShare, live, terminalOpen, onToggleTerminal, run, onRun }: Props) {
   const rel = file && project ? file.replace(project.root + "/", "") : null;
   const canCompile = !!project?.mainTex && !compiling;
   return (
@@ -56,7 +61,11 @@ export function Toolbar({ project, file, dirty, saveLabel, mode, navOpen, inspec
         ) : (
           <button className="tb-btn" onClick={onCompile} disabled={!canCompile} title={project?.mainTex ? "Compile (⌘B)" : "Compile needs a .tex file with \\documentclass"}><Play /> Compile</button>
         )}
+        {run && <button className="tb-btn" onClick={onRun} title={`${run.label} in the terminal (⌃⏎)\n${run.command}`}><CirclePlay /> Run</button>}
         <span className="spacer" />
+        <button className="tb-btn icon" onClick={onToggleTerminal} aria-pressed={terminalOpen} aria-label={terminalOpen ? "Hide Terminal" : "Show Terminal"} title={`${terminalOpen ? "Hide" : "Show"} Terminal (⌃\`)`} disabled={!project}>
+          <SquareTerminal />
+        </button>
         <button className={`tb-btn icon ${live ? "live" : ""}`} aria-label="Share" title={live ? "Live session running. Share…" : "Share: live session or Overleaf"} onClick={onShare} disabled={!project} aria-pressed={live}>
           <Share2 />
         </button>
