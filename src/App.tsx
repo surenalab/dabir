@@ -27,7 +27,8 @@ import {
   agentComplete, checkForUpdates, projectSnapshot, sessionMaterialize, checkpoint, checkpoints, checkpointRestore, checkpointUndo, gitDiscard, type Checkpoint, newPaper, templatesList, compile as runCompile, compileCancel, gitClone, gitPull, gitPush, gitRemoteAdd, gitRemoteUrl, isMac, onCompileProgress, relayStart, relayStop, gitCommit, gitInit, gitStatus, importOverleaf, native, onMenu, onWindowFocus,
   openProject, pickFolder, pickNewPaperPath, readText, setWindowTitle, synctexForward, synctexInverse, writeText,
   type CompileResult, type GitStatus, type PdfPos, type Project, type Focus, paperMap, type PaperMap, gitHeadText } from "./lib/backend";
-import { runRecipe, formatText } from "./lib/code-tools";
+import { runRecipe, replCommand, formattersFor, formatText } from "./lib/code-tools";
+import { serversFor } from "./lib/lsp";
 import { fileKind } from "./lib/languages";
 import { parseBib, type BibEntry, type OutlineItem } from "./lib/latex";
 
@@ -58,6 +59,10 @@ export default function App() {
   const [jumpLine, setJumpLine] = useState<number | null>(null);
   const [jumpStamp, setJumpStamp] = useState(0);
   const [cursorLine, setCursorLine] = useState(1);
+  const [cursorCol, setCursorCol] = useState(1);
+  const onCursor = useCallback((line: number, col: number) => { setCursorLine(line); setCursorCol(col); }, []);
+  const [codeServer, setCodeServer] = useState<{ command: string } | null | undefined>(undefined);
+  const [codeLint, setCodeLint] = useState({ errors: 0, warnings: 0 });
   const [compileState, setCompileState] = useState<CompileState>({ status: "idle" });
   // An agent run under review: the document can show the agent's version and ⌘B compiles it, before anything lands.
   const [review, setReview] = useState<ReviewHandle | null>(null);
@@ -148,14 +153,12 @@ export default function App() {
     } catch (e) { setError(String(e)); }
   }, [mode]);
   const closeFile = useCallback((path: string) => {
-    setOpenFiles((o) => {
-      const i = o.indexOf(path);
-      if (i < 0) return o;
-      const rest = o.filter((f) => f !== path);
-      if (path === file) { const next = rest[Math.min(i, rest.length - 1)]; if (next) void selectFile(next); }
-      return rest;
-    });
-  }, [file, selectFile]);
+    const i = openFiles.indexOf(path);
+    if (i < 0) return;
+    const rest = openFiles.filter((f) => f !== path);
+    setOpenFiles(rest);
+    if (path === file) { const next = rest[Math.min(i, rest.length - 1)]; if (next) void selectFile(next); }
+  }, [openFiles, file, selectFile]);
   const cycleFile = useCallback((dir: 1 | -1) => {
     if (!file || openFiles.length < 2) return;
     const i = openFiles.indexOf(file);
@@ -691,23 +694,48 @@ export default function App() {
   const files = useMemo(() => (project ? flattenFiles(project.tree) : []), [project]);
   // Run File: the recipe for the open file, typed into the terminal panel so the author sees what ran.
   const runRecipeNow = useMemo(() => { const r = rel(file); return r ? runRecipe(r, files) : null; }, [rel, file, files]);
+  const runInTerminal = useCallback((command: string) => {
+    const now = Date.now();
+    setTerminal({ open: true, focusStamp: now, run: { command, stamp: now } });
+  }, []);
   const runFile = useCallback(async () => {
     if (!project || !file) return;
     if (!runRecipeNow) { setNote(`No run recipe for ${file.split("/").pop()}. Type the command in the terminal.`); return; }
     await flushRef.current();
-    const now = Date.now();
-    setTerminal({ open: true, focusStamp: now, run: { command: runRecipeNow.command, stamp: now } });
-  }, [project, file, runRecipeNow]);
+    runInTerminal(runRecipeNow.command);
+  }, [project, file, runRecipeNow, runInTerminal]);
+  // ⇧⏎: the selection or the current line, typed into the terminal; a block gets a closing blank line for REPLs.
+  const runSelection = useCallback((text?: string) => {
+    const t = (text ?? editorRef.current?.selectionOrLine() ?? "").replace(/\s+$/, "");
+    if (!t.trim()) return;
+    const lines = t.split("\n");
+    runInTerminal(lines.join("\r") + (lines.length > 1 ? "\r" : ""));
+  }, [runInTerminal]);
+  const replNow = useMemo(() => { const r = rel(file); return r ? replCommand(r) : null; }, [rel, file]);
+  const openRepl = useCallback(() => { if (replNow) runInTerminal(replNow.command); }, [replNow, runInTerminal]);
+  const codeState = useMemo(() => {
+    const r = rel(file) ?? "";
+    return {
+      run: runRecipeNow, repl: replNow, canFormat: formattersFor(r).length > 0, server: codeServer,
+      installHint: serversFor(r)[0]?.install ?? null, lint: codeLint, line: cursorLine, col: cursorCol,
+      onRun: () => void runFile(), onRunSelection: runSelection, onRepl: openRepl, onFormat: () => void formatDocumentRef.current(), onServer: setCodeServer, onLint: setCodeLint,
+    };
+  }, [rel, file, runRecipeNow, replNow, codeServer, codeLint, cursorLine, cursorCol, runFile, runSelection, openRepl]);
+  const formatDocumentRef = useRef<() => Promise<boolean>>(async () => false);
   // Format Document: the project's formatter over the buffer, applied as one change so undo is one step.
   const formatDocument = useCallback(async () => {
     const r = rel(file);
     if (!project || !r || !editorRef.current) return false;
+    if (reviewText && reviewShowing) { setNote("Formatting is off while reading the agent's version."); return false; }
     const result = await formatText(project.root, r, editorRef.current.text());
     if (!result.ok) { setNote(result.error); return false; }
     const changed = editorRef.current.replaceAll(result.text);
+    // The editor's change event updates the source on the next render; a save that follows at once must see it now.
+    if (changed) { sourceRef.current = result.text; setSource(result.text); setDirty(true); }
     setNote(changed ? `Formatted with ${result.formatter}.` : `Already formatted (${result.formatter}).`);
     return true;
-  }, [project, file, rel]);
+  }, [project, file, rel, reviewText, reviewShowing]);
+  useEffect(() => { formatDocumentRef.current = formatDocument; }, [formatDocument]);
   // The file as HEAD has it, for the change gutter; refreshed when the file or the repository state changes.
   const [headText, setHeadText] = useState<string | null>(null);
   useEffect(() => {
@@ -730,6 +758,8 @@ export default function App() {
       case "show-log": setShowLog((v) => !v); break;
       case "show-terminal": if (project) toggleTerminal(); else setNote("Open a paper first: the terminal runs in the paper's folder."); break;
       case "run-file": void runFile(); break;
+      case "run-selection": runSelection(); break;
+      case "open-repl": openRepl(); break;
       case "format-doc": void formatDocument(); break;
       case "next-file": cycleFile(1); break;
       case "prev-file": cycleFile(-1); break;
@@ -773,7 +803,7 @@ export default function App() {
         checkForUpdates(async (v, notes) => window.confirm(`Dabir ${v} is available.\n\n${notes}\n\nDownload and restart now?`)).then(setNote).catch((e) => setNote(String(e)));
         break;
     }
-  }, [open, importFromOverleaf, save, compile, showInPdf, toggleNav, toggleInspector, toggleTerminal, openFindPaper, toggleFocusMode, inspectorOpen, navOpen, runGrammar, mode, cycleFile, closeFile, file, project, runFile, formatDocument, settings.formatOnSave]);
+  }, [open, importFromOverleaf, save, compile, showInPdf, toggleNav, toggleInspector, toggleTerminal, openFindPaper, toggleFocusMode, inspectorOpen, navOpen, runGrammar, mode, cycleFile, closeFile, file, project, runFile, runSelection, openRepl, formatDocument, settings.formatOnSave]);
 
   useEffect(() => onMenu(command), [command]);
   useEffect(() => onCompileProgress((line) => setProgress(line.length > 90 ? line.slice(0, 87) + "…" : line)), []);
@@ -972,13 +1002,13 @@ export default function App() {
       <Toolbar project={project} file={file} dirty={dirty} saveLabel={settings.autosave ? (saveState === "saving" ? "Saving…" : saveState === "unsaved" ? "Unsaved" : saveState === "saved" ? "Saved" : null) : null} mode={mode} navOpen={navOpen} inspectorOpen={inspectorOpen}
         compiling={compileState.status === "running"} onMode={setMode} onToggleNav={toggleNav} onToggleInspector={toggleInspector} onOpen={open} onCompile={compile} onCancelCompile={() => compileCancel()}
         onShare={() => setSheet("share")} live={!!live} terminalOpen={terminal.open} onToggleTerminal={() => command("show-terminal")} run={runRecipeNow} onRun={() => command("run-file")} />
-      <Navigator project={project} current={file} outline={paperOutline(map) ?? outline} git={git} commitFocus={commitFocus} busy={gitBusy || historyBusy} draftMessage={commitDraft} onDiscard={discardChange} onHistory={() => { if (!inspectorOpen) toggleInspector(); setHistoryFocus(Date.now()); }} historyCount={versions.length}
+      <Navigator project={project} current={file} outline={fileKind(file) === "code" || /\.(md|markdown)$/i.test(file ?? "") ? outline : paperOutline(map) ?? outline} git={git} commitFocus={commitFocus} busy={gitBusy || historyBusy} draftMessage={commitDraft} onDiscard={discardChange} onHistory={() => { if (!inspectorOpen) toggleInspector(); setHistoryFocus(Date.now()); }} historyCount={versions.length}
         onSelect={selectFile} onJump={(l, f) => (f ? jumpToFile(f, l) : jumpTo(l))} onInitGit={initGit} onCommit={commitAll} find={findPaper} onCloseFind={closeFindPaper} />
-      <Document project={project} file={file} source={source} bib={bib} paperWords={paperWordsNow} openFiles={openFiles} dirty={dirty} onCloseFile={closeFile} headText={headText} mode={mode} jumpLine={jumpLine} jumpStamp={jumpStamp}
+      <Document project={project} file={file} source={source} bib={bib} paperWords={paperWordsNow} openFiles={openFiles} dirty={dirty} onCloseFile={closeFile} headText={headText} code={codeState} mode={mode} jumpLine={jumpLine} jumpStamp={jumpStamp}
         compileState={compileState} progress={progress} showLog={showLog} onToggleLog={() => setShowLog((v) => !v)} terminal={terminal} onToggleTerminal={toggleTerminal} findRequest={findRequest}
         error={error ?? note} onDismissError={() => { setError(null); setNote(null); }} pdfTarget={pdfTarget}
         onOpen={open} onImport={importFromOverleaf} onClone={() => setSheet("clone")} onNew={openNew} starters={starters} onJoin={() => setSheet("share")} hostAway={hostAway} onOutline={setOutline}
-        onSourceChange={onSourceChange} onSave={save} onCursorLine={setCursorLine} onSelectFile={selectFile} onJump={jumpTo} onPdfClick={onPdfClick}
+        onSourceChange={onSourceChange} onSave={save} onCursorLine={onCursor} onSelectFile={selectFile} onJump={jumpTo} onPdfClick={onPdfClick}
         compileOnSave={compileOnSave} onToggleCompileOnSave={toggleCompileOnSave}
         agentReady={agentReady} onJumpFile={jumpToFile} onFix={fixWithAgent}
         collab={collab} comments={commentRanges} onSelection={(from, to) => setSelection({ from, to })} jumpOffset={jumpOffset}

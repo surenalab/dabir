@@ -2265,6 +2265,8 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
                 .accelerator("Ctrl+Enter")
                 .build(app)?,
         )
+        .item(&MenuItemBuilder::with_id("run-selection", "Run Selection in Terminal").build(app)?)
+        .item(&MenuItemBuilder::with_id("open-repl", "Open REPL in Terminal").build(app)?)
         .separator()
         .item(
             &MenuItemBuilder::with_id("commit", "Commit…")

@@ -26,12 +26,25 @@ export function runRecipe(rel: string, files: string[] = []): RunRecipe | null {
     case "ts": return { label: "Run with tsx", command: `npx tsx ${q(rel)}` };
     case "lua": return { label: "Run with Lua", command: `lua ${q(rel)}` };
     case "m": return { label: "Run with Octave", command: `octave --no-gui ${q(rel)}` };
-    case "typ": return { label: "Compile with Typst", command: `typst compile ${q(rel)}` };
     case "rs": return has("Cargo.toml") ? { label: "cargo run", command: "cargo run" } : { label: "Compile and run", command: `rustc ${q(rel)} -o ${bin(rel)} && ${bin(rel)}` };
     case "c": return { label: "Compile and run", command: `cc -O2 ${q(rel)} -o ${bin(rel)} && ${bin(rel)}` };
     case "cc": case "cpp": case "cxx": return { label: "Compile and run", command: `c++ -std=c++17 -O2 ${q(rel)} -o ${bin(rel)} && ${bin(rel)}` };
     case "cu": return { label: "Compile and run", command: `nvcc -O2 ${q(rel)} -o ${bin(rel)} && ${bin(rel)}` };
     case "f": case "f90": case "f95": return { label: "Compile and run", command: `gfortran -O2 ${q(rel)} -o ${bin(rel)} && ${bin(rel)}` };
+    default: return null;
+  }
+}
+
+/** The interactive shell for a language, which ⇧⏎ then feeds line by line; null when there is none worth opening. */
+export function replCommand(rel: string): { label: string; command: string } | null {
+  switch (ext(rel)) {
+    case "py": case "pyi": return { label: "Python", command: "python3" };
+    case "jl": return { label: "Julia", command: "julia" };
+    case "r": return { label: "R", command: "R" };
+    case "js": case "mjs": case "cjs": case "ts": case "tsx": case "jsx": return { label: "Node", command: "node" };
+    case "lua": return { label: "Lua", command: "lua" };
+    case "m": return { label: "Octave", command: "octave --no-gui" };
+    case "sql": return { label: "sqlite3", command: "sqlite3" };
     default: return null;
   }
 }

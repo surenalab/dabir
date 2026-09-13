@@ -82,13 +82,13 @@ export function TerminalPane({ cwd, remote, onClose, focusStamp, run }: Props) {
     setHostMenu(false);
   }, []);
   const remove = useCallback((key: number) => {
-    setShells((s) => {
-      const rest = s.filter((t) => t.key !== key);
-      if (rest.length === 0) { queueMicrotask(onClose); return s; }
-      setActive((a) => (a === key ? rest[Math.max(0, Math.min(s.findIndex((t) => t.key === key), rest.length - 1))].key : a));
-      return rest;
-    });
-  }, [onClose]);
+    const i = shells.findIndex((t) => t.key === key);
+    if (i < 0) return;
+    const rest = shells.filter((t) => t.key !== key);
+    if (rest.length === 0) { onClose(); return; }
+    setShells(rest);
+    if (active === key) setActive(rest[Math.max(0, Math.min(i, rest.length - 1))].key);
+  }, [shells, active, onClose]);
   const exited = useCallback((key: number) => setShells((s) => s.map((t) => (t.key === key ? { ...t, gone: true } : t))), []);
 
   // Run File: type the command into a local shell, opening one when every tab is remote or gone.
@@ -196,12 +196,13 @@ function ShellView({ cwd, remote, visible, onExit, register, registerType, initi
     let alive = true;
     let opened: number | null = null;
     // Typed input, or the Run File command: sent to the pty once it exists, with a return to run it.
-    const type = (text: string) => { if (id.current != null) termWrite(id.current, text + "\r"); else queued.current.push(text); };
+    let noShell = false;   // the browser preview: echo what would have been typed
+    const type = (text: string) => { if (id.current != null) termWrite(id.current, text + "\r"); else if (noShell) x.writeln(`$ ${text.replace(/\r/g, "\r\n$ ")}`); else queued.current.push(text); };
     registerType(type);
     termOpen(cwd, Math.max(2, x.cols), Math.max(1, x.rows), remote).then((got) => {
       if (!alive) { if (got != null) termClose(got); return; }
       opened = got; id.current = got;
-      if (got == null) { x.writeln("\x1b[2mThe terminal runs in the app; the browser preview has no shell.\x1b[0m"); for (const c of queued.current.splice(0)) x.writeln(`$ ${c}`); return; }
+      if (got == null) { noShell = true; x.writeln("\x1b[2mThe terminal runs in the app; the browser preview has no shell.\x1b[0m"); for (const c of queued.current.splice(0)) type(c); return; }
       // Let the shell print its prompt before the command lands, so the transcript reads in order.
       const pending = queued.current.splice(0);
       if (pending.length) setTimeout(() => { for (const c of pending) type(c); }, 250);
