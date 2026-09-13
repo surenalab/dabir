@@ -1,32 +1,116 @@
+# The gate, as `npm run check` runs it locally, split so a pull request pays only for what it touched:
+# the web job (Linux, minutes cost 1×) runs when the front end changed; the Rust job (macOS, 10×) when the core
+# did. Pushes to main run both. A newer push to the same pull request cancels the older run.
 name: CI
 on:
   push:
     branches: [main]
   pull_request:
+  merge_group:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
 jobs:
-  check:
-    runs-on: macos-latest
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      web: ${{ steps.filter.outputs.web }}
+      rust: ${{ steps.filter.outputs.rust }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            web:
+              - 'src/**'
+              - 'index.html'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'tsconfig*.json'
+              - 'vite.config.*'
+              - 'eslint.config.*'
+              - 'scripts/**'
+              - 'relay/**'
+              - '.github/workflows/ci.yml'
+            rust:
+              - 'src-tauri/**'
+              - 'templates/**'
+              - 'examples/**'
+              - 'scripts/fetch-tectonic.mjs'
+              - '.github/workflows/ci.yml'
+
+  web:
+    name: Web (types, lint, build, script tests)
+    needs: changes
+    if: needs.changes.outputs.web == 'true' || github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm }
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
-      - uses: Swatinem/rust-cache@v2
-        with: { workspaces: src-tauri }
-      - run: npm ci
-      - name: Tectonic sidecar (the Rust build checks it exists)
-        run: node scripts/fetch-tectonic.mjs
+      - run: npm ci --prefer-offline --no-audit --no-fund
       - name: TypeScript
         run: npx tsc --noEmit -p tsconfig.json
       - name: ESLint
         run: npx eslint .
       - name: Production build
         run: npx vite build --logLevel warn
+      - name: Script tests
+        run: node --test scripts/*.test.mjs
+
+  rust:
+    name: Rust (fmt, clippy, tests)
+    needs: changes
+    if: needs.changes.outputs.rust == 'true' || github.event_name != 'pull_request'
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          # Pull requests read the cache main wrote; only main writes, so branches do not evict each other.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Tectonic sidecar (cached; the Rust build checks it exists)
+        id: sidecar
+        uses: actions/cache@v4
+        with:
+          path: src-tauri/binaries
+          key: tectonic-0.17.0-aarch64-apple-darwin
+      - if: steps.sidecar.outputs.cache-hit != 'true'
+        run: node scripts/fetch-tectonic.mjs
+      - name: Front-end stand-in
+        # tauri::generate_context! embeds frontendDist; the Rust checks do not need the real build behind it.
+        run: mkdir -p dist && printf '<!doctype html><title>Dabir</title>' > dist/index.html
       - name: cargo fmt
         run: cargo fmt --check --manifest-path src-tauri/Cargo.toml
       - name: cargo clippy
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
       - name: cargo test
         run: cargo test --manifest-path src-tauri/Cargo.toml --quiet
+
+  # One check for branch protection to require, whatever ran. Skipped jobs count as passed, failed ones fail it.
+  gate:
+    name: Gate
+    needs: [web, rust]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Every job that ran is green
+        run: |
+          echo "web: ${{ needs.web.result }}  rust: ${{ needs.rust.result }}"
+          case "${{ needs.web.result }} ${{ needs.rust.result }}" in
+            *failure*|*cancelled*) exit 1 ;;
+          esac

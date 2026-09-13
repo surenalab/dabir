@@ -1,3 +1,6 @@
+# Tag `vX.Y.Z` (or run by hand) and a draft release is built for macOS (Apple silicon and Intel), Linux and
+# Windows, with the updater's latest.json when the signing key is set. The owner publishes the draft. The
+# release body is the CHANGELOG.md section for the version.
 name: Release
 
 on:
@@ -5,11 +8,40 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
 jobs:
+  # The same gate as CI, on the cheap runner, before four expensive builds start.
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci --prefer-offline --no-audit --no-fund
+      - run: npx tsc --noEmit -p tsconfig.json
+      - run: npx eslint .
+      - run: node --test scripts/*.test.mjs
+      - name: Versions agree
+        run: |
+          set -eu
+          pkg=$(node -p "require('./package.json').version")
+          tauri=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          cargo=$(sed -n 's/^version = "\(.*\)"/\1/p' src-tauri/Cargo.toml | head -1)
+          echo "package.json $pkg · tauri.conf.json $tauri · Cargo.toml $cargo · tag ${GITHUB_REF_NAME:-}"
+          [ "$pkg" = "$tauri" ] && [ "$pkg" = "$cargo" ] || { echo "the three version fields differ"; exit 1; }
+          case "${GITHUB_REF_NAME:-}" in v*) [ "v$pkg" = "$GITHUB_REF_NAME" ] || { echo "tag does not match the version"; exit 1; } ;; esac
+
   build:
+    needs: gate
     permissions:
       contents: write
     strategy:
@@ -31,6 +63,7 @@ jobs:
             # .exe installer is what the updater uses anyway.
             args: --bundles nsis
     runs-on: ${{ matrix.platform }}
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -38,13 +71,32 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.target }}
       - name: Linux dependencies
         if: matrix.platform == 'ubuntu-22.04'
         run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
-      - run: npm ci
-      - name: Tectonic sidecar
+      - run: npm ci --prefer-offline --no-audit --no-fund
+      - name: Tectonic sidecar (cached)
+        id: sidecar
+        uses: actions/cache@v4
+        with:
+          path: src-tauri/binaries
+          key: tectonic-0.17.0-${{ matrix.target }}
+      - if: steps.sidecar.outputs.cache-hit != 'true'
         shell: bash
         run: TARGET_TRIPLE=${{ matrix.target }} node scripts/fetch-tectonic.mjs
+      - name: Release notes from the changelog
+        id: notes
+        shell: bash
+        run: |
+          {
+            echo "body<<__EOF__"
+            node scripts/release-notes.mjs "${GITHUB_REF_NAME}"
+            echo "__EOF__"
+          } >> "$GITHUB_OUTPUT"
       # macOS code signing and notarisation, only when the secrets exist. An empty APPLE_CERTIFICATE
       # would make the bundler try to import nothing and fail; unsigned builds still produce a DMG.
       - name: Apple signing secrets
@@ -69,7 +121,8 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Dabir ${{ github.ref_name }}"
-          releaseBody: "See PLAN.md for what changed."
+          releaseBody: ${{ steps.notes.outputs.body }}
+          generateReleaseNotes: true
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}

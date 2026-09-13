@@ -2,6 +2,17 @@
 
 These rules apply to everyone who changes this repository: the owner, human contributors, and every agent (Claude Code, Codex, Cursor, Grok, OpenCode). Agents also read AGENTS.md, which is the operating manual; this file is the contract.
 
+## Where to start
+
+- Read [docs/GUIDE.md](docs/GUIDE.md) once as a user, and take the in-app tour; most good changes start from a step in it that felt wrong.
+- Issues labelled **good first issue** are scoped to one file or one behaviour and name the test that should pass. **help wanted** issues are larger and open to anyone; comment before starting so two people do not build the same thing.
+- Bugs and features go through the [issue templates](.github/ISSUE_TEMPLATE); questions and ideas through Discussions; vulnerabilities through [SECURITY.md](SECURITY.md), never a public issue.
+- [PLAN.md](PLAN.md) is the roadmap and the state of every phase. A change that is not on it is welcome, but say in the pull request why it belongs.
+
+## Licensing of contributions
+
+Dabir is AGPL-3.0. Contributions are accepted under the [contributor licence agreement](CLA.md), which lets the project keep the AGPL *and* license the work differently where the AGPL does not fit (a hosted service, a company that cannot accept it, editor packages moved to MIT). You keep your copyright. When the CLA check is on, the bot asks you to sign by commenting one sentence on your first pull request; it takes a minute and is done once. Third-party code is named with its licence in the pull request; only licences compatible with the AGPL are accepted (MIT, BSD, Apache-2.0, MPL-2.0, LGPL, GPL).
+
 ## The shape of a change
 
 1. **One branch per change, one worktree per agent.** Never commit to `main` directly, and never work in a checkout another person or agent is using; `git worktree add ../dabir-<name> -b <branch>` gives you your own. Branch names: `feat/<topic>`, `fix/<topic>`, `design/<topic>`, `docs/<topic>`, or `agent/<vendor>/<topic>` when an agent starts the work.
@@ -10,7 +21,7 @@ These rules apply to everyone who changes this repository: the owner, human cont
    ```bash
    npm run check
    ```
-   It runs the type check, lint, the production build, `cargo fmt --check`, `cargo clippy` with warnings as errors, the Rust tests, and the design detector when the Impeccable skill is installed. CI runs the same steps; a red gate blocks merging.
+   It runs the type check, lint, the production build, `cargo fmt --check`, `cargo clippy` with warnings as errors, the Rust tests, the script tests, and the design detector when the Impeccable skill is installed. CI runs the same steps split by what changed: the **Web** job (Linux) when `src/`, `scripts/` or the package files changed, the **Rust** job (macOS) when `src-tauri/`, `templates/` or `examples/` did, and both on `main`. A newer push cancels the older run. The single required check is **Gate**; a red one blocks merging. Dependabot opens grouped weekly updates; they go through the same gate.
 4. **Open a pull request with the template filled in.** The template asks what changed, why, how it was verified, and which rule below you consciously bent, if any.
 5. **Two reviews for anything that touches `src-tauri/`, `src/lib/`, or the agent surface; one review otherwise.** A review from a different agent vendor than the author counts as one; a review from the owner counts as one. See docs/REVIEW.md for what a review checks and how agents run it.
 6. **Squash-merge with the pull request title as the commit subject.** Then delete the branch.

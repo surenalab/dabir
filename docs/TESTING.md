@@ -13,13 +13,14 @@ draft release at github.com/surenalab/dabir/releases; download the one for your 
 ## What to check, in order
 
 1. **Launch and the empty state.** Icon in the taskbar or Dock, window title, the four buttons. Press `Ctrl+/` (Windows, Linux) for the shortcut sheet: every chord shown should be Ctrl, not ⌘.
-2. **Open the sample.** Open Folder › `examples/score-anchor` from a checkout, or New Paper. The visual view should render the title, abstract, equations and the figure. Preamble folds into one row.
-3. **Compile.** `Ctrl+B`. The bundled Tectonic runs the first time it downloads the TeX packages (a minute or two, progress in the status bar). Then the PDF view, page navigation, zoom presets, find, text selection, double-click to jump to the line, and the Split view following the cursor.
-4. **Editing.** The formatting bar, More menu when the window is narrow, completion after a backslash, predictive text after typing a few letters of a word from the paper, spelling underline, Settings (`Ctrl+,`).
-5. **Git.** Commit from the sidebar; on Windows this uses the bundled libgit2, no Git install needed.
-6. **Agents.** Ask the Agent (`Ctrl+J`) with whichever CLI is installed and signed in on that machine: `claude`, `codex`, `cursor-agent`, `grok` or `opencode` on `PATH`. The inspector says which are found.
-7. **Live session across machines.** Host on the Mac (Share › Same network gives a `dabir://join?...` link; Tailscale makes the LAN address reachable from anywhere), join on the laptop with no paper open: the laptop should receive the whole folder under `Dabir Sessions` in your home directory, open it, and compile. Then try the direct mode: the host makes an invite code, the guest answers, the host pastes the answer.
-8. **Update check.** App menu › Check for Updates. Until a newer tag exists this reports "up to date"; the endpoint is the latest release's `latest.json`.
+2. **The tour.** *Take the tour* on the welcome screen copies the sample to `Documents/Dabir/score-anchor-sample` and opens it; twelve stops follow, each spotlighting a real panel (→ next, ← back, Esc leaves). Open `code/sweep.py`, press Undo: the file must not change. Help › Guided Tour restarts it; Help › User Guide opens docs/GUIDE.md in the browser.
+3. **Open the sample.** Open Folder › `examples/score-anchor` from a checkout, or New Paper. The visual view should render the title, abstract, equations and the figure. Preamble folds into one row.
+4. **Compile.** `Ctrl+B`. The bundled Tectonic runs the first time it downloads the TeX packages (a minute or two, progress in the status bar). Then the PDF view, page navigation, zoom presets, find, text selection, double-click to jump to the line, and the Split view following the cursor.
+5. **Editing.** The formatting bar, More menu when the window is narrow, completion after a backslash, predictive text after typing a few letters of a word from the paper, spelling underline, Settings (`Ctrl+,`).
+6. **Git.** Commit from the sidebar; on Windows this uses the bundled libgit2, no Git install needed.
+7. **Agents.** Ask the Agent (`Ctrl+J`) with whichever CLI is installed and signed in on that machine: `claude`, `codex`, `cursor-agent`, `grok` or `opencode` on `PATH`. The inspector says which are found.
+8. **Live session across machines.** Host on the Mac (Share › Same network gives a `dabir://join?...` link; Tailscale makes the LAN address reachable from anywhere), join on the laptop with no paper open: the laptop should receive the whole folder under `Dabir Sessions` in your home directory, open it, and compile. Then try the direct mode: the host makes an invite code, the guest answers, the host pastes the answer.
+9. **Update check.** App menu › Check for Updates. Until a newer tag exists this reports "up to date"; the endpoint is the latest release's `latest.json`.
 
 ## Known gaps to expect
 
