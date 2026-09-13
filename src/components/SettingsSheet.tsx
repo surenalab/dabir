@@ -3,7 +3,7 @@ import { DEFAULTS, resetSettings, updateSettings, useSettings } from "../lib/set
 import { dictionaries, type Dictionary } from "../lib/spell";
 import { availableServers, serversFor } from "../lib/lsp";
 
-const CODE_KINDS: [string, string][] = [["Python", "x.py"], ["Typst", "x.typ"], ["Shell", "x.sh"], ["YAML", "x.yml"], ["Julia", "x.jl"], ["R", "x.r"]];
+const CODE_KINDS: [string, string][] = [["Python", "x.py"], ["Typst", "x.typ"], ["Julia", "x.jl"], ["R", "x.r"], ["JavaScript / TypeScript", "x.ts"], ["C / C++ / CUDA", "x.cpp"], ["Rust", "x.rs"], ["Lua", "x.lua"], ["Shell", "x.sh"], ["YAML", "x.yml"]];
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -89,7 +89,7 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
 
         <section className="share-section">
           <h3>Code files</h3>
-          <Row label="Language servers" hint="Python, Typst, shell, YAML and the rest open with their own grammar. When a language server is installed, its completion, errors, hover and go-to-definition (F12, ⇧F12 references, F2 rename) appear too. Servers are found on the same PATH the agents use.">
+          <Row label="Language servers" hint="Python, Julia, R, MATLAB, JavaScript and TypeScript, C, C++ and CUDA, Rust, Fortran, Lua, SQL, shell, YAML, JSON, TOML, CMake and Dockerfiles open with their own grammar. When a language server is installed, its completion, errors, hover and go-to-definition (F12, ⇧F12 references, F2 rename) appear too. Servers are found on the same PATH the agents use.">
             <ul className="server-list" aria-label="Language servers">
               {CODE_KINDS.map(([name, sample]) => {
                 const specs = serversFor(sample);

@@ -8,6 +8,7 @@ import type { CompileState } from "../App";
 import { SourceEditor, type CommentRange, type EditorApi } from "./SourceEditor";
 import { FormatBar } from "./FormatBar";
 import { TerminalPane } from "./Terminal";
+import { FileTabs } from "./FileTabs";
 import { Problems, groupProblems } from "./Problems";
 import type * as Y from "yjs";
 import type { Awareness } from "y-protocols/awareness";
@@ -65,6 +66,10 @@ interface Props {
   source: string | null;
   /** Prose words per manuscript file (relative paths), when the paper spans more than one; null otherwise. */
   paperWords: Record<string, number> | null;
+  /** Files opened this session, shown as tabs when there is more than one. */
+  openFiles: string[];
+  dirty: boolean;
+  onCloseFile: (path: string) => void;
   bib: Record<string, BibEntry>;
   mode: ViewMode;
   jumpLine: number | null;
@@ -147,7 +152,7 @@ export interface DocReview {
 }
 
 export function Document(p: Props) {
-  const { project, source, mode, compileState, showLog, error, terminal, onToggleTerminal, paperWords, file } = p;
+  const { project, source, mode, compileState, showLog, error, terminal, onToggleTerminal, paperWords, file, openFiles, dirty: fileDirty, onCloseFile, onSelectFile } = p;
   const macros = useMemo(() => (source ? collectMacros(source) : {}), [source]);
   const [dragging, setDragging] = useState(false);
   const splitRef = useRef<HTMLDivElement>(null);
@@ -292,6 +297,7 @@ export function Document(p: Props) {
           <button className="btn" disabled={rv.busy} onClick={rv.onReject}><X aria-hidden /> Reject</button>
         </div>
       )}
+      {project && <FileTabs root={project.root} files={openFiles} active={file} dirty={fileDirty} onSelect={onSelectFile} onClose={onCloseFile} />}
       {showEditor && isProse && !previewing && <FormatBar api={p.editorRef.current} lang={markupLang} onFind={p.onFind} onComment={p.onCommentSelection} canComment={p.hasSelection} suggesting={p.settings.suggesting} onToggleSuggesting={p.onToggleSuggesting} pending={p.changes.length} />}
       <div className={`panes ${mode === "split" ? "split" : ""}`} ref={splitRef} style={mode === "split" ? { "--split": `${Math.round(p.splitRatio * 100)}%` } as React.CSSProperties : undefined}>
         <div className="scroll" hidden={!showEditor}>{editor}</div>
