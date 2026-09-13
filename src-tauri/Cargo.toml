@@ -31,7 +31,7 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 flate2 = "1"
 git2 = { version = "0.20", default-features = false, features = ["vendored-libgit2", "https", "vendored-openssl"] }
 uuid = { version = "1", features = ["v4"] }
-toml = "0.8"
+toml = "1.1"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "net", "macros"] }
