@@ -8,7 +8,7 @@ import { renderMarkdown } from "../lib/md";
 import { updateSettings, useSettings } from "../lib/settings";
 import type { Comment, Peer } from "../lib/collab";
 
-type Tab = "agent" | "memory" | "people" | "history";
+export type Tab = "agent" | "memory" | "people" | "history";
 
 /** A pending suggestion in the open file, with the text it covers. */
 export interface ChangeItem { id: string; author: string; color: string; kind: "insert" | "delete"; excerpt: string; at: number }
@@ -277,6 +277,8 @@ interface Props {
   gitRepo: boolean;
   askFocus: number;
   prefill: { text: string; stamp: number } | null;
+  /** The tour (or a menu item) asking for a tab. */
+  tabRequest?: { tab: Tab; stamp: number } | null;
   onProviderReady: (ready: boolean) => void;
   onChanged: () => void;         // git status or files changed; reloads the open buffer from disk
   /** Writes the open buffer to disk when it is dirty, so a run starts from, and Accept lands on, what the author sees. */
@@ -310,7 +312,7 @@ export interface ReviewHandle {
   reject: () => void;
 }
 
-export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady, onChanged, onBeforeRun, onOpenFile, onNote, live, peers, comments, currentFile, hasSelection, focus, onAddComment, onResolveComment, onReplyComment, onRemoveComment, onJumpComment, onShare, autoRun, changes, suggesting, onToggleSuggesting, onResolveChanges, onJumpChange, onReview, history, historyBusy, onRestoreStep, onUndoStep, historyFocus }: Props) {
+export function Inspector({ project, gitRepo, askFocus, prefill, tabRequest, onProviderReady, onChanged, onBeforeRun, onOpenFile, onNote, live, peers, comments, currentFile, hasSelection, focus, onAddComment, onResolveComment, onReplyComment, onRemoveComment, onJumpComment, onShare, autoRun, changes, suggesting, onToggleSuggesting, onResolveChanges, onJumpChange, onReview, history, historyBusy, onRestoreStep, onUndoStep, historyFocus }: Props) {
   const [commentDraft, setCommentDraft] = useState("");
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [replyDraft, setReplyDraft] = useState("");
@@ -334,6 +336,7 @@ export function Inspector({ project, gitRepo, askFocus, prefill, onProviderReady
   useEffect(() => { if (askFocus) { setTab("agent"); textarea.current?.focus(); } }, [askFocus]);
   useEffect(() => { if (historyFocus) setTab("history"); }, [historyFocus]);
   useEffect(() => { if (prefill) { setTab("agent"); setDraft(prefill.text); setTimeout(() => textarea.current?.focus(), 50); } }, [prefill]);
+  useEffect(() => { if (tabRequest) setTab(tabRequest.tab); }, [tabRequest]);
   useEffect(() => { onProviderReady(!!providers.find((p) => p.id === provider)?.installed); }, [providers, provider, onProviderReady]);
 
   const refreshMemory = useCallback(() => { if (project) memoryRead(project.root).then(setMemory).catch(() => setMemory(null)); else setMemory(null); }, [project]);

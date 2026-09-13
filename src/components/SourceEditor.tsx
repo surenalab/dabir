@@ -1,12 +1,13 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
-import { EditorState, Compartment, StateEffect, StateField, Prec } from "@codemirror/state";
-import { forEachDiagnostic, nextDiagnostic } from "@codemirror/lint";
+import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef } from "react";
+import { EditorState, Compartment, StateEffect, StateField, Prec, Transaction } from "@codemirror/state";
+import { logUi } from "../lib/diag";
+import { forEachDiagnostic, nextDiagnostic, setDiagnostics } from "@codemirror/lint";
 import { todoHighlight } from "../lib/todo-highlight";
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, dropCursor, rectangularSelection, crosshairCursor, Decoration, hoverTooltip, type DecorationSet } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, indentWithTab, undo, redo } from "@codemirror/commands";
 import { bracketMatching, syntaxHighlighting, HighlightStyle, indentOnInput, foldGutter, foldKeymap } from "@codemirror/language";
 import { search, searchKeymap, openSearchPanel, highlightSelectionMatches } from "@codemirror/search";
-import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap, startCompletion, completionStatus, currentCompletions, type CompletionSource } from "@codemirror/autocomplete";
+import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap, startCompletion, closeCompletion, completionStatus, currentCompletions, type CompletionSource } from "@codemirror/autocomplete";
 import { tags } from "@lezer/highlight";
 import { latex, latexCompletionSource } from "codemirror-lang-latex";
 import { yCollab } from "y-codemirror.next";
@@ -233,6 +234,7 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const modeComp = useRef(new Compartment());
+  const historyComp = useRef(new Compartment());
   const readOnlyComp = useRef(new Compartment());
   const spellComp = useRef(new Compartment());
   const onAddWordRef = useRef(onAddWord); onAddWordRef.current = onAddWord;
@@ -294,12 +296,11 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
     return autocompletion({ override, activateOnTyping: true, maxRenderedOptions: 40, icons: true });
   };
 
-  useEffect(() => {
-    if (!host.current) return;
-    const state = EditorState.create({
-      doc: value,
+  /** A fresh editor state for `doc`, configured for the current file, mode and settings. */
+  const createState = (doc: string) => EditorState.create({
+      doc,
       extensions: [
-        history(), drawSelection(), dropCursor(), rectangularSelection(), crosshairCursor(),
+        historyComp.current.of(history()), drawSelection(), dropCursor(), rectangularSelection(), crosshairCursor(),
         indentOnInput(), bracketMatching(), closeBrackets(), highlightSelectionMatches(),
         goToDefinition(() => assistRef.current),
         completeComp.current.of(completionExt(settings)), search({ top: true }),
@@ -347,7 +348,10 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
         }),
       ],
     });
-    const v = new EditorView({ state, parent: host.current });
+
+  useEffect(() => {
+    if (!host.current) return;
+    const v = new EditorView({ state: createState(value), parent: host.current });
     view.current = v;
     const h = host.current as HTMLDivElement & { __view?: EditorView; __complete?: () => unknown };
     h.__view = v; // for automated tests
@@ -431,13 +435,33 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
     v.focus();
   }, [jumpOffset]);
 
-  useEffect(() => {
+  // A layout effect: it runs in the same commit that changed `file`, so no keystroke can land in the old text
+  // between React's render and the swap (a passive effect leaves that window open).
+  useLayoutEffect(() => {
     const v = view.current;
     if (!v) return;
     if (collab) return;
     const current = v.state.doc.toString();
-    if (current !== value) { loading.current = true; v.dispatch({ changes: { from: 0, to: current.length, insert: value }, selection: { anchor: 0 } }); loading.current = false; v.scrollDOM.scrollTop = 0; }
-  }, [value, collab]);
+    if (current === value) return;
+    // The document is being replaced from outside: another file, the agent's version, a checkout. The old undo
+    // history, completion state and diagnostics belong to the old text: dropping them keeps ⌘Z from bringing the
+    // previous file back into this one (which autosave would then write to disk).
+    loading.current = true;
+    try {
+      closeCompletion(v);
+      const clearDiag = setDiagnostics(v.state, []).effects;
+      const diag = Array.isArray(clearDiag) ? clearDiag : clearDiag ? [clearDiag as StateEffect<unknown>] : [];
+      v.dispatch({ changes: { from: 0, to: current.length, insert: value }, selection: { anchor: 0 }, effects: [historyComp.current.reconfigure([]), ...diag], annotations: Transaction.addToHistory.of(false) });
+      v.dispatch({ effects: historyComp.current.reconfigure(history()) });
+    } catch (e) {
+      // A stale extension state that cannot map onto the new text must not leave the old text on screen.
+      logUi(`editor: replacing the document failed (${String(e)}); starting a fresh state`);
+      v.setState(createState(value));
+      v.dispatch({ effects: [setMarks.of(marks), setHeadText.of(headText), setComments.of(comments), setGrammar.of(grammar), setReview.of(review ?? null)] });
+      attachLanguageServer(pathRef.current, assistRef.current.root());
+    } finally { loading.current = false; }
+    v.scrollDOM.scrollTop = 0;
+  }, [value, collab]); // eslint-disable-line react-hooks/exhaustive-deps -- the fallback reads the current props once
   // After the document is the agent's version: mark its lines and open on the first change.
   useEffect(() => {
     const v = view.current; if (!v) return;

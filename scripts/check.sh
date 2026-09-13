@@ -9,6 +9,7 @@ step() { printf '\n\033[1m› %s\033[0m\n' "$1"; }
 step "TypeScript"      && npx tsc --noEmit -p tsconfig.json
 step "ESLint"          && npx eslint .
 step "Production build" && npx vite build --logLevel warn
+step "Script tests"    && node --test scripts/*.test.mjs
 if [ "${SKIP_RUST:-0}" != "1" ]; then
   step "cargo fmt"     && (cd src-tauri && cargo fmt --check)
   step "cargo clippy"  && (cd src-tauri && CARGO_TARGET_DIR=target/test cargo clippy --all-targets -- -D warnings)

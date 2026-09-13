@@ -105,8 +105,10 @@ export async function readText(path: string): Promise<string> {
   return invoke<string>("read_text", { path });
 }
 
+/** Browser preview only: every write, in order, so automated checks can see what would have hit the disk. */
+export const PREVIEW_WRITES: { path: string; head: string }[] = [];
 export async function writeText(path: string, contents: string): Promise<void> {
-  if (!native) { SAMPLE_FILES[path] = contents; return; }
+  if (!native) { SAMPLE_FILES[path] = contents; PREVIEW_WRITES.push({ path: path.split("/").slice(-2).join("/"), head: contents.slice(0, 40) }); (window as unknown as { __writes?: unknown }).__writes = PREVIEW_WRITES; return; }
   return invoke("write_text", { path, contents });
 }
 
@@ -204,6 +206,17 @@ const SAMPLE_TEMPLATES: TemplateListing = {
     { id: "typst-ieee", label: "IEEE (Typst)", venue: "IEEE-style conference and journal papers", group: "typst", engine: "typst", official: false, featured: false, version: null, summary: "The charged-ieee template from Typst Universe (MIT-0).", site: "https://typst.app/universe/package/charged-ieee", main: "main.typ", kit: null, cached: true, notes: [] },
   ],
 };
+/** The bundled sample paper, copied under Documents/Dabir the first time (or reopened), for the guided tour. */
+export async function openSample(): Promise<string> {
+  if (!native) return SAMPLE_PROJECT.root;
+  return invoke<string>("open_sample", { parent: null });
+}
+export async function openGuide(): Promise<void> {
+  const url = "https://github.com/surenalab/dabir/blob/main/docs/GUIDE.md";
+  if (!native) { window.open(url, "_blank"); return; }
+  const { openUrl } = await import("@tauri-apps/plugin-opener");
+  await openUrl(url);
+}
 export async function templatesList(): Promise<TemplateListing> {
   if (!native) return SAMPLE_TEMPLATES;
   return invoke<TemplateListing>("templates_list");

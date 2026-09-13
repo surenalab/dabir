@@ -1,0 +1,24 @@
+name: Feature
+description: Something Dabir should do that it does not.
+labels: [enhancement, triage]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The situation
+      description: What you were writing or running, and where Dabir got in the way. A story, not a spec.
+    validations: { required: true }
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would help
+      description: The smallest change that would do. Say how Overleaf, VS Code or another tool handles it if one does.
+    validations: { required: true }
+  - type: checkboxes
+    id: principles
+    attributes:
+      label: Fit
+      options:
+        - label: Works offline, or has a default-off switch saying what leaves the machine
+        - label: Leaves the paper a plain Git repository (no new project format)
+        - label: I checked PLAN.md and this is not already planned there

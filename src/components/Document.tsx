@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
-import { AlertCircle, CheckCircle2, FolderOpen, FilePlus, GitBranch, Loader2, Circle, Upload, Radio, Sparkles, Check, X } from "lucide-react";
+import { AlertCircle, CheckCircle2, FolderOpen, FilePlus, GitBranch, Loader2, Circle, Upload, Radio, Sparkles, Check, X, Compass } from "lucide-react";
 import { parseDocument, type BibEntry } from "../lib/latex";
 import { setVisualContext } from "../lib/visual";
 import { readBinary, type PdfPos, type Project } from "../lib/backend";
@@ -95,7 +95,7 @@ interface Props {
   onClone: () => void;
   onNew: (template?: string) => void;
   /** Featured templates for the welcome card, label and id. */
-  starters?: { id: string; label: string }[];
+  onTour: () => void;
   onJoin: () => void;
   hostAway: boolean;
   onOutline: (o: ReturnType<typeof parseDocument>["outline"]) => void;
@@ -239,16 +239,13 @@ export function Document(p: Props) {
               <button className="btn" onClick={p.onClone}><GitBranch /> Clone from GitHub…</button>
               <button className="btn" onClick={p.onJoin} title="Paste a coauthor's link or invite code; their paper is mirrored here"><Radio /> Join a Live Session…</button>
             </div>
-            {p.starters && p.starters.length > 0 && (
-              <div className="starters">
-                <p>Or start from a venue's template</p>
-                <div className="row">
-                  {p.starters.map((s) => <button key={s.id} onClick={() => p.onNew(s.id)}>{s.label}</button>)}
-                  <button className="more" onClick={() => p.onNew()}>All templates…</button>
-                </div>
+            <div className="tour-offer">
+              <div className="tour-offer-text">
+                <b>New here?</b> A three-minute tour on a sample paper: the manuscript, its figures, and the code that made them, with an agent and the terminal along the way.
               </div>
-            )}
-            <div className="hint">Try the bundled sample at <code>examples/score-anchor</code>. Press <kbd>⌘/</kbd> for shortcuts.</div>
+              <button className="btn tour-start" onClick={p.onTour}><Compass /> Take the tour</button>
+            </div>
+            <div className="hint">Press <kbd>⌘/</kbd> for shortcuts. Dabir is free software under the GNU AGPL v3, © Sadegh Salehi.</div>
           </div>
         </div>
       </main>
