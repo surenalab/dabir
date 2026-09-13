@@ -1211,10 +1211,17 @@ fn ui_log(app: AppHandle, message: String) {
     }
     let path = dir.join("ui.log");
     // Keep the file small: start over past a megabyte.
-    if std::fs::metadata(&path).map(|m| m.len() > 1_000_000).unwrap_or(false) {
+    if std::fs::metadata(&path)
+        .map(|m| m.len() > 1_000_000)
+        .unwrap_or(false)
+    {
         let _ = std::fs::remove_file(&path);
     }
-    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+    {
         let secs = std::time::SystemTime::now()
             .duration_since(std::time::SystemTime::UNIX_EPOCH)
             .map(|d| d.as_secs())
@@ -1350,6 +1357,34 @@ fn search_paper(root: String, query: String) -> Vec<SearchHit> {
 #[tauri::command]
 fn lsp_available(candidates: Vec<String>) -> Vec<String> {
     lsp::available(&candidates)
+}
+
+/// Run a formatter (or any filter) over text: stdin in, stdout out, in the paper's folder so project
+/// configuration (pyproject.toml, .prettierrc, .clang-format, rustfmt.toml) applies.
+#[tauri::command]
+async fn run_filter(
+    command: String,
+    args: Vec<String>,
+    cwd: String,
+    input: String,
+) -> Result<lsp::Filtered, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        lsp::filter(
+            &command,
+            &args,
+            Path::new(&cwd),
+            &input,
+            std::time::Duration::from_secs(60),
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// The file as HEAD has it, for the change gutter; null when new, binary or not in a repository.
+#[tauri::command]
+fn git_head_text(root: String, path: String) -> Result<Option<String>, String> {
+    git::head_text(Path::new(&root), &path)
 }
 
 /// Whether a launcher command works: `julia -e 'using LanguageServer'` is only useful when the package is there.
@@ -2074,6 +2109,11 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
                 .build(app)?,
         )
         .item(&MenuItemBuilder::with_id("unicode-tex", "Convert Unicode to LaTeX").build(app)?)
+        .item(
+            &MenuItemBuilder::with_id("format-doc", "Format Document")
+                .accelerator("Shift+Alt+F")
+                .build(app)?,
+        )
         .build()?;
 
     let view = SubmenuBuilder::new(app, "View")
@@ -2220,6 +2260,11 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
                 .accelerator("Ctrl+`")
                 .build(app)?,
         )
+        .item(
+            &MenuItemBuilder::with_id("run-file", "Run File in Terminal")
+                .accelerator("Ctrl+Enter")
+                .build(app)?,
+        )
         .separator()
         .item(
             &MenuItemBuilder::with_id("commit", "Commit…")
@@ -2296,6 +2341,8 @@ pub fn run() {
             paper_map,
             term_open,
             ui_log,
+            run_filter,
+            git_head_text,
             term_write,
             term_resize,
             term_close,
@@ -2433,6 +2480,10 @@ mod tests {
         let st = git::status(&dir).unwrap();
         assert!(st.changes.is_empty());
         assert_eq!(st.recent[0].summary, "first");
+        // the change gutter's baseline: HEAD's text, None for a file HEAD does not have
+        let head = git::head_text(&dir, "main.tex").unwrap().unwrap();
+        assert!(head.contains("\\title{Test Paper}"));
+        assert!(git::head_text(&dir, "new.tex").unwrap().is_none());
         // memory
         let written = memory::setup(&dir, Some(&dir.join("main.tex"))).unwrap();
         assert!(written.contains(&".dabir/PROJECT.md".to_string()));

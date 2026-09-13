@@ -26,7 +26,9 @@ import { proseWords } from "./lib/spell";
 import {
   agentComplete, checkForUpdates, projectSnapshot, sessionMaterialize, checkpoint, checkpoints, checkpointRestore, checkpointUndo, gitDiscard, type Checkpoint, newPaper, templatesList, compile as runCompile, compileCancel, gitClone, gitPull, gitPush, gitRemoteAdd, gitRemoteUrl, isMac, onCompileProgress, relayStart, relayStop, gitCommit, gitInit, gitStatus, importOverleaf, native, onMenu, onWindowFocus,
   openProject, pickFolder, pickNewPaperPath, readText, setWindowTitle, synctexForward, synctexInverse, writeText,
-  type CompileResult, type GitStatus, type PdfPos, type Project, type Focus, paperMap, type PaperMap } from "./lib/backend";
+  type CompileResult, type GitStatus, type PdfPos, type Project, type Focus, paperMap, type PaperMap, gitHeadText } from "./lib/backend";
+import { runRecipe, formatText } from "./lib/code-tools";
+import { fileKind } from "./lib/languages";
 import { parseBib, type BibEntry, type OutlineItem } from "./lib/latex";
 
 export type CompileState =
@@ -66,7 +68,7 @@ export default function App() {
   const [progress, setProgress] = useState<string | null>(null);
   const [pdfTarget, setPdfTarget] = useState<(PdfPos & { stamp: number }) | null>(null);
   const [showLog, setShowLog] = useState(false);
-  const [terminal, setTerminal] = useState({ open: false, focusStamp: 0 });
+  const [terminal, setTerminal] = useState<{ open: boolean; focusStamp: number; run?: { command: string; stamp: number } | null }>({ open: false, focusStamp: 0, run: null });
   // Find in Paper lives at the top of the sidebar; ⇧⌘F opens or refocuses it.
   const [findPaper, setFindPaper] = useState({ open: false, stamp: 0 });
   // Focus mode is a setting so it survives restarts; turning it on folds the panels away, turning it off brings them back.
@@ -78,7 +80,7 @@ export default function App() {
   }, [mode]);
   const openFindPaper = useCallback(() => { setFindPaper({ open: true, stamp: Date.now() }); setNavOpen(true); }, []);
   const closeFindPaper = useCallback(() => setFindPaper((f) => ({ ...f, open: false })), []);
-  const toggleTerminal = useCallback(() => setTerminal((t) => ({ open: !t.open, focusStamp: Date.now() })), []);
+  const toggleTerminal = useCallback(() => setTerminal((t) => ({ ...t, open: !t.open, focusStamp: Date.now() })), []);
   const [focused, setFocused] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -686,6 +688,34 @@ export default function App() {
   const toggleInspector = useCallback(() => { setAnimating(true); autoCollapsed.current = false; setInspectorOpen((v) => !v); }, []);
 
   // One command router for the native menu bar and the browser keyboard fallback.
+  const files = useMemo(() => (project ? flattenFiles(project.tree) : []), [project]);
+  // Run File: the recipe for the open file, typed into the terminal panel so the author sees what ran.
+  const runRecipeNow = useMemo(() => { const r = rel(file); return r ? runRecipe(r, files) : null; }, [rel, file, files]);
+  const runFile = useCallback(async () => {
+    if (!project || !file) return;
+    if (!runRecipeNow) { setNote(`No run recipe for ${file.split("/").pop()}. Type the command in the terminal.`); return; }
+    await flushRef.current();
+    const now = Date.now();
+    setTerminal({ open: true, focusStamp: now, run: { command: runRecipeNow.command, stamp: now } });
+  }, [project, file, runRecipeNow]);
+  // Format Document: the project's formatter over the buffer, applied as one change so undo is one step.
+  const formatDocument = useCallback(async () => {
+    const r = rel(file);
+    if (!project || !r || !editorRef.current) return false;
+    const result = await formatText(project.root, r, editorRef.current.text());
+    if (!result.ok) { setNote(result.error); return false; }
+    const changed = editorRef.current.replaceAll(result.text);
+    setNote(changed ? `Formatted with ${result.formatter}.` : `Already formatted (${result.formatter}).`);
+    return true;
+  }, [project, file, rel]);
+  // The file as HEAD has it, for the change gutter; refreshed when the file or the repository state changes.
+  const [headText, setHeadText] = useState<string | null>(null);
+  useEffect(() => {
+    const r = rel(file);
+    let live = true;
+    (project && r ? gitHeadText(project.root, r) : Promise.resolve(null)).then((t) => { if (live) setHeadText(t); });
+    return () => { live = false; };
+  }, [project, file, rel, git]);
   const command = useCallback((id: string) => {
     switch (id) {
       case "open": open(); break;
@@ -695,10 +725,12 @@ export default function App() {
       case "share": setSheet("share"); break;
       case "export": setSheet("export"); break;
       case "references": setSheet("refs"); break;
-      case "save": save(); break;
+      case "save": void (async () => { if (settings.formatOnSave && fileKind(file) === "code") await formatDocument(); await save(); })(); break;
       case "compile": compile(); break;
       case "show-log": setShowLog((v) => !v); break;
       case "show-terminal": if (project) toggleTerminal(); else setNote("Open a paper first: the terminal runs in the paper's folder."); break;
+      case "run-file": void runFile(); break;
+      case "format-doc": void formatDocument(); break;
       case "next-file": cycleFile(1); break;
       case "prev-file": cycleFile(-1); break;
       case "close-file": if (file) closeFile(file); break;
@@ -741,7 +773,7 @@ export default function App() {
         checkForUpdates(async (v, notes) => window.confirm(`Dabir ${v} is available.\n\n${notes}\n\nDownload and restart now?`)).then(setNote).catch((e) => setNote(String(e)));
         break;
     }
-  }, [open, importFromOverleaf, save, compile, showInPdf, toggleNav, toggleInspector, toggleTerminal, openFindPaper, toggleFocusMode, inspectorOpen, navOpen, runGrammar, mode, cycleFile, closeFile, file, project]);
+  }, [open, importFromOverleaf, save, compile, showInPdf, toggleNav, toggleInspector, toggleTerminal, openFindPaper, toggleFocusMode, inspectorOpen, navOpen, runGrammar, mode, cycleFile, closeFile, file, project, runFile, formatDocument, settings.formatOnSave]);
 
   useEffect(() => onMenu(command), [command]);
   useEffect(() => onCompileProgress((line) => setProgress(line.length > 90 ? line.slice(0, 87) + "…" : line)), []);
@@ -754,6 +786,8 @@ export default function App() {
     if (native) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey && !e.metaKey && e.key === "`") { e.preventDefault(); command("show-terminal"); return; }
+      if (e.ctrlKey && !e.metaKey && e.key === "Enter") { e.preventDefault(); command("run-file"); return; }
+      if (e.shiftKey && e.altKey && !e.metaKey && !e.ctrlKey && (e.code === "KeyF") && !e.defaultPrevented) { e.preventDefault(); command("format-doc"); return; }
       if (!e.metaKey) return;
       const k = e.key.toLowerCase();
       const map: Record<string, string> = { o: "open", n: "new", s: "save", b: "compile", "1": "view-visual", "2": "view-source", "3": "view-pdf", "4": "view-split", j: "ask-agent", f: "find", "/": "shortcuts", ",": "settings", k: "fmt-link" };
@@ -865,7 +899,6 @@ export default function App() {
   }, [project, file, selectFile]);
   // What completions, go-to-definition and the outline read: the paper's symbols with the open buffer's labels live.
   const symbols = useMemo(() => paperSymbols(map, rel(file), source), [map, rel, file, source]);
-  const files = useMemo(() => (project ? flattenFiles(project.tree) : []), [project]);
   const assist = useMemo<AssistSources>(() => ({ bib: () => bib, symbols: () => symbols, files: () => files, currentFile: () => rel(file), goTo: jumpToFile, main: () => map?.main ?? rel(project?.mainTex ?? null), root: () => project?.root ?? null }), [bib, symbols, files, rel, file, jumpToFile, map, project]);
   const fixWithAgent = useCallback((prompt: string) => { if (!inspectorOpen) toggleInspector(); setPrefill({ text: prompt, stamp: Date.now() }); }, [inspectorOpen, toggleInspector]);
   // Hand the bibliography to the agent under the check-references skill: online lookups, fields fixed
@@ -938,10 +971,10 @@ export default function App() {
     <div className={cls} style={{ "--nav-w": `${navW}px`, "--inspector-w": `${inspW}px` } as React.CSSProperties}>
       <Toolbar project={project} file={file} dirty={dirty} saveLabel={settings.autosave ? (saveState === "saving" ? "Saving…" : saveState === "unsaved" ? "Unsaved" : saveState === "saved" ? "Saved" : null) : null} mode={mode} navOpen={navOpen} inspectorOpen={inspectorOpen}
         compiling={compileState.status === "running"} onMode={setMode} onToggleNav={toggleNav} onToggleInspector={toggleInspector} onOpen={open} onCompile={compile} onCancelCompile={() => compileCancel()}
-        onShare={() => setSheet("share")} live={!!live} />
+        onShare={() => setSheet("share")} live={!!live} terminalOpen={terminal.open} onToggleTerminal={() => command("show-terminal")} run={runRecipeNow} onRun={() => command("run-file")} />
       <Navigator project={project} current={file} outline={paperOutline(map) ?? outline} git={git} commitFocus={commitFocus} busy={gitBusy || historyBusy} draftMessage={commitDraft} onDiscard={discardChange} onHistory={() => { if (!inspectorOpen) toggleInspector(); setHistoryFocus(Date.now()); }} historyCount={versions.length}
         onSelect={selectFile} onJump={(l, f) => (f ? jumpToFile(f, l) : jumpTo(l))} onInitGit={initGit} onCommit={commitAll} find={findPaper} onCloseFind={closeFindPaper} />
-      <Document project={project} file={file} source={source} bib={bib} paperWords={paperWordsNow} openFiles={openFiles} dirty={dirty} onCloseFile={closeFile} mode={mode} jumpLine={jumpLine} jumpStamp={jumpStamp}
+      <Document project={project} file={file} source={source} bib={bib} paperWords={paperWordsNow} openFiles={openFiles} dirty={dirty} onCloseFile={closeFile} headText={headText} mode={mode} jumpLine={jumpLine} jumpStamp={jumpStamp}
         compileState={compileState} progress={progress} showLog={showLog} onToggleLog={() => setShowLog((v) => !v)} terminal={terminal} onToggleTerminal={toggleTerminal} findRequest={findRequest}
         error={error ?? note} onDismissError={() => { setError(null); setNote(null); }} pdfTarget={pdfTarget}
         onOpen={open} onImport={importFromOverleaf} onClone={() => setSheet("clone")} onNew={openNew} starters={starters} onJoin={() => setSheet("share")} hostAway={hostAway} onOutline={setOutline}

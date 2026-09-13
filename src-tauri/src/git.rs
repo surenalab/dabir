@@ -1200,6 +1200,30 @@ fn apply_bytes(workdir: &Path, patch: &[u8], check: bool) -> Result<std::process
 }
 
 /// Put one file back as it is in HEAD (or delete it when untracked). Snapshotted first, so reversible.
+/// The file as HEAD has it (`path` relative to `root`), or None when it is new or the folder is not a
+/// repository: what the editor's change gutter compares the buffer against.
+pub fn head_text(root: &Path, path: &str) -> Result<Option<String>, String> {
+    let Ok(repo) = Repository::discover(root) else {
+        return Ok(None);
+    };
+    let (_, prefix) = repo_prefix(root)?;
+    let repo_path = format!("{}{}", prefix, path);
+    let Some(tree) = repo.head().ok().and_then(|h| h.peel_to_tree().ok()) else {
+        return Ok(None);
+    };
+    let Ok(entry) = tree.get_path(Path::new(&repo_path)) else {
+        return Ok(None);
+    };
+    let obj = entry.to_object(&repo).map_err(|e| e.to_string())?;
+    let Some(blob) = obj.as_blob() else {
+        return Ok(None);
+    };
+    if blob.is_binary() {
+        return Ok(None);
+    }
+    Ok(Some(String::from_utf8_lossy(blob.content()).into_owned()))
+}
+
 pub fn discard(root: &Path, path: &str) -> Result<(), String> {
     let repo = Repository::discover(root).map_err(|e| e.to_string())?;
     let (workdir, prefix) = repo_prefix(root)?;
