@@ -29,7 +29,7 @@ window-vibrancy = "0.6"
 tauri-plugin-shell = "2"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 flate2 = "1"
-git2 = { version = "0.20", default-features = false, features = ["vendored-libgit2", "https", "vendored-openssl"] }
+git2 = { version = "0.21", default-features = false, features = ["vendored-libgit2", "https", "vendored-openssl"] }
 uuid = { version = "1", features = ["v4"] }
 toml = "0.8"
 tauri-plugin-updater = "2"
