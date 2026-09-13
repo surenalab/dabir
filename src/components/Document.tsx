@@ -9,6 +9,9 @@ import { SourceEditor, type CommentRange, type EditorApi } from "./SourceEditor"
 import { FormatBar } from "./FormatBar";
 import { TerminalPane } from "./Terminal";
 import { FileTabs } from "./FileTabs";
+import { CodeBar, type CodeState } from "./CodeBar";
+import { codeOutline } from "../lib/code-outline";
+import { fileKind } from "../lib/languages";
 import { Problems, groupProblems } from "./Problems";
 import type * as Y from "yjs";
 import type { Awareness } from "y-protocols/awareness";
@@ -98,7 +101,9 @@ interface Props {
   onOutline: (o: ReturnType<typeof parseDocument>["outline"]) => void;
   onSourceChange: (text: string) => void;
   onSave: () => void;
-  onCursorLine: (line: number) => void;
+  onCursorLine: (line: number, col: number) => void;
+  /** The code bar's state and actions, for code files. */
+  code: CodeState & { onRun: () => void; onRunSelection: (text?: string) => void; onRepl: () => void; onFormat: () => void; onServer: (s: { command: string } | null) => void; onLint: (n: { errors: number; warnings: number }) => void };
   onSelectFile: (path: string) => void;
   onJump: (line: number, inSource?: boolean) => void;
   onPdfClick: (page: number, x: number, y: number) => void;
@@ -154,7 +159,7 @@ export interface DocReview {
 }
 
 export function Document(p: Props) {
-  const { project, source, mode, compileState, showLog, error, terminal, onToggleTerminal, paperWords, file, openFiles, dirty: fileDirty, onCloseFile, onSelectFile, headText } = p;
+  const { project, source, mode, compileState, showLog, error, terminal, onToggleTerminal, paperWords, file, openFiles, dirty: fileDirty, onCloseFile, onSelectFile, headText, code } = p;
   const macros = useMemo(() => (source ? collectMacros(source) : {}), [source]);
   const [dragging, setDragging] = useState(false);
   const splitRef = useRef<HTMLDivElement>(null);
@@ -177,7 +182,7 @@ export function Document(p: Props) {
     });
   }, [project, p.bib, macros, p.onSelectFile, p.settings.revealOnClick]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { p.onOutline(source ? parseDocument(source).outline : []); }, [source]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { p.onOutline(source ? (fileKind(file) === "code" || /\.(md|markdown)$/i.test(file ?? "") ? codeOutline(file, source) : parseDocument(source).outline) : []); }, [source, file]); // eslint-disable-line react-hooks/exhaustive-deps
   // Prose words only: commands, math, comments and the arguments of \cite, \ref and paths do not count.
   const wordCount = useMemo(() => (source ? proseWords(source).length : 0), [source]);
   // The whole paper: every manuscript file's saved count, with the open file's live count in place of its saved one.
@@ -264,7 +269,7 @@ export function Document(p: Props) {
       collab={p.collab} comments={p.comments} onSelection={p.onSelection} jumpOffset={p.jumpOffset} marks={editorMarks}
       changes={previewing ? [] : p.changes} suggesting={p.settings.suggesting} author={p.author} onChanges={p.onChanges}
       review={previewing ? rv!.marks : null} dictionary={p.dictionary} onAddWord={p.onAddWord} onContinue={p.onContinue}
-      settings={p.settings} grammar={p.grammar} assist={p.assist} headText={headText} />
+      settings={p.settings} grammar={p.grammar} assist={p.assist} headText={headText} onRunSelection={code.onRunSelection} onLanguageServer={code.onServer} onLint={code.onLint} />
   ) : source != null ? <div className="doc-empty"><div className="card"><p>This file type is not editable in Dabir yet.</p></div></div> : null;
   const pdf = showPdf ? (
     <Suspense fallback={<div className="doc-empty"><div className="card"><p>Loading PDF…</p></div></div>}>
@@ -300,6 +305,7 @@ export function Document(p: Props) {
         </div>
       )}
       {project && <FileTabs root={project.root} files={openFiles} active={file} dirty={fileDirty} onSelect={onSelectFile} onClose={onCloseFile} />}
+      {showEditor && !isProse && !previewing && file && project && <CodeBar rel={file.replace(project.root + "/", "")} state={code} onRun={code.onRun} onRunSelection={() => code.onRunSelection()} onRepl={code.onRepl} onFormat={code.onFormat} onNextProblem={() => p.editorRef.current?.nextDiagnostic()} />}
       {showEditor && isProse && !previewing && <FormatBar api={p.editorRef.current} lang={markupLang} onFind={p.onFind} onComment={p.onCommentSelection} canComment={p.hasSelection} suggesting={p.settings.suggesting} onToggleSuggesting={p.onToggleSuggesting} pending={p.changes.length} />}
       <div className={`panes ${mode === "split" ? "split" : ""}`} ref={splitRef} style={mode === "split" ? { "--split": `${Math.round(p.splitRatio * 100)}%` } as React.CSSProperties : undefined}>
         <div className="scroll" hidden={!showEditor}>{editor}</div>

@@ -1,5 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
-import { EditorState, Compartment, StateEffect, StateField } from "@codemirror/state";
+import { EditorState, Compartment, StateEffect, StateField, Prec } from "@codemirror/state";
+import { forEachDiagnostic, nextDiagnostic } from "@codemirror/lint";
+import { todoHighlight } from "../lib/todo-highlight";
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, dropCursor, rectangularSelection, crosshairCursor, Decoration, hoverTooltip, type DecorationSet } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, indentWithTab, undo, redo } from "@codemirror/commands";
 import { bracketMatching, syntaxHighlighting, HighlightStyle, indentOnInput, foldGutter, foldKeymap } from "@codemirror/language";
@@ -162,18 +164,25 @@ interface Props {
   jumpOffset: { pos: number; stamp: number } | null;
   onChange: (text: string) => void;
   onSave: () => void;
-  onCursorLine: (line: number) => void;
+  onCursorLine: (line: number, col: number) => void;
   jumpLine: number | null;
   jumpStamp: number;
   findRequest: number;
   /** The file as HEAD has it, for the change gutter. */
   headText?: string | null;
+  /** Code files: ⇧⏎ sends the selection (or the current line) to the terminal. */
+  onRunSelection?: (text: string) => void;
+  /** Which language server took the file, or null when none is installed; undefined while looking. */
+  onLanguageServer?: (server: { command: string } | null) => void;
+  /** Counts of the editor's own diagnostics (language server, linters), when they change. */
+  onLint?: (counts: { errors: number; warnings: number }) => void;
 }
 
 const sourceOnly = (path: string | null) => [
   lineNumbers(), gitGutter(), foldGutter({ openText: "⌄", closedText: "›" }), highlightActiveLineGutter(), highlightActiveLine(),
   syntaxHighlighting(isManuscript(path) ? highlight : codeHighlight),
   errorLens(lintSource, marksSource),
+  todoHighlight(),
   ...(fileKind(path) === "tex" ? [matchingEnvironment(), headingEmphasis()] : []),
   // Code files: guides down each indentation level, as an IDE draws them.
   ...(fileKind(path) === "code" || fileKind(path) === "data" ? [indentationMarkers({ hideFirstIndent: true, thickness: 1, colors: { light: "rgba(29,31,36,0.12)", dark: "rgba(255,255,255,0.12)", activeLight: "rgba(29,31,36,0.3)", activeDark: "rgba(255,255,255,0.3)" } })] : []),
@@ -202,13 +211,25 @@ export interface EditorApi {
   continueSentence: () => void;                   // ask the agent for the next sentence as ghost text
   unicodeToTex: () => number;                     // rewrite pasted symbols in the selection (or the file) as LaTeX; how many changed
   replaceAll: (text: string) => boolean;          // swap the whole text (a formatter's output) as one small change; false when identical
+  nextDiagnostic: () => void;                     // move to the next language-server diagnostic
+  selectionOrLine: () => string;                  // the selected text, or the current line when nothing is selected
   setHead: (text: string | null) => void;         // the file as HEAD has it, for the change gutter
   text: () => string;
 }
 
+/** The selection, or the whole current line when the selection is empty; what ⇧⏎ sends to the terminal. */
+function selectionOrLine(v: EditorView): string {
+  const sel = v.state.selection.main;
+  if (!sel.empty) return v.state.doc.sliceString(sel.from, sel.to);
+  const line = v.state.doc.lineAt(sel.head);
+  // Move to the next line, as a REPL workflow expects, so ⇧⏎ ⇧⏎ walks down the file.
+  if (line.number < v.state.doc.lines) v.dispatch({ selection: { anchor: v.state.doc.line(line.number + 1).from }, scrollIntoView: true });
+  return line.text;
+}
+
 const modeExt = (visual: Props["visual"], path: string | null) => (visual === "typst" ? typstVisualExtensions() : visual ? visualExtensions() : sourceOnly(path));
 
-export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({ value, visual, settings, assist, collab, comments, changes, suggesting, author, onChanges, grammar, marks, review, dictionary, onAddWord, onContinue, onSelection, jumpOffset, onChange, onSave, onCursorLine, jumpLine, jumpStamp, findRequest, headText = null }, ref) {
+export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({ value, visual, settings, assist, collab, comments, changes, suggesting, author, onChanges, grammar, marks, review, dictionary, onAddWord, onContinue, onSelection, jumpOffset, onChange, onSave, onCursorLine, jumpLine, jumpStamp, findRequest, headText = null, onRunSelection, onLanguageServer, onLint }, ref) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const modeComp = useRef(new Compartment());
@@ -242,6 +263,10 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
   const onSaveRef = useRef(onSave); onSaveRef.current = onSave;
   const onCursorRef = useRef(onCursorLine); onCursorRef.current = onCursorLine;
   const onSelRef = useRef(onSelection); onSelRef.current = onSelection;
+  const onRunSelRef = useRef(onRunSelection); onRunSelRef.current = onRunSelection;
+  const onServerRef = useRef(onLanguageServer); onServerRef.current = onLanguageServer;
+  const onLintRef = useRef(onLint); onLintRef.current = onLint;
+  const lintSeen = useRef({ errors: -1, warnings: -1 });
   const assistRef = useRef(assist); assistRef.current = assist;
   const langComp = useRef(new Compartment());
   const lspComp = useRef(new Compartment());
@@ -289,6 +314,10 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
         reviewField, remoteCursorsField,
         spellComp.current.of(spellCfg(settings, dictionary, pathRef.current)), spelling(),
         commentField, marksList, markField, grammarField, grammarHover,
+        Prec.high(keymap.of([{ key: "Shift-Enter", run: (v) => {
+          if (!onRunSelRef.current || isManuscript(pathRef.current) || fileKind(pathRef.current) !== "code") return false;
+          onRunSelRef.current(selectionOrLine(v)); return true;
+        } }])),
         keymap.of([
           { key: "Mod-s", run: () => { onSaveRef.current(); return true; } },
           { key: "Mod-Shift-Space", run: () => { void continueSentence(); return true; } },
@@ -299,8 +328,13 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
         EditorView.updateListener.of((u) => {
           if (u.docChanged && !loading.current) onChangeRef.current(u.state.doc.toString());
           if (u.selectionSet || u.docChanged) {
-            onCursorRef.current(u.state.doc.lineAt(u.state.selection.main.head).number);
+            { const head = u.state.selection.main.head; const ln = u.state.doc.lineAt(head); onCursorRef.current(ln.number, head - ln.from + 1); }
             onSelRef.current(u.state.selection.main.from, u.state.selection.main.to);
+          }
+          if (onLintRef.current && u.transactions.some((tr) => tr.effects.length > 0)) {
+            let errors = 0, warnings = 0;
+            forEachDiagnostic(u.state, (d) => { if (d.severity === "error") errors++; else if (d.severity === "warning") warnings++; });
+            if (errors !== lintSeen.current.errors || warnings !== lintSeen.current.warnings) { lintSeen.current = { errors, warnings }; onLintRef.current({ errors, warnings }); }
           }
           if (!loading.current) {
             const c = changesIn(u.state);
@@ -318,6 +352,7 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
     const h = host.current as HTMLDivElement & { __view?: EditorView; __complete?: () => unknown };
     h.__view = v; // for automated tests
     h.__complete = () => { startCompletion(v); return { status: completionStatus(v.state), count: currentCompletions(v.state).length }; };
+    attachLanguageServer(pathRef.current, assistRef.current.root());
     return () => { v.destroy(); view.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -329,14 +364,20 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
     if (path === pathRef.current) return;
     pathRef.current = path;
     view.current?.dispatch({ effects: [langComp.current.reconfigure(languageExt(path, () => assistRef.current)), lspComp.current.reconfigure([]), modeComp.current.reconfigure(modeExt(visual, path)), spellComp.current.reconfigure(spellCfg(settings, dictionary, path)), completeComp.current.reconfigure(completionExt(settings))] });
-    // A language server, when one is installed for this kind of file; the answer may arrive after another file opened.
-    const root = assist.root();
+    attachLanguageServer(path, assist.root());
+  }, [assist]); // eslint-disable-line react-hooks/exhaustive-deps
+  /** A language server, when one is installed for this kind of file; the answer may arrive after another file opened. */
+  const attachLanguageServer = (path: string | null, root: string | null) => {
+    lintSeen.current = { errors: -1, warnings: -1 };
+    onLintRef.current?.({ errors: 0, warnings: 0 });
     if (path && root && !isManuscript(path)) {
       languageServerFor(root, `${root}/${path}`).then((got) => {
-        if (got && pathRef.current === path) view.current?.dispatch({ effects: lspComp.current.reconfigure(got.extension) });
-      }).catch(() => {});
-    }
-  }, [assist]); // eslint-disable-line react-hooks/exhaustive-deps
+        if (pathRef.current !== path) return;
+        if (got) view.current?.dispatch({ effects: lspComp.current.reconfigure(got.extension) });
+        onServerRef.current?.(got ? { command: got.spec.command } : null);
+      }).catch(() => onServerRef.current?.(null));
+    } else onServerRef.current?.(null);
+  };
   useEffect(() => { view.current?.dispatch({ effects: [prefsComp.current.reconfigure(prefs(settings)), keysComp.current.reconfigure(settings.keymap === "vim" ? vim() : []), completeComp.current.reconfigure(completionExt(settings))] }); }, [settings]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { view.current?.dispatch({ effects: spellComp.current.reconfigure(spellCfg(settings, dictionary, pathRef.current)) }); }, [settings, dictionary]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -482,6 +523,8 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
       return true;
     },
     setHead(text) { view.current?.dispatch({ effects: setHeadText.of(text) }); },
+    nextDiagnostic() { if (view.current) { nextDiagnostic(view.current); view.current.focus(); } },
+    selectionOrLine() { return view.current ? selectionOrLine(view.current) : ""; },
     text() { return view.current?.state.doc.toString() ?? ""; },
     unicodeToTex() {
       const v = view.current; if (!v || lang() === "typst") return 0;
