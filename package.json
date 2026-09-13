@@ -39,6 +39,7 @@
     "@fontsource/ibm-plex-mono": "^5.3.0",
     "@fontsource/stix-two-text": "^5.3.0",
     "@lezer/highlight": "^1.2.3",
+    "@replit/codemirror-indentation-markers": "^6.5.3",
     "@replit/codemirror-vim": "^6.4.0",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2.7.3",
@@ -51,6 +52,7 @@
     "@xterm/xterm": "^6.0.0",
     "codemirror-lang-latex": "^0.6.1",
     "codemirror-lang-typst": "^0.6.0",
+    "diff": "^9.0.0",
     "hunspell-wasm": "^0.3.0",
     "katex": "^0.18.7",
     "lib0": "^0.2.117",
@@ -68,6 +70,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@tauri-apps/cli": "^2",
+    "@types/diff": "^7.0.2",
     "@types/katex": "^0.16.8",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",

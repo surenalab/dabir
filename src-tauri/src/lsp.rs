@@ -85,6 +85,77 @@ pub fn probe(command: &str, args: &[String], timeout: std::time::Duration) -> bo
     }
 }
 
+/// What a filter such as a formatter returned.
+#[derive(serde::Serialize)]
+pub struct Filtered {
+    pub code: i32,
+    pub stdout: String,
+    pub stderr: String,
+}
+
+/// Run `command args` in `cwd` with `input` on stdin and collect what comes back: how `ruff format -`,
+/// `prettier --stdin-filepath`, `rustfmt` and `clang-format` reformat a buffer without touching the file.
+pub fn filter(
+    command: &str,
+    args: &[String],
+    cwd: &Path,
+    input: &str,
+    timeout: std::time::Duration,
+) -> Result<Filtered, String> {
+    use std::io::Read;
+    let mut child = Command::new(command)
+        .args(args)
+        .current_dir(cwd)
+        .env("PATH", crate::agents::agent_path())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("{command}: {e}"))?;
+    let mut stdin = child.stdin.take().ok_or("no stdin")?;
+    let data = input.as_bytes().to_vec();
+    let writer = std::thread::spawn(move || {
+        let _ = stdin.write_all(&data);
+    });
+    let mut out = child.stdout.take().ok_or("no stdout")?;
+    let mut err = child.stderr.take().ok_or("no stderr")?;
+    let out_t = std::thread::spawn(move || {
+        let mut s = Vec::new();
+        let _ = out.read_to_end(&mut s);
+        s
+    });
+    let err_t = std::thread::spawn(move || {
+        let mut s = Vec::new();
+        let _ = err.read_to_end(&mut s);
+        s
+    });
+    let started = std::time::Instant::now();
+    let code = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status.code().unwrap_or(-1),
+            Ok(None) if started.elapsed() < timeout => {
+                std::thread::sleep(std::time::Duration::from_millis(20))
+            }
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!(
+                    "{command} did not finish in {} s",
+                    timeout.as_secs()
+                ));
+            }
+        }
+    };
+    let _ = writer.join();
+    let stdout = String::from_utf8_lossy(&out_t.join().unwrap_or_default()).into_owned();
+    let stderr = String::from_utf8_lossy(&err_t.join().unwrap_or_default()).into_owned();
+    Ok(Filtered {
+        code,
+        stdout,
+        stderr,
+    })
+}
+
 /// Start `command args` in `root`; returns the server's id. Messages arrive as `lsp-message`.
 pub fn start(
     app: &AppHandle,
@@ -198,6 +269,38 @@ pub fn stop_all(state: &Servers) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn filter_pipes_stdin_through_and_reports_the_exit_code() {
+        let out = super::filter(
+            "tr",
+            &["a-z".into(), "A-Z".into()],
+            std::path::Path::new("/tmp"),
+            "hello\n",
+            std::time::Duration::from_secs(5),
+        )
+        .unwrap();
+        assert_eq!(out.code, 0);
+        assert_eq!(out.stdout, "HELLO\n");
+        let bad = super::filter(
+            "sh",
+            &["-c".into(), "echo nope >&2; exit 3".into()],
+            std::path::Path::new("/tmp"),
+            "",
+            std::time::Duration::from_secs(5),
+        )
+        .unwrap();
+        assert_eq!(bad.code, 3);
+        assert!(bad.stderr.contains("nope"));
+        assert!(super::filter(
+            "definitely-not-a-command-xyz",
+            &[],
+            std::path::Path::new("/tmp"),
+            "",
+            std::time::Duration::from_secs(5)
+        )
+        .is_err());
+    }
+
     use super::*;
 
     #[test]

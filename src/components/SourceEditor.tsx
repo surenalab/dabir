@@ -25,6 +25,10 @@ import type { Settings } from "../lib/settings";
 import { currentGhost, ghostText, prediction, setGhostText } from "../lib/predict";
 import { trackChanges, suggestConfig, setChanges, changesIn, resolveChanges, type ChangeRange } from "../lib/changes";
 import { reviewField, setReview, type ReviewMarks } from "../lib/review";
+import { indentationMarkers } from "@replit/codemirror-indentation-markers";
+import { gitGutter, setHeadText } from "../lib/git-gutter";
+import { errorLens, lintSource, type LensItem } from "../lib/error-lens";
+import { minimalChange } from "../lib/code-tools";
 import { spelling, spellConfig } from "../lib/spell";
 
 const highlight = HighlightStyle.define([
@@ -68,6 +72,12 @@ const commentField = StateField.define<DecorationSet>({
 // ---- compile diagnostics on lines
 export interface LineMark { line: number; severity: string; message: string }
 const setMarks = StateEffect.define<LineMark[]>();
+const marksList = StateField.define<LineMark[]>({
+  create: () => [],
+  update(v, tr) { for (const e of tr.effects) if (e.is(setMarks)) return e.value; return v; },
+});
+// Compile problems inline, errors and warnings only: the box and font notices would line the whole file.
+const marksSource = (state: EditorState): LensItem[] => (state.field(marksList, false) ?? []).filter((m) => m.severity === "error" || m.severity === "warning").map((m) => ({ line: m.line, severity: m.severity as LensItem["severity"], message: m.message }));
 const markField = StateField.define<DecorationSet>({
   create: () => Decoration.none,
   update(deco, tr) {
@@ -156,9 +166,18 @@ interface Props {
   jumpLine: number | null;
   jumpStamp: number;
   findRequest: number;
+  /** The file as HEAD has it, for the change gutter. */
+  headText?: string | null;
 }
 
-const sourceOnly = (path: string | null) => [lineNumbers(), foldGutter({ openText: "⌄", closedText: "›" }), highlightActiveLineGutter(), highlightActiveLine(), syntaxHighlighting(isManuscript(path) ? highlight : codeHighlight), ...(fileKind(path) === "tex" ? [matchingEnvironment(), headingEmphasis()] : [])];
+const sourceOnly = (path: string | null) => [
+  lineNumbers(), gitGutter(), foldGutter({ openText: "⌄", closedText: "›" }), highlightActiveLineGutter(), highlightActiveLine(),
+  syntaxHighlighting(isManuscript(path) ? highlight : codeHighlight),
+  errorLens(lintSource, marksSource),
+  ...(fileKind(path) === "tex" ? [matchingEnvironment(), headingEmphasis()] : []),
+  // Code files: guides down each indentation level, as an IDE draws them.
+  ...(fileKind(path) === "code" || fileKind(path) === "data" ? [indentationMarkers({ hideFirstIndent: true, thickness: 1, colors: { light: "rgba(29,31,36,0.12)", dark: "rgba(255,255,255,0.12)", activeLight: "rgba(29,31,36,0.3)", activeDark: "rgba(255,255,255,0.3)" } })] : []),
+];
 
 /** The grammar and the helpers that belong to it. LaTeX (and .bib, .sty) keep the LaTeX language, `$` pairing and
  * the paper-aware linter; code and data files get their own grammar and none of the LaTeX helpers. */
@@ -182,11 +201,14 @@ export interface EditorApi {
   resolveChanges: (ids: string[] | null, accept: boolean) => void;  // accept or reject suggestions; null means all
   continueSentence: () => void;                   // ask the agent for the next sentence as ghost text
   unicodeToTex: () => number;                     // rewrite pasted symbols in the selection (or the file) as LaTeX; how many changed
+  replaceAll: (text: string) => boolean;          // swap the whole text (a formatter's output) as one small change; false when identical
+  setHead: (text: string | null) => void;         // the file as HEAD has it, for the change gutter
+  text: () => string;
 }
 
 const modeExt = (visual: Props["visual"], path: string | null) => (visual === "typst" ? typstVisualExtensions() : visual ? visualExtensions() : sourceOnly(path));
 
-export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({ value, visual, settings, assist, collab, comments, changes, suggesting, author, onChanges, grammar, marks, review, dictionary, onAddWord, onContinue, onSelection, jumpOffset, onChange, onSave, onCursorLine, jumpLine, jumpStamp, findRequest }, ref) {
+export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({ value, visual, settings, assist, collab, comments, changes, suggesting, author, onChanges, grammar, marks, review, dictionary, onAddWord, onContinue, onSelection, jumpOffset, onChange, onSave, onCursorLine, jumpLine, jumpStamp, findRequest, headText = null }, ref) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const modeComp = useRef(new Compartment());
@@ -266,7 +288,7 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
         readOnlyComp.current.of([]),
         reviewField, remoteCursorsField,
         spellComp.current.of(spellCfg(settings, dictionary, pathRef.current)), spelling(),
-        commentField, markField, grammarField, grammarHover,
+        commentField, marksList, markField, grammarField, grammarHover,
         keymap.of([
           { key: "Mod-s", run: () => { onSaveRef.current(); return true; } },
           { key: "Mod-Shift-Space", run: () => { void continueSentence(); return true; } },
@@ -354,6 +376,7 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
   useEffect(() => { view.current?.dispatch({ effects: setComments.of(comments) }); }, [comments]);
   useEffect(() => { view.current?.dispatch({ effects: suggestComp.current.reconfigure(suggestConfig.of({ on: suggesting, author })) }); }, [suggesting, author]);
   useEffect(() => { view.current?.dispatch({ effects: setMarks.of(marks) }); }, [marks, value]);
+  useEffect(() => { view.current?.dispatch({ effects: setHeadText.of(headText) }); }, [headText, value]);
   useEffect(() => { view.current?.dispatch({ effects: setGrammar.of(grammar) }); }, [grammar]);
   useEffect(() => {
     view.current?.dispatch({ effects: readOnlyComp.current.reconfigure(review ? [EditorState.readOnly.of(true), EditorView.editable.of(false), EditorView.editorAttributes.of({ class: "cm-reviewing" })] : []) });
@@ -451,6 +474,15 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
     focus() { view.current?.focus(); },
     resolveChanges(ids, accept) { if (view.current) resolveChanges(view.current, ids, accept); },
     continueSentence() { void continueSentence(); },
+    replaceAll(text) {
+      const v = view.current; if (!v) return false;
+      const ch = minimalChange(v.state.doc.toString(), text);
+      if (!ch) return false;
+      v.dispatch({ changes: ch, userEvent: "input.format", scrollIntoView: true });
+      return true;
+    },
+    setHead(text) { view.current?.dispatch({ effects: setHeadText.of(text) }); },
+    text() { return view.current?.state.doc.toString() ?? ""; },
     unicodeToTex() {
       const v = view.current; if (!v || lang() === "typst") return 0;
       const sel = v.state.selection.main;

@@ -17,6 +17,7 @@ export interface Settings {
   autosave: boolean;            // write the file a moment after you stop typing; snapshots every few minutes
   suggesting: boolean;          // track changes: edits become suggestions a coauthor accepts or rejects
   keymap: "standard" | "vim";   // source view key bindings
+  formatOnSave: boolean;        // code files: run the project's formatter (ruff, prettier, rustfmt, clang-format…) on ⌘S
   focusMode: boolean;           // dim every paragraph but the current one, keep the typed line centred, hide the panels
   signalingUrl: string;         // for the "signalling server" live mode; empty means none configured
   agentProvider: string;                // the agent the composer and the continuation key use
@@ -41,6 +42,7 @@ export const DEFAULTS: Settings = {
   autosave: true,
   suggesting: false,
   keymap: "standard",
+  formatOnSave: false,
   focusMode: false,
   signalingUrl: "",
   agentProvider: "claude",

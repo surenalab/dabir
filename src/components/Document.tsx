@@ -70,6 +70,8 @@ interface Props {
   openFiles: string[];
   dirty: boolean;
   onCloseFile: (path: string) => void;
+  /** The open file as HEAD has it, for the change gutter; null when new or not under Git. */
+  headText: string | null;
   bib: Record<string, BibEntry>;
   mode: ViewMode;
   jumpLine: number | null;
@@ -83,7 +85,7 @@ interface Props {
   onDismissError: () => void;
   onToggleLog: () => void;
   /** The terminal pane: shown or not, and a stamp that bumps when it should take focus. */
-  terminal: { open: boolean; focusStamp: number };
+  terminal: { open: boolean; focusStamp: number; run?: { command: string; stamp: number } | null };
   onToggleTerminal: () => void;
   onOpen: () => void;
   onImport: () => void;
@@ -152,7 +154,7 @@ export interface DocReview {
 }
 
 export function Document(p: Props) {
-  const { project, source, mode, compileState, showLog, error, terminal, onToggleTerminal, paperWords, file, openFiles, dirty: fileDirty, onCloseFile, onSelectFile } = p;
+  const { project, source, mode, compileState, showLog, error, terminal, onToggleTerminal, paperWords, file, openFiles, dirty: fileDirty, onCloseFile, onSelectFile, headText } = p;
   const macros = useMemo(() => (source ? collectMacros(source) : {}), [source]);
   const [dragging, setDragging] = useState(false);
   const splitRef = useRef<HTMLDivElement>(null);
@@ -262,7 +264,7 @@ export function Document(p: Props) {
       collab={p.collab} comments={p.comments} onSelection={p.onSelection} jumpOffset={p.jumpOffset} marks={editorMarks}
       changes={previewing ? [] : p.changes} suggesting={p.settings.suggesting} author={p.author} onChanges={p.onChanges}
       review={previewing ? rv!.marks : null} dictionary={p.dictionary} onAddWord={p.onAddWord} onContinue={p.onContinue}
-      settings={p.settings} grammar={p.grammar} assist={p.assist} />
+      settings={p.settings} grammar={p.grammar} assist={p.assist} headText={headText} />
   ) : source != null ? <div className="doc-empty"><div className="card"><p>This file type is not editable in Dabir yet.</p></div></div> : null;
   const pdf = showPdf ? (
     <Suspense fallback={<div className="doc-empty"><div className="card"><p>Loading PDF…</p></div></div>}>
@@ -305,7 +307,7 @@ export function Document(p: Props) {
         {showPdf && <div className="scroll pdfpane">{pdf}</div>}
       </div>
 
-      {terminal.open && project && <TerminalPane cwd={project.root} remote={project.remote ?? null} onClose={onToggleTerminal} focusStamp={terminal.focusStamp} />}
+      {terminal.open && project && <TerminalPane cwd={project.root} remote={project.remote ?? null} onClose={onToggleTerminal} focusStamp={terminal.focusStamp} run={terminal.run ?? null} />}
 
       {showLog && (
         <section className="log" aria-label="Compile log">

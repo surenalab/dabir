@@ -550,6 +550,19 @@ export async function lspAvailable(candidates: string[]): Promise<string[]> {
   if (!native) return [];
   return invoke<string[]>("lsp_available", { candidates }).catch(() => []);
 }
+export interface Filtered { code: number; stdout: string; stderr: string }
+/** Run a formatter or any filter over text in `cwd`: stdin in, stdout out. Rejects when the command cannot start. */
+export async function runFilter(command: string, args: string[], cwd: string, input: string): Promise<Filtered> {
+  if (!native) throw new Error("Formatters run in the app; the browser preview has none.");
+  return invoke<Filtered>("run_filter", { command, args, cwd, input });
+}
+/** The file as HEAD has it (path relative to root); null when new, binary or not under Git. */
+const SAMPLE_HEAD: Record<string, string> = {};
+export async function gitHeadText(root: string, path: string): Promise<string | null> {
+  // The browser sample's "HEAD" is the file as shipped, so edits in the preview light the change gutter.
+  if (!native) { const k = `${root}/${path}`; SAMPLE_HEAD[k] ??= SAMPLE_FILES[k] ?? ""; return SAMPLE_HEAD[k] || null; }
+  return invoke<string | null>("git_head_text", { root, path }).catch(() => null);
+}
 export async function lspProbe(command: string, args: string[]): Promise<boolean> {
   if (!native) return false;
   return invoke<boolean>("lsp_probe", { command, args }).catch(() => false);
