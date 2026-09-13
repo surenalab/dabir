@@ -84,7 +84,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Tectonic sidecar (cached; the Rust build checks it exists)
         id: sidecar
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: src-tauri/binaries
           key: tectonic-0.17.0-aarch64-apple-darwin
