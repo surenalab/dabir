@@ -97,13 +97,13 @@ pub fn agent_path() -> std::ffi::OsString {
 fn candidates() -> Vec<PathBuf> {
     let home = crate::spawn::home_dir().unwrap_or_default();
     let mut dirs: Vec<PathBuf> = vec![
-        home.join(".local/bin"),
-        home.join(".claude/local"),
-        home.join(".claude/local/bin"),
-        home.join(".cursor/bin"),
-        home.join(".grok/bin"),
-        home.join(".opencode/bin"),
-        home.join(".npm-global/bin"),
+        home.join(".local").join("bin"),
+        home.join(".claude").join("local"),
+        home.join(".claude").join("local").join("bin"),
+        home.join(".cursor").join("bin"),
+        home.join(".grok").join("bin"),
+        home.join(".opencode").join("bin"),
+        home.join(".npm-global").join("bin"),
         "/opt/homebrew/bin".into(),
         "/usr/local/bin".into(),
     ];
@@ -320,7 +320,8 @@ pub fn models(id: &str) -> ModelOptions {
         "codex" => {
             // Codex has no model listing; the default comes from its own config.
             let home = crate::spawn::home_dir().unwrap_or_default();
-            let cfg = std::fs::read_to_string(home.join(".codex/config.toml")).unwrap_or_default();
+            let cfg = std::fs::read_to_string(home.join(".codex").join("config.toml"))
+                .unwrap_or_default();
             let default_model = cfg.lines().find_map(|l| {
                 let l = l.trim();
                 let rest = l.strip_prefix("model")?.trim_start().strip_prefix('=')?;
@@ -830,7 +831,7 @@ pub fn signed_in(id: &str) -> Option<bool> {
                 return Some(true);
             }
             // `grok login` writes ~/.grok/auth.json; there is no status command.
-            let auth = crate::spawn::home_dir()?.join(".grok/auth.json");
+            let auth = crate::spawn::home_dir()?.join(".grok").join("auth.json");
             Some(
                 std::fs::metadata(&auth)
                     .map(|m| m.len() > 2)
