@@ -11,6 +11,7 @@ Newest first. Every merged pull request adds a line under Unreleased; a release 
 - CI: jobs split by path (Web on Linux, Rust on macOS), cancelled on a newer push, Rust and Tectonic caches, one required Gate check; the release workflow gates on the checks, caches Rust per target, checks the three version fields agree with the tag, and writes the release body from CHANGELOG.md.
 - Contributing: issue templates, Dependabot (grouped, weekly), SECURITY.md, CODE_OF_CONDUCT.md, TRADEMARK.md, an opt-in CLA check with CLA.md, and a "where to start" section.
 - Legal notice: About Dabir shows the copyright, the AGPL and the source, as the licence asks of interactive programs; the welcome screen names the licence.
+- Fixed: the bundled templates and the sample paper were flattened into one folder inside the app (Tauri puts glob matches under the destination by file name), so New Paper from a bundled kit could not find its files in an installed build. Both are now bundled as directories, and `scripts/clean-sample.mjs` removes the sample's caches before a build so they never ship.
 
 - Development harness: CONTRIBUTING.md, docs/REVIEW.md, the `npm run check` gate, ESLint, clippy and fmt in CI, pull request template, pre-push hook, optional Claude review workflow on the owner's subscription.
 - Review bot `npm run review`: codebase-aware pull request reviews on the local agent subscriptions, any vendor, posted with gh; its first run reviewed itself and its findings were applied.
