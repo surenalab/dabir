@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronRight, FileText, BookMarked, Code2, Image, Database, File, Folder, GitCommitHorizontal, Undo2, History as HistoryIcon, X } from "lucide-react";
 import { searchPaper, type Entry, type GitStatus, type Project, type SearchHit } from "../lib/backend";
 import type { OutlineItem } from "../lib/latex";
+import { chord } from "../lib/keys";
 
 const ICON = { tex: FileText, bib: BookMarked, code: Code2, figure: Image, data: Database, other: File, dir: Folder } as const;
 
@@ -177,7 +178,7 @@ export function Navigator({ project, current, outline, git, commitFocus, busy, o
             <div className="commit-box">
               <input ref={commitInput} value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Commit message" aria-label="Commit message"
                 onKeyDown={(e) => { if (e.key === "Enter") submit(); }} disabled={busy} />
-              <button className="btn" onClick={submit} disabled={!message.trim() || busy} title="Commit all changes (⇧⌘C)"><GitCommitHorizontal /> Commit</button>
+              <button className="btn" onClick={submit} disabled={!message.trim() || busy} title={chord("Commit all changes (⇧⌘C)")}><GitCommitHorizontal /> Commit</button>
             </div>
           </>
         )}

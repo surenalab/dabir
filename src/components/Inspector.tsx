@@ -7,6 +7,7 @@ import { Segmented } from "./Segmented";
 import { renderMarkdown } from "../lib/md";
 import { updateSettings, useSettings } from "../lib/settings";
 import type { Comment, Peer } from "../lib/collab";
+import { chord } from "../lib/keys";
 
 export type Tab = "agent" | "memory" | "people" | "history";
 
@@ -552,7 +553,7 @@ export function Inspector({ project, gitRepo, askFocus, prefill, tabRequest, onP
               onKeyDown={(e) => { if (e.key === "Enter" && e.metaKey) { e.preventDefault(); send(); } }}
               disabled={!project || !current?.installed || run.phase === "running"} aria-label="Message to the agent" />
             <div className="bar">
-              <span className="scope" title="The agent sees the whole repository and works on a Git worktree on its own branch, with permission prompts bypassed inside that worktree. Your checkout is untouched until you accept."><Paperclip aria-hidden /> whole repo · worktree · <kbd>⌘↩</kbd></span>
+              <span className="scope" title="The agent sees the whole repository and works on a Git worktree on its own branch, with permission prompts bypassed inside that worktree. Your checkout is untouched until you accept."><Paperclip aria-hidden /> whole repo · worktree · <kbd>{chord("⌘↩")}</kbd></span>
               <button className="send" disabled={!draft.trim() || run.phase === "running"} aria-label="Send to agent" onClick={send}><ArrowUp /></button>
             </div>
           </div>
@@ -615,7 +616,7 @@ export function Inspector({ project, gitRepo, askFocus, prefill, tabRequest, onP
             <p className="composer-note" role="status">{run.text} <button className="btn" style={{ height: 22, marginLeft: 6 }} onClick={() => setRun({ phase: "idle" })}>OK</button></p>
           )}
           {run.phase === "idle" && project && !finishedRun && (
-            <p className="composer-note">The agent works on a copy of the paper as it is now. When it finishes, the document shows its version with the changes marked and ⌘B compiles it; then Accept (lands the change and takes a snapshot), Reject, or open a pull request.{gitRepo ? "" : " This folder needs a Git repository first."}</p>
+            <p className="composer-note">The agent works on a copy of the paper as it is now. When it finishes, the document shows its version with the changes marked and {chord("⌘B")} compiles it; then Accept (lands the change and takes a snapshot), Reject, or open a pull request.{gitRepo ? "" : " This folder needs a Git repository first."}</p>
           )}
         </div>
       )}
