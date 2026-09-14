@@ -362,7 +362,9 @@ export async function agentSignedIn(provider: string): Promise<boolean | null> {
 // ---- Setup: what this machine has, and the two things Dabir installs itself ----
 export interface SetupEngine { path: string | null; version: string | null; managed: boolean }
 export interface SetupStatus {
-  latex: SetupEngine; latexReady: boolean; latexCacheMb: number;
+  latex: SetupEngine; latexReady: boolean;
+  /** The bundled engine does not start here (a glibc too old for the binary, a missing library); never Ready while set. */
+  latexError: string | null; latexCacheMb: number;
   typst: SetupEngine; typstSizeMb: number;
   agents: (Provider & { signedIn: boolean | null })[]; pandoc: string | null; pandocInstall: string | null; gh: string | null; home: string; platform: string;
 }
@@ -370,7 +372,7 @@ export interface SetupProgress { task: string; message: string; fraction: number
 
 export async function setupStatus(): Promise<SetupStatus> {
   if (!native) return {
-    latex: { path: "/Applications/Dabir.app/Contents/MacOS/tectonic", version: "0.15.0", managed: true }, latexReady: false, latexCacheMb: 0,
+    latex: { path: "/Applications/Dabir.app/Contents/MacOS/tectonic", version: "0.15.0", managed: true }, latexReady: false, latexError: null, latexCacheMb: 0,
     typst: { path: null, version: null, managed: false }, typstSizeMb: 14,
     agents: SAMPLE_PROVIDERS.map((p, i) => ({ ...p, signedIn: p.installed ? i === 0 : null })), pandoc: null, pandocInstall: "brew install pandoc", gh: "/opt/homebrew/bin/gh", home: "/Users/me", platform: "macos",
   };

@@ -113,13 +113,14 @@ export function SetupSheet({ firstRun, onClose, focus }: Props) {
           <section aria-labelledby="setup-writing">
             <h3 id="setup-writing">Writing</h3>
 
-            <Row id="latex" state={!status ? "wait" : latex.running ? "busy" : status.latexReady ? "ok" : "todo"} title="LaTeX"
+            <Row id="latex" state={!status ? "wait" : latex.running ? "busy" : status.latexError ? "warn" : status.latexReady ? "ok" : "todo"} title="LaTeX"
               detail={!status ? "Checking…"
+                : status.latexError ? <>The bundled Tectonic does not start on this machine: <code>{status.latexError}</code>. LaTeX papers cannot compile until a build for this system is installed.</>
                 : status.latexReady ? <>Ready. Tectonic {status.latex.version ?? ""} is built in and its packages are on this machine{status.latexCacheMb ? ` (${status.latexCacheMb} MB)` : ""}, so a compile starts at once.</>
                 : latex.done && !latex.ok ? <>The engine stopped: <code>{latex.message}</code>. Compiling a paper will try again.</>
                 : <>Tectonic {status.latex.version ?? ""} is built in. Its packages download at the first compile, which takes a minute or two; fetch them now so that wait never happens in the middle of writing.</>}
               progress={latex.running ? latex : null}
-              action={status && !status.latexReady && !latex.running ? <button className="btn" onClick={() => start("latex")}>{latex.done && !latex.ok ? "Try again" : "Fetch packages"}</button> : null} />
+              action={status && !status.latexReady && !status.latexError && !latex.running ? <button className="btn" onClick={() => start("latex")}>{latex.done && !latex.ok ? "Try again" : "Fetch packages"}</button> : null} />
 
             <Row id="typst" state={!status ? "wait" : typst.running ? "busy" : status.typst.path ? "ok" : "todo"} title="Typst"
               detail={!status ? "Checking…"
