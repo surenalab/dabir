@@ -4,6 +4,8 @@ Newest first. Every merged pull request adds a line under Unreleased; a release 
 
 ## Unreleased
 
+## 0.1.2 — 2026-09-14
+
 - Fixed: switching files then pressing Undo brought the previous file's text into the new one, and autosave wrote it to disk (the sample's `code/sweep.py` had become a copy of `main.tex`). The editor now drops the old undo history, completion state and diagnostics when a file is swapped in, swaps the text before any keystroke can reach the old one, and every write pairs the path and the text of the same moment.
 - Guided tour: *Take the tour* on the welcome screen (and Help › Guided Tour) copies the sample paper into Documents/Dabir and walks through twelve stops with a spotlight, each opening the real panel. The venue chips and the `examples/` hint left the welcome screen; templates stay under New Paper.
 - docs/GUIDE.md: the step-by-step user guide, linked from the tour's last stop, the release notes and the issue templates.
