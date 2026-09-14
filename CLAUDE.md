@@ -1,9 +1,9 @@
 # Working on Dabir
 
-Read PRODUCT.md and DESIGN.md before touching UI. Tokens live in src/styles/tokens.css; never hard-code a colour, face or spacing value in a component.
+Read AGENTS.md first: it is the operating manual for every agent here (Claude Code, Codex, Cursor, Grok, OpenCode) and the only copy of these rules, so it does not drift from this file. CONTRIBUTING.md is the contract; PRODUCT.md and DESIGN.md come before any UI change.
 
-- Front end: React 19 + TypeScript in src/. Rust core in src-tauri/src/lib.rs. Commands are the only bridge.
-- Run: `npm run tauri dev`. Browser-only preview: `npm run dev` (uses src/lib/sample.ts).
-- Check before commit: `npx tsc --noEmit && npx vite build && (cd src-tauri && cargo check)`.
-- UI changes: run `/impeccable critique` on the screen and consult .agents/skills/apple-design-skill for the matching HIG article.
-- A paper project's own memory format is documented in examples/score-anchor/.dabir/.
+The three rules most often broken, repeated here so they are not missed:
+
+- Commits are authored by the owner. No `Co-Authored-By` or any AI attribution trailer.
+- `npm run check` green before a pull request; one line in CHANGELOG.md under Unreleased.
+- Work in your own worktree on your own branch; never in a checkout someone else is using, never on `main`.
