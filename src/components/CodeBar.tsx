@@ -3,6 +3,7 @@
 // a shortcut; the bar is where a newcomer finds them.
 
 import { ChevronRight, CirclePlay, ListEnd, Terminal, WandSparkles, CircleX, TriangleAlert, CircleCheck } from "lucide-react";
+import { chord } from "../lib/keys";
 
 /** What the language server (or the file's own linter) says about the open code file, for the bar and the Problems list. */
 export interface LintItem { line: number; severity: "error" | "warning" | "info"; message: string }
@@ -43,10 +44,10 @@ export function CodeBar({ rel, state, onRun, onRunSelection, onRepl, onFormat, o
         <span className="file">{name}</span>
       </span>
       <span className="sep" />
-      {state.run && <button className="cb-btn" onClick={onRun} title={`${state.run.label} in the terminal (⌃⏎)\n${state.run.command}`}><CirclePlay aria-hidden /> Run</button>}
-      <button className="cb-btn" onClick={onRunSelection} title="Send the selection, or the current line, to the terminal (⇧⏎). With a REPL open there, it runs."><ListEnd aria-hidden /> Run Selection</button>
+      {state.run && <button className="cb-btn" onClick={onRun} title={chord(`${state.run.label} in the terminal (⌃⏎)\n${state.run.command}`)}><CirclePlay aria-hidden /> Run</button>}
+      <button className="cb-btn" onClick={onRunSelection} title={chord("Send the selection, or the current line, to the terminal (⇧⏎). With a REPL open there, it runs.")}><ListEnd aria-hidden /> Run Selection</button>
       {state.repl && <button className="cb-btn" onClick={onRepl} title={`Open a ${state.repl.label} session in the terminal\n${state.repl.command}`}><Terminal aria-hidden /> {state.repl.label} REPL</button>}
-      {state.canFormat && <button className="cb-btn" onClick={onFormat} title="Format Document with the project's formatter (⇧⌥F)"><WandSparkles aria-hidden /> Format</button>}
+      {state.canFormat && <button className="cb-btn" onClick={onFormat} title={chord("Format Document with the project's formatter (⇧⌥F)")}><WandSparkles aria-hidden /> Format</button>}
       <span className="cb-grow" />
       {problems > 0 ? (
         <button className="cb-btn problems" onClick={onNextProblem} title="Next problem">
@@ -54,7 +55,7 @@ export function CodeBar({ rel, state, onRun, onRunSelection, onRepl, onFormat, o
           {warnings > 0 && <span className="warn"><TriangleAlert aria-hidden /> {warnings}</span>}
         </button>
       ) : state.server ? <span className="cb-status ok" title={`${state.server.command} reports no problems`}><CircleCheck aria-hidden /> No problems</span> : null}
-      <span className={`cb-status server ${state.server ? "ok" : "off"}`} title={state.server ? `Language server: ${state.server.command}. Completion, hover, go to definition (F12), references (⇧F12), rename (F2).` : state.server === null ? `No language server for this file${state.installHint ? `. Install one: ${state.installHint}` : ""}` : "Looking for a language server…"}>
+      <span className={`cb-status server ${state.server ? "ok" : "off"}`} title={state.server ? chord(`Language server: ${state.server.command}. Completion, hover, go to definition (F12), references (⇧F12), rename (F2).`) : state.server === null ? `No language server for this file${state.installHint ? `. Install one: ${state.installHint}` : ""}` : "Looking for a language server…"}>
         <span className="dot" aria-hidden />{state.server ? state.server.command : state.server === null ? "no language server" : "…"}
       </span>
       <span className="cb-status pos" title="Line and column">Ln {state.line}, Col {state.col}</span>

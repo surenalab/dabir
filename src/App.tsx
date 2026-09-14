@@ -34,6 +34,7 @@ import { runRecipe, replCommand, formattersFor, formatText } from "./lib/code-to
 import { serversFor } from "./lib/lsp";
 import { fileKind } from "./lib/languages";
 import { parseBib, type BibEntry, type OutlineItem } from "./lib/latex";
+import { chord } from "./lib/keys";
 
 export type CompileState =
   | { status: "idle" }
@@ -378,7 +379,7 @@ export default function App() {
 
   const showInPdf = useCallback(async () => {
     if (!project?.mainTex || !file) return;
-    if (compileState.status !== "done" || !compileState.result.pdf) { setNote("Compile first (⌘B), then Show Line in PDF."); return; }
+    if (compileState.status !== "done" || !compileState.result.pdf) { setNote(chord("Compile first (⌘B), then Show Line in PDF.")); return; }
     try {
       const pos = await synctexForward(project.mainTex, file, cursorLine);
       if (!pos) { setNote(`No PDF position recorded for line ${cursorLine}.`); return; }
@@ -716,7 +717,7 @@ export default function App() {
   // Grammar: check the selection, or the paragraph around the cursor, through LanguageTool.
   const runGrammar = useCallback(async () => {
     if (source == null) return;
-    if (settings.grammar === "off") { setNote("Grammar checking is off. Turn it on in Settings (⌘,) and choose a LanguageTool server."); return; }
+    if (settings.grammar === "off") { setNote(chord("Grammar checking is off. Turn it on in Settings (⌘,) and choose a LanguageTool server.")); return; }
     let { from, to } = selection;
     if (to === from) {
       const before = source.lastIndexOf("\n\n", from); const after = source.indexOf("\n\n", from);
@@ -838,7 +839,7 @@ export default function App() {
       { id: "together", target: '.titlebar .tb-btn[aria-label="Share"]', title: "Working together", enter: () => { setInspectorOpen(true); setTabRequest({ tab: "people", stamp: Date.now() }); },
         body: <><p>Start a live session and send the invite code: coauthors edit the same paper peer to peer, with comments and suggested changes in the People tab. Overleaf projects pull and push as Git remotes, and Export makes an arXiv-ready bundle.</p></> },
       { id: "done", target: null, title: "That is the tour",
-        body: <><p>Open your own paper's folder, or start one from a venue template. <kbd>⌘/</kbd> lists every shortcut, <kbd>⌘,</kbd> opens Settings (autosave, format on save, language servers, the agent's memory rules). The written guide covers each step in more depth.</p><p><button className="link" onClick={() => openGuide().catch(() => {})}>Open the user guide</button></p></> },
+        body: <><p>Open your own paper's folder, or start one from a venue template. <kbd>{chord("⌘/")}</kbd> lists every shortcut, <kbd>{chord("⌘,")}</kbd> opens Settings (autosave, format on save, language servers, the agent's memory rules). The written guide covers each step in more depth.</p><p><button className="link" onClick={() => openGuide().catch(() => {})}>Open the user guide</button></p></> },
     ];
   }, [project, selectFile]);
 

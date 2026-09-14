@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowLeft, ArrowRight, X } from "lucide-react";
+import { chord } from "../lib/keys";
 
 /** One stop of the guided tour: what to point at, what to say, and what the app should do as the stop opens. */
 export interface TourStep {
@@ -114,7 +115,7 @@ export function Tour({ steps, step, onStep, onClose }: { steps: TourStep[]; step
         <div className="tour-body">{current.body}</div>
         {current.keys && current.keys.length > 0 && (
           <div className="tour-keys">
-            {current.keys.map((k) => <span key={k.keys}><kbd>{k.keys}</kbd> {k.does}</span>)}
+            {current.keys.map((k) => <span key={k.keys}><kbd>{chord(k.keys)}</kbd> {k.does}</span>)}
           </div>
         )}
         <div className="tour-foot">

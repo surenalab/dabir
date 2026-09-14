@@ -24,6 +24,7 @@ import type { AssistSources } from "../lib/assist";
 import { proseWords } from "../lib/spell";
 import type { ChangeRange } from "../lib/changes";
 import type { ReviewMarks } from "../lib/review";
+import { chord } from "../lib/keys";
 
 const PdfView = lazy(() => import("./PdfView").then((m) => ({ default: m.PdfView })));
 
@@ -265,7 +266,7 @@ export function Document(p: Props) {
               </div>
               <button className="btn tour-start" onClick={p.onTour}><Compass /> Take the tour</button>
             </div>
-            <div className="hint">Press <kbd>⌘/</kbd> for shortcuts.</div>
+            <div className="hint">Press <kbd>{chord("⌘/")}</kbd> for shortcuts.</div>
           </div>
         </div>
       </main>
@@ -310,7 +311,7 @@ export function Document(p: Props) {
             {rv.working ? (
               <>{rv.label} is working on its version{rv.text != null && previewing ? "; you are reading it as it stood" : ""}.</>
             ) : rv.text != null ? (
-              <>{rv.label} changed this file{rv.files.length > 1 ? ` and ${rv.files.length - 1} other${rv.files.length > 2 ? "s" : ""}` : ""}.{previewing ? " You are reading its version; ⌘B compiles it." : rv.canShow ? " Showing your version." : ""}</>
+              <>{rv.label} changed this file{rv.files.length > 1 ? ` and ${rv.files.length - 1} other${rv.files.length > 2 ? "s" : ""}` : ""}.{previewing ? chord(" You are reading its version; ⌘B compiles it.") : rv.canShow ? " Showing your version." : ""}</>
             ) : (
               <>{rv.label} changed {rv.files.slice(0, 3).map((f, i) => <span key={f}>{i ? ", " : ""}<button className="link" onClick={() => rv.onOpenFile(f)}>{f}</button></span>)}{rv.files.length > 3 ? ` and ${rv.files.length - 3} more` : ""}, not this file.</>
             )}
@@ -337,7 +338,7 @@ export function Document(p: Props) {
       {showLog && (
         <section className="log" aria-label="Compile log">
           <header><span>Compile log{result ? ` · ${result.engine}` : ""}</span><button className="btn" onClick={p.onToggleLog} style={{ height: 22 }}>Hide</button></header>
-          <pre>{result?.log || "No compile has run yet. Press ⌘B to compile."}</pre>
+          <pre>{result?.log || chord("No compile has run yet. Press ⌘B to compile.")}</pre>
         </section>
       )}
 
@@ -348,12 +349,12 @@ export function Document(p: Props) {
         {result && (!result.ok || errors > 0) && <span className="state error"><AlertCircle aria-hidden /> {compileState.status === "done" && compileState.agent ? `${compileState.agent}'s version failed to compile` : "Compile failed"}{errors ? `, ${errors} error${errors > 1 ? "s" : ""}` : ""}</span>}
         {result && result.engine === "none" && <button className="btn small" onClick={() => p.onSetup(file?.endsWith(".typ") ? "typst" : "latex")}>Install the compiler…</button>}
         {result && <button onClick={p.onToggleLog} data-p="2">{showLog ? "Hide log" : "Show log"}</button>}
-        {project && <button onClick={onToggleTerminal} data-p="2" title="A shell in the paper's folder (⌃`)">{terminal.open ? "Hide terminal" : "Terminal"}</button>}
-        <button data-p="1" className={`toggle ${p.compileOnSave ? "on" : ""}`} aria-pressed={p.compileOnSave} onClick={p.onToggleCompileOnSave} title="Compile every time you save (⌘S)">{p.compileOnSave ? "Compiles on save" : "Compile on save"}</button>
+        {project && <button onClick={onToggleTerminal} data-p="2" title={chord("A shell in the paper's folder (⌃`)")}>{terminal.open ? "Hide terminal" : "Terminal"}</button>}
+        <button data-p="1" className={`toggle ${p.compileOnSave ? "on" : ""}`} aria-pressed={p.compileOnSave} onClick={p.onToggleCompileOnSave} title={chord("Compile every time you save (⌘S)")}>{p.compileOnSave ? "Compiles on save" : "Compile on save"}</button>
         <span className="grow" />
         {mode !== "pdf" && source != null && (isProse ? <span data-p="3" title={`${source.split("\n").length} lines`}>{wordCount.toLocaleString()} words{paperTotal != null && <span className="paper-words" title={Object.entries(paperWords!).map(([f, n]) => `${f}: ${n.toLocaleString()}`).join("\n")}> · {paperTotal.toLocaleString()} in paper</span>}</span> : <span data-p="3">{fileKind(file) === "notebook" ? `${(source.match(/"cell_type"/g) ?? []).length} cells` : `${source.split("\n").length} lines`}</span>)}
         {mode !== "pdf" && (
-          <button data-p="2" className="toggle writing" onClick={p.onOpenSettings} title="Spelling, grammar, completion and prediction. Click to change in Settings (⌘,)">
+          <button data-p="2" className="toggle writing" onClick={p.onOpenSettings} title={chord("Spelling, grammar, completion and prediction. Click to change in Settings (⌘,)")}>
             {[p.settings.spellcheck ? "spelling" : null, p.settings.grammar !== "off" ? "grammar" : null, p.settings.autocomplete || p.settings.citeComplete ? "completion" : null, p.settings.prediction ? "prediction" : null].filter(Boolean).join(" · ") || "writing aids off"}
           </button>
         )}

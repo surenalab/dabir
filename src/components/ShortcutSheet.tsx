@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { chord } from "../lib/keys";
 
 const ROWS: [string, string[]][] = [
   ["New Paper…", ["⌘", "N"]],
@@ -50,7 +51,7 @@ export function ShortcutSheet({ onClose }: { onClose: () => void }) {
           {ROWS.map(([what, keys]) => (
             <div key={what} style={{ display: "contents" }}>
               <dt>{what}</dt>
-              <dd>{keys.map((k) => <kbd key={k}>{k}</kbd>)}</dd>
+              <dd>{keys.map((k) => <kbd key={k}>{chord(k)}</kbd>)}</dd>
             </div>
           ))}
         </dl>
