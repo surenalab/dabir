@@ -1183,7 +1183,7 @@ fn git_status(root: String) -> Result<git::GitStatus, String> {
 
 #[tauri::command]
 fn git_init(root: String) -> Result<(), String> {
-    git::init(Path::new(&root))
+    git::ensure_repo(Path::new(&root)).map(|_| ())
 }
 
 #[tauri::command]
@@ -1278,6 +1278,17 @@ async fn agent_models(provider: String) -> agents::ModelOptions {
 struct RunStarted {
     run_id: String,
     worktree: String,
+    /// Set when the run had to initialise the repository or make its root commit first, for a note in the window.
+    repo_note: Option<String>,
+}
+
+/// The sentence for the window when a run had to set the repository up first.
+fn repo_note(done: git::Ensured) -> Option<String> {
+    match done {
+        git::Ensured::Initialised => Some("Initialised a Git repository in the paper's folder so the run can work on its own branch; your files stay uncommitted until you commit.".into()),
+        git::Ensured::RootCommit => Some("Made the repository's first (empty) commit so the run can branch from it.".into()),
+        git::Ensured::Ready => None,
+    }
 }
 
 /// A request that continues an unreviewed run in its own worktree, so the agent builds on what it did.
@@ -1577,6 +1588,7 @@ fn agent_run(
     // A follow-up keeps the worktree of the run under review: its changes stay in place and the next
     // request builds on them, instead of a fresh worktree that silently drops them.
     let cont = follow_up.and_then(|f| git::worktree_cwd(&root_p, &f.run_id).map(|cwd| (f, cwd)));
+    let mut ensured = git::Ensured::Ready;
     let (run_id, wt, full) = match cont {
         Some((f, cwd)) => {
             // Edits the author saved since the run started come along, so the agent sees the paper as it is now.
@@ -1603,6 +1615,7 @@ fn agent_run(
         }
         None => {
             let run_id = uuid::Uuid::new_v4().to_string()[..8].to_string();
+            ensured = git::ensure_repo(&root_p)?;
             let wt = git::worktree_add(&root_p, &run_id)?;
             let full = agent_preamble(&root_p, &wt, &prompt, &prompt, focus.as_ref());
             (run_id, wt, full)
@@ -1616,6 +1629,7 @@ fn agent_run(
     Ok(RunStarted {
         run_id,
         worktree: wt.to_string_lossy().to_string(),
+        repo_note: repo_note(ensured),
     })
 }
 
@@ -1634,6 +1648,7 @@ async fn agent_complete(
     tauri::async_runtime::spawn_blocking(move || {
         let root_p = PathBuf::from(&root);
         let run_id = format!("c{}", &uuid::Uuid::new_v4().to_string()[..7]);
+        git::ensure_repo(&root_p)?;
         let wt = git::worktree_add(&root_p, &run_id)?;
         let ask = format!(
             "You are completing the author's sentence in this paper. Below is the end of `{file}` up to the cursor. \
@@ -2872,6 +2887,43 @@ mod tests {
             "accept removes the run's worktree"
         );
         let _ = fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn a_folder_without_git_is_set_up_for_the_first_run() {
+        // A paper opened from a plain folder: the first agent run initialises the repository with an
+        // empty root commit, the worktree branches from it and carries the files, and the folder's own
+        // files stay uncommitted.
+        let dir = std::env::temp_dir().join(format!("dabir-nogit-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("main.tex"), "\\documentclass{article}\n").unwrap();
+        assert!(
+            git::worktree_add(&dir, "x0").is_err(),
+            "no repository, no worktree"
+        );
+        assert_eq!(git::ensure_repo(&dir).unwrap(), git::Ensured::Initialised);
+        assert_eq!(git::ensure_repo(&dir).unwrap(), git::Ensured::Ready);
+        let st = git::status(&dir).unwrap();
+        assert!(st.is_repo);
+        assert_eq!(
+            st.changes.len(),
+            1,
+            "main.tex is untracked, not committed for the user"
+        );
+        let wt = git::worktree_add(&dir, "x1").unwrap();
+        assert_eq!(
+            fs::read_to_string(wt.join("main.tex")).unwrap(),
+            "\\documentclass{article}\n",
+            "the seed carries the file"
+        );
+        // A repository with no commit yet gets the root commit alone.
+        let bare = std::env::temp_dir().join(format!("dabir-unborn-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&bare).unwrap();
+        init_repo(&bare);
+        assert_eq!(git::ensure_repo(&bare).unwrap(), git::Ensured::RootCommit);
+        assert!(git::worktree_add(&bare, "x2").is_ok());
+        let _ = fs::remove_dir_all(&dir);
+        let _ = fs::remove_dir_all(&bare);
     }
 
     #[test]
