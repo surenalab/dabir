@@ -53,6 +53,9 @@ pub struct Status {
     pub latex: Engine,
     /// The package cache has a built format, so a compile no longer waits on downloads.
     pub latex_ready: bool,
+    /// The bundled engine does not start on this machine: the loader's or the process's first line
+    /// (a glibc too old for the binary, a missing library). Ready is never claimed while this is set.
+    pub latex_error: Option<String>,
     pub latex_cache_mb: u64,
     pub typst: Engine,
     pub typst_size_mb: u64,
@@ -112,6 +115,27 @@ fn finish(report: Report, task: &str, ok: bool, message: impl Into<String>) {
         done: true,
         ok,
     });
+}
+
+/// `bin --version` runs and exits cleanly, or the first line of what went wrong: the loader's message
+/// when a shared library or glibc symbol is missing lands on stderr with a non-zero status, and a
+/// binary that cannot be executed at all fails at spawn.
+fn starts(bin: &Path) -> Result<(), String> {
+    let out = crate::spawn::tool(bin)
+        .arg("--version")
+        .stdin(Stdio::null())
+        .output()
+        .map_err(|e| format!("{}: {e}", bin.display()))?;
+    if out.status.success() {
+        return Ok(());
+    }
+    let err = String::from_utf8_lossy(&out.stderr);
+    let line = err
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .unwrap_or("exited without a message");
+    Err(format!("{line} (exit {})", out.status.code().unwrap_or(-1)))
 }
 
 fn version_of(bin: &Path) -> Option<String> {
@@ -236,13 +260,18 @@ fn agents_with_sign_in() -> Vec<AgentStatus> {
 pub fn status(tectonic: Option<PathBuf>, typst: Option<PathBuf>) -> Status {
     let cache = tectonic_cache_dir();
     let managed = managed_typst();
+    let latex_error = match tectonic.as_deref() {
+        Some(bin) => starts(bin).err(),
+        None => Some("No LaTeX engine is bundled with this build.".into()),
+    };
     Status {
         latex: Engine {
             version: tectonic.as_deref().and_then(version_of),
             path: tectonic.map(|p| p.to_string_lossy().to_string()),
             managed: true,
         },
-        latex_ready: latex_ready(cache.as_deref()),
+        latex_ready: latex_error.is_none() && latex_ready(cache.as_deref()),
+        latex_error,
         latex_cache_mb: cache.as_deref().map(dir_size).unwrap_or(0) / (1024 * 1024),
         typst: Engine {
             version: typst.as_deref().and_then(version_of),
@@ -295,6 +324,10 @@ pub fn warm_latex(report: Report, tectonic: &Path) -> Result<(), String> {
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     fs::write(dir.join("warm.tex"), WARM_TEX).map_err(|e| e.to_string())?;
     fs::write(dir.join("refs.bib"), WARM_BIB).map_err(|e| e.to_string())?;
+    if let Err(e) = starts(tectonic) {
+        finish(report, "latex", false, e.clone());
+        return Err(e);
+    }
     emit(report, "latex", "Starting the LaTeX engine…", None);
     let mut child = crate::spawn::tool(tectonic)
         .current_dir(&dir)
