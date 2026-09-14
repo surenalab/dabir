@@ -21,10 +21,21 @@ Dabir is AGPL-3.0. Contributions are accepted under the [contributor licence agr
    ```bash
    npm run check
    ```
-   It runs the type check, lint, the production build, `cargo fmt --check`, `cargo clippy` with warnings as errors, the Rust tests, the script tests, and the design detector when the Impeccable skill is installed. CI runs the same steps split by what changed: the **Web** job (Linux) when `src/`, `scripts/` or the package files changed, the **Rust** job (macOS) when `src-tauri/`, `templates/` or `examples/` did, and both on `main`. A newer push cancels the older run. The single required check is **Gate**; a red one blocks merging. Dependabot opens grouped weekly updates; they go through the same gate.
+   It runs the type check, lint, the production build, `cargo fmt --check`, `cargo clippy` with warnings as errors, the Rust tests, the script tests, and the design detector when the Impeccable skill is installed. CI runs the same steps split by what changed: the **Web** job (Linux) when `src/`, `scripts/` or the package files changed, the **Rust** job (macOS) when `src-tauri/`, `templates/` or `examples/` did, and both on `main`. A newer push cancels the older run. The single required check is **Gate**; a red one blocks merging. While the repository is private, Actions minutes are billed to the organisation and a run can fail before it starts ("account payments have failed or your spending limit needs to be increased" in the job annotation); that is a billing state, not a code failure, and the local gate is the verification until it is cleared.
 4. **Open a pull request with the template filled in.** The template asks what changed, why, how it was verified, and which rule below you consciously bent, if any.
 5. **Two reviews for anything that touches `src-tauri/`, `src/lib/`, or the agent surface; one review otherwise.** A review from a different agent vendor than the author counts as one; a review from the owner counts as one. See docs/REVIEW.md for what a review checks and how agents run it.
 6. **Squash-merge with the pull request title as the commit subject.** Then delete the branch.
+
+## Dependency updates
+
+Dependabot opens grouped pull requests on Mondays (npm, cargo) and monthly for actions. Each pull request runs the Rust job on a macOS runner at ten times the Linux rate, so they are not merged one by one:
+
+1. Take the week's set as **one branch**: `npm update` for the npm group, `cargo update -p <crate>` for the cargo group, edit `Cargo.toml` or `package.json` for a major, bump the `uses:` lines by hand.
+2. For a major, read the release notes for the breaking list and fix the call sites in the same branch (git2 0.21 turned `summary()`, `message()`, `shorthand()` and `url()` into `Result`; zip 4 kept `SimpleFileOptions`; tauri-action v1 renamed several inputs).
+3. A major that cannot move yet gets an `ignore` in `.github/dependabot.yml` **with the reason as a comment** (today: `yrs`, pinned by yrs-axum; TypeScript 7, outside typescript-eslint's peer range). Prefer removing a dependency to carrying it: `window-vibrancy` went when Tauri's own `set_effects` did the job; `@types/diff` went when jsdiff shipped its types.
+4. Run the gate, one line in CHANGELOG.md naming the versions and what was held back, merge; Dependabot closes its own pull requests once `main` has the new versions.
+
+Adding a dependency needs the same care in reverse: the pull request names the package, its licence and why an existing one would not do; a second copy of a crate already in the tree (check `cargo tree -i <crate>`) is a reason to look for another way.
 
 ## Commits
 

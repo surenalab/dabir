@@ -2,7 +2,7 @@
 
 The full plan with the design brief and architecture is rendered at [docs/plan.html](docs/plan.html) and published at https://claude.ai/code/artifact/5c6592e1-1c27-46a5-8ff2-728e977bed72. This file is the working summary: what is done, what is next, and the decisions that were made along the way.
 
-## State and next steps (2026-09-12)
+## State and next steps (2026-09-14)
 
 **Built and verified on macOS:** editing (visual, source, split, formatting bar, completion, prediction, spelling, grammar on demand), compile with traceable problems and agent fixes, SyncTeX both ways, PDF tools, Git, agent runs on worktrees with in-document review, model and effort control and hunk-level accept for five vendors, repository memory and skills, live sessions over three transports with full-tree mirrors, comments with threads and PDF pins, templates, Typst with its own visual layer, Zotero, offline LaTeX-aware spelling, updater, release workflow. v0.1.1 draft release has Windows and Linux installers; macOS DMGs wait on notarisation.
 
@@ -44,12 +44,13 @@ The full plan with the design brief and architecture is rendered at [docs/plan.h
 
 **Harness (2026-09-10):** CONTRIBUTING.md, docs/REVIEW.md, `npm run check`, `npm run review` (own review bot on local agent subscriptions), ESLint, clippy and fmt in CI, pull request template, pre-push hook, optional Claude review workflow on the owner's subscription.
 
-**Next, in order:**
-1. Owner resets `APPLE_ID` and `APPLE_PASSWORD`; re-run tag v0.1.1 for signed, notarised DMGs.
-2. Owner tests the Windows installer and the Linux AppImage against docs/TESTING.md; fix what breaks (expect font fallbacks, menu chords, path handling).
-3. Two-machine live session: host on the Mac, joiner on Windows, mirror flow and direct mode.
-4. Publish the bench pass rates (`bench/README.md`, 80/80 on 2026-09-10) with the first public release note; rerun after any change to the agent preamble or the apply path.
-5. Public launch: MIT LICENSE in place (CONTRIBUTING.md exists), repository public, draft release published, site product page restored, launch post.
+**Next, in order (the first three are the owner's; nothing else is blocked on engineering):**
+1. Owner clears GitHub Actions billing for `surenalab` or makes the repository public: every run since 2026-09-13 has failed before its first step with a billing annotation, so CI, the Gate check and the release workflow have not executed since the split. Until then `npm run check` is the verification, and pull requests are merged on it.
+2. Owner resets `APPLE_ID` and `APPLE_PASSWORD`; re-run the tag for signed, notarised DMGs. Add the CLA and Gate as required checks once the repository has branch protection (needs public or Pro).
+3. Owner tests the Windows installer and the Linux AppImage against docs/TESTING.md (expect font fallbacks, menu chords, path handling), and runs a two-machine live session (host on the Mac, joiner on Windows, mirror flow and direct mode).
+4. Publish the bench pass rates (`bench/README.md`, 31/31 on four CLIs) with the first public release note; rerun after any change to the agent preamble or the apply path.
+5. Public launch: AGPL-3.0 LICENSE, CLA.md and TRADEMARK.md in place; repository public; draft release published; site product page restored; launch post.
+6. Engineering, in order of value: LSP document symbols for the code outline; a Problems list from language-server diagnostics; `.ipynb` viewing; bracket-pair colours; sticky scroll; the Typst visual gaps (`#stack`, `#columns`, `#bibliography` styles, `lr` delimiters).
 
 ## Thesis
 
@@ -156,6 +157,8 @@ Built once the Windows and Linux builds started running. Every joiner rebuilds t
 
 **2026-09-13, the sweep.py corruption, the tour, and the project's plumbing.** The sample's `code/sweep.py` had become a byte-for-byte copy of `main.tex`. Reproduced headlessly: switching files replaced the editor's document with an ordinary (undoable) transaction, so ⌘Z in the new file brought the old file's text back and autosave wrote it to disk; a second window existed between React's render (which moved `file`) and the passive effect that swapped the text, where a keystroke landed in the old document under the new path. Fixes in `SourceEditor`: the swap runs in a layout effect, drops the undo history (a compartment around `history()`), closes completion and clears diagnostics, and falls back to a fresh state if a stale extension cannot map onto the new text; in `App`, `save` and `flush` read the path and the text from refs kept current synchronously, so a write always pairs the two from the same moment. The file was restored from `e23ada0`. The welcome screen lost the venue chips and the `examples/` hint and gained *Take the tour*: `open_sample` copies the bundled sample into Documents/Dabir (reopened on later runs), and `Tour` walks twelve stops with a spotlight and a four-pane veil, each stop opening the real panel (mode, file, inspector tab, terminal); Help › Guided Tour and Help › User Guide are menu items. `docs/GUIDE.md` is the written guide. Motion: the welcome card's staggered rise, the spotlight moving between stops, all disabled under reduced motion. CI split by path with caches and a single Gate check; release gated, cached per target, version fields checked against the tag, notes from the changelog. Contribution scheme: issue templates, Dependabot, SECURITY.md, CODE_OF_CONDUCT.md, TRADEMARK.md, CLA.md with an opt-in check. Licence review: AGPL-3.0 kept (see Decisions); the About panel now carries the legal notice the AGPL asks interactive programs to show. Found while checking the bundle: Tauri puts glob matches (`dir/**/*`) under the destination by file name only, so the installed app's `templates/` and the sample were flat folders and New Paper from a bundled kit could not have found `<kit>/main.tex`; both resources are now plain directories (walked, structure kept), and `scripts/clean-sample.mjs` in `beforeBuildCommand` removes the sample's caches so a dev session's worktrees never ship.
 
+**2026-09-14, dependencies.** Dependabot's first pass opened thirteen pull requests at once, each of which would run the macOS Rust job. Taken as one branch and verified with the local gate (53 Rust tests): React 19.3, Vite 8.3 and the minor npm group; `git2` 0.21 (its text accessors now return `Result`, four call sites in `git.rs`), `zip` 4, `toml` 1, `uuid` patch; `actions/setup-node` v7, `actions/cache` v6, `paths-filter` v4, `tauri-action` v1 (no renamed input in use; it now refuses a published release when `releaseDraft` is set). Two dependencies were removed rather than bumped: `window-vibrancy` (Tauri's `set_effects` with `Effect::Sidebar` draws the same material and Tauri already carried the crate, so ours was a second copy) and `@types/diff` (jsdiff 9 ships its types). Two majors are held with the reason in `dependabot.yml`: `yrs` 0.27 (yrs-axum 0.8 is built on 0.18 and passes its `Doc` and `Awareness` types) and TypeScript 7 (typescript-eslint's peer range ends at 6.0). CONTRIBUTING.md gained a "Dependency updates" section with this procedure; AGENTS.md was refreshed (the gate is `npm run check`, CI shape, resource-bundling rule, editor invariants from the sweep.py bug, pinned dependencies) and CLAUDE.md is now a pointer to it so the two cannot drift.
+
 ## Decisions
 
 - **Name:** Dabir (دبیر), Persian for scribe. Alternatives were Resaleh and Daftar.
@@ -165,9 +168,12 @@ Built once the Windows and Linux builds started running. Every joiner rebuilds t
 - **No model proxying.** Each vendor's own CLI runs locally with the user's subscription. Dabir is the control plane.
 - **Design process.** Impeccable for direction and craft, the Apple HIG skill for platform correctness. Every UI change runs `/impeccable critique` before merge. Sample data is always tagged as sample in the UI.
 - **Sample script is dependency-free** so the example runs anywhere, even though real projects will use matplotlib or whatever the paper's code uses.
+- **Dependencies.** Weekly Dependabot sets are merged as one verified branch, not one pull request each (the Rust job runs on macOS). A major that cannot move is ignored in `dependabot.yml` with the reason beside it. Removing a dependency beats bumping it when the platform already does the job; a second copy of a crate in `cargo tree` is a reason to look for another way.
 
 ## Known quirks
 
 - The working folder is literally named `Open Source ` with a trailing space. It works, but some tools may trip on it.
 - The `.dabir/build` output folder must exist before Tectonic runs; the compile command creates it.
 - In the browser preview (`npm run dev`) compile and PDF are mocked because there is no TeX engine in the browser.
+- Tauri's `bundle.resources` map flattens glob sources (`dir/**/*`) to file names under the destination; list directories instead. tauri-build copies resources into `target/` on every `cargo build`, so a missing resource path breaks `cargo test` too, and anything left under `examples/score-anchor` is copied until `scripts/clean-sample.mjs` removes it.
+- `toml` 0.8 still appears in `Cargo.lock` behind a target-specific dependency; it is not ours and `cargo tree -i toml@0.8.2` prints nothing on macOS.
