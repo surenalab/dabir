@@ -23,8 +23,20 @@ const asset = assets[triple];
 if (!asset) { console.error(`no Tectonic release asset known for ${triple}`); process.exit(1); }
 const url = `https://github.com/tectonic-typesetting/tectonic/releases/download/tectonic%40${VERSION}/${asset}`;
 console.log(`downloading ${url}`);
-const res = await fetch(url);
-if (!res.ok) { console.error(`download failed: ${res.status} ${res.statusText}`); process.exit(1); }
+// GitHub's release CDN answers 5xx now and then (CI saw a 504 on the first public run); a few tries with a pause.
+let res = null;
+for (let attempt = 1; attempt <= 4; attempt++) {
+  try {
+    res = await fetch(url);
+    if (res.ok) break;
+    console.error(`download failed: ${res.status} ${res.statusText}${attempt < 4 ? ", retrying" : ""}`);
+  } catch (e) {
+    console.error(`download failed: ${e.message}${attempt < 4 ? ", retrying" : ""}`);
+    res = null;
+  }
+  if (attempt < 4) await new Promise((r) => setTimeout(r, attempt * 5000));
+}
+if (!res || !res.ok) process.exit(1);
 const tmp = mkdtempSync(join(tmpdir(), "tectonic-"));
 const archive = join(tmp, asset);
 writeFileSync(archive, Buffer.from(await res.arrayBuffer()));
