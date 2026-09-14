@@ -7,7 +7,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
-use std::process::{Child, ChildStdin, Command, Stdio};
+use std::process::{Child, ChildStdin, Stdio};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter};
@@ -59,7 +59,7 @@ pub fn available(candidates: &[String]) -> Vec<String> {
 /// Whether `command args` exits successfully within `timeout`: how a launcher such as `julia -e
 /// 'using LanguageServer'` or `R -e 'library(languageserver)'` shows the package behind it is installed.
 pub fn probe(command: &str, args: &[String], timeout: std::time::Duration) -> bool {
-    let Ok(mut child) = Command::new(command)
+    let Ok(mut child) = crate::spawn::tool(command)
         .args(args)
         .env("PATH", crate::agents::agent_path())
         .stdin(Stdio::null())
@@ -103,7 +103,7 @@ pub fn filter(
     timeout: std::time::Duration,
 ) -> Result<Filtered, String> {
     use std::io::Read;
-    let mut child = Command::new(command)
+    let mut child = crate::spawn::tool(command)
         .args(args)
         .current_dir(cwd)
         .env("PATH", crate::agents::agent_path())
@@ -188,7 +188,7 @@ fn spawn(
     on_message: impl Fn(u32, String) + Send + 'static,
     on_exit: impl FnOnce(u32) + Send + 'static,
 ) -> Result<u32, String> {
-    let mut child = Command::new(command)
+    let mut child = crate::spawn::tool(command)
         .args(args)
         .current_dir(root)
         .env("PATH", crate::agents::agent_path())

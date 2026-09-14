@@ -4,6 +4,8 @@ Newest first. Every merged pull request adds a line under Unreleased; a release 
 
 ## Unreleased
 
+- Fixed, Windows: every tool Dabir ran (the Setup checks, `--version` probes, sign-in probes, Tectonic, Typst, pandoc, git) flashed a console window, at launch, when the window regained focus and each time Setup opened; the shared `spawn::tool` now starts them with `CREATE_NO_WINDOW`. And agents were never found there: the home directory came from `$HOME`, unset on Windows, so `~/.local/bin` and `~/.grok/bin` were looked up under the drive root, and `claude.exe` was not matched by a lookup for `claude`; `spawn::home_dir` reads `%USERPROFILE%` and `spawn::bin_in` also accepts `.exe` and `.cmd`.
+
 ## 0.1.2
 
 - Fixed: switching files then pressing Undo brought the previous file's text into the new one, and autosave wrote it to disk (the sample's `code/sweep.py` had become a copy of `main.tex`). The editor now drops the old undo history, completion state and diagnostics when a file is swapped in, swaps the text before any keystroke can reach the old one, and every write pairs the path and the text of the same moment.
