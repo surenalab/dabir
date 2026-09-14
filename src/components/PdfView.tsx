@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import * as pdfjs from "pdfjs-dist";
 import { ChevronLeft, ChevronRight, Maximize2, Minus, Plus, Search, X } from "lucide-react";
 import { readBinary, type PdfPos } from "../lib/backend";
+import { chord } from "../lib/keys";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
 
@@ -44,7 +45,7 @@ export function PdfView({ path, stamp, target, pins, zoom, onZoom, onJump, onCom
     taskRef.current?.destroy().catch(() => {});
     taskRef.current = null; docRef.current = null;
     setPages(0); setTotal(0);
-    if (!path) { setNote("Compile the paper (⌘B) to see its PDF here. Select text to copy it, double-click to go to the source line, Option-click to comment there."); host.current?.replaceChildren(); return; }
+    if (!path) { setNote(chord("Compile the paper (⌘B) to see its PDF here. Select text to copy it, double-click to go to the source line, Option-click to comment there.")); host.current?.replaceChildren(); return; }
     setNote(null);
     (async () => {
       try {
@@ -232,18 +233,18 @@ export function PdfView({ path, stamp, target, pins, zoom, onZoom, onJump, onCom
             <button className="tb-btn icon" onClick={() => goto(current + 1)} disabled={current >= total} aria-label="Next page"><ChevronRight /></button>
           </div>
           <div className="group">
-            <button className="tb-btn icon" onClick={() => onZoom(Math.max(0.3, shown * 0.85))} aria-label="Zoom out" title="Zoom out (⌘−)"><Minus /></button>
+            <button className="tb-btn icon" onClick={() => onZoom(Math.max(0.3, shown * 0.85))} aria-label="Zoom out" title={chord("Zoom out (⌘−)")}><Minus /></button>
             <select className="zoomsel" value={typeof zoom === "number" ? String(zoom) : zoom} onChange={(e) => { const v = e.target.value; onZoom(v === "fit" || v === "page" ? v : Number(v)); }} aria-label="Zoom level">
               <option value="fit">Fit width</option>
               <option value="page">Fit page</option>
               {PRESETS.map((z) => <option key={z} value={String(z)}>{Math.round(z * 100)}%</option>)}
               {typeof zoom === "number" && !PRESETS.includes(zoom) && <option value={String(zoom)}>{Math.round(zoom * 100)}%</option>}
             </select>
-            <button className="tb-btn icon" onClick={() => onZoom(Math.min(4, shown * 1.18))} aria-label="Zoom in" title="Zoom in (⌘=)"><Plus /></button>
-            <button className="tb-btn icon" onClick={() => onZoom(zoom === "fit" ? "page" : "fit")} aria-label="Fit" title={zoom === "fit" ? "Fit page" : "Fit width (⌘0)"}><Maximize2 /></button>
+            <button className="tb-btn icon" onClick={() => onZoom(Math.min(4, shown * 1.18))} aria-label="Zoom in" title={chord("Zoom in (⌘=)")}><Plus /></button>
+            <button className="tb-btn icon" onClick={() => onZoom(zoom === "fit" ? "page" : "fit")} aria-label="Fit" title={zoom === "fit" ? "Fit page" : chord("Fit width (⌘0)")}><Maximize2 /></button>
           </div>
           <div className="group">
-            <button className={`tb-btn icon ${findOpen ? "active" : ""}`} onClick={() => { setFindOpen((v) => !v); setTimeout(() => findInput.current?.focus(), 50); }} aria-label="Find in PDF" title="Find in PDF (⌘F)" aria-pressed={findOpen}><Search /></button>
+            <button className={`tb-btn icon ${findOpen ? "active" : ""}`} onClick={() => { setFindOpen((v) => !v); setTimeout(() => findInput.current?.focus(), 50); }} aria-label="Find in PDF" title={chord("Find in PDF (⌘F)")} aria-pressed={findOpen}><Search /></button>
             {findOpen && (
               <span className="pdf-find">
                 <input ref={findInput} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Find in PDF" aria-label="Find in PDF"
