@@ -9,7 +9,7 @@ use serde::Serialize;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::OnceLock;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -115,7 +115,7 @@ fn finish(report: Report, task: &str, ok: bool, message: impl Into<String>) {
 }
 
 fn version_of(bin: &Path) -> Option<String> {
-    let out = Command::new(bin)
+    let out = crate::spawn::tool(bin)
         .arg("--version")
         .stdin(Stdio::null())
         .output()
@@ -140,7 +140,7 @@ fn tectonic_cache_dir() -> Option<PathBuf> {
     if let Ok(p) = std::env::var("TECTONIC_CACHE_DIR") {
         return Some(PathBuf::from(p));
     }
-    let home = std::env::var("HOME").ok().map(PathBuf::from);
+    let home = crate::spawn::home_dir();
     let mut c: Vec<PathBuf> = Vec::new();
     if let Some(h) = &home {
         c.push(h.join("Library/Caches/Tectonic"));
@@ -203,9 +203,7 @@ fn pandoc_install() -> Option<String> {
 
 fn which(bin: &str) -> Option<PathBuf> {
     let path = agents::agent_path();
-    std::env::split_paths(&path)
-        .map(|d| d.join(bin))
-        .find(|p| p.is_file())
+    std::env::split_paths(&path).find_map(|d| crate::spawn::bin_in(&d, bin))
 }
 
 /// Every installed CLI is asked at once whether it is signed in; the slowest answers in about a second.
@@ -258,8 +256,8 @@ pub fn status(tectonic: Option<PathBuf>, typst: Option<PathBuf>) -> Status {
         pandoc: which("pandoc").map(|p| p.to_string_lossy().to_string()),
         pandoc_install: pandoc_install(),
         gh: which("gh").map(|p| p.to_string_lossy().to_string()),
-        home: std::env::var("HOME")
-            .or_else(|_| std::env::var("USERPROFILE"))
+        home: crate::spawn::home_dir()
+            .map(|h| h.to_string_lossy().to_string())
             .unwrap_or_default(),
         platform: std::env::consts::OS,
     }
@@ -298,7 +296,7 @@ pub fn warm_latex(report: Report, tectonic: &Path) -> Result<(), String> {
     fs::write(dir.join("warm.tex"), WARM_TEX).map_err(|e| e.to_string())?;
     fs::write(dir.join("refs.bib"), WARM_BIB).map_err(|e| e.to_string())?;
     emit(report, "latex", "Starting the LaTeX engine…", None);
-    let mut child = Command::new(tectonic)
+    let mut child = crate::spawn::tool(tectonic)
         .current_dir(&dir)
         .args(["-X", "compile", "warm.tex"])
         .stdin(Stdio::null())
@@ -465,7 +463,7 @@ pub fn install_typst(report: Report, bin: &Path) -> Result<PathBuf, String> {
         unzip(&bytes, &out)?;
     } else {
         // bsdtar on macOS and GNU tar on Linux both open .tar.xz themselves.
-        let st = Command::new("tar")
+        let st = crate::spawn::tool("tar")
             .arg("-xf")
             .arg(&archive)
             .arg("-C")

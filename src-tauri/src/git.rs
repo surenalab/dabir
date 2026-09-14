@@ -7,7 +7,6 @@ use git2::{
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -349,7 +348,7 @@ pub fn worktree_add(root: &Path, run_id: &str) -> Result<PathBuf, String> {
             );
         }
     }
-    let out = Command::new("git")
+    let out = crate::spawn::tool("git")
         .current_dir(root)
         .args(["worktree", "add", "-b", &format!("dabir/{}", run_id)])
         .arg(&dir)
@@ -364,7 +363,7 @@ pub fn worktree_add(root: &Path, run_id: &str) -> Result<PathBuf, String> {
     // and applies cleanly onto the same edits in the checkout.
     let (workdir, prefix) = repo_prefix(root)?;
     if let Err(e) = seed_working_copy(&workdir, &dir) {
-        let _ = Command::new("git")
+        let _ = crate::spawn::tool("git")
             .current_dir(root)
             .args(["worktree", "remove", "--force"])
             .arg(&dir)
@@ -387,12 +386,12 @@ fn changed_paths(dir: &Path, against: &str) -> Result<Vec<String>, String> {
             .map(|s| String::from_utf8_lossy(s).to_string())
             .collect()
     };
-    let tracked = Command::new("git")
+    let tracked = crate::spawn::tool("git")
         .current_dir(dir)
         .args(["diff", "--name-only", "-z", against])
         .output()
         .map_err(|e| e.to_string())?;
-    let untracked = Command::new("git")
+    let untracked = crate::spawn::tool("git")
         .current_dir(dir)
         .args(["ls-files", "--others", "--exclude-standard", "-z"])
         .output()
@@ -411,7 +410,7 @@ fn changed_paths(dir: &Path, against: &str) -> Result<Vec<String>, String> {
 pub fn sync_working_copy(root: &Path, run_id: &str) -> Result<Vec<String>, String> {
     let wt = worktree_dir(root, run_id);
     let (workdir, _) = repo_prefix(root)?;
-    let seed = Command::new("git")
+    let seed = crate::spawn::tool("git")
         .current_dir(&wt)
         .args(["rev-parse", "HEAD"])
         .output()
@@ -448,7 +447,7 @@ pub fn sync_working_copy(root: &Path, run_id: &str) -> Result<Vec<String>, Strin
     if carried.is_empty() {
         return Ok(carried);
     }
-    let out = Command::new("git")
+    let out = crate::spawn::tool("git")
         .current_dir(&wt)
         .args(["add", "-A", "--"])
         .args(&carried)
@@ -457,7 +456,7 @@ pub fn sync_working_copy(root: &Path, run_id: &str) -> Result<Vec<String>, Strin
     if !out.status.success() {
         return Err(String::from_utf8_lossy(&out.stderr).to_string());
     }
-    let mut commit = Command::new("git");
+    let mut commit = crate::spawn::tool("git");
     commit.current_dir(&wt);
     if !has_identity(&wt) {
         commit.args(["-c", "user.name=Dabir", "-c", "user.email=dabir@localhost"]);
@@ -486,7 +485,7 @@ pub fn sync_working_copy(root: &Path, run_id: &str) -> Result<Vec<String>, Strin
 }
 
 fn has_identity(dir: &Path) -> bool {
-    Command::new("git")
+    crate::spawn::tool("git")
         .current_dir(dir)
         .args(["config", "user.email"])
         .output()
@@ -497,12 +496,12 @@ fn has_identity(dir: &Path) -> bool {
 /// Copy the checkout's uncommitted state (tracked edits and untracked files) into a fresh worktree
 /// and commit it there. No-op when the checkout is clean.
 fn seed_working_copy(workdir: &Path, wt: &Path) -> Result<(), String> {
-    let patch = Command::new("git")
+    let patch = crate::spawn::tool("git")
         .current_dir(workdir)
         .args(["diff", "HEAD", "--binary"])
         .output()
         .map_err(|e| e.to_string())?;
-    let untracked = Command::new("git")
+    let untracked = crate::spawn::tool("git")
         .current_dir(workdir)
         .args(["ls-files", "--others", "--exclude-standard", "-z"])
         .output()
@@ -518,7 +517,7 @@ fn seed_working_copy(workdir: &Path, wt: &Path) -> Result<(), String> {
         return Ok(());
     }
     if dirty {
-        let mut child = Command::new("git")
+        let mut child = crate::spawn::tool("git")
             .current_dir(wt)
             .args(["apply", "--index", "--whitespace=nowarn", "-"])
             .stdin(std::process::Stdio::piped())
@@ -547,14 +546,14 @@ fn seed_working_copy(workdir: &Path, wt: &Path) -> Result<(), String> {
             std::fs::create_dir_all(p).map_err(|e| e.to_string())?;
         }
         std::fs::copy(&src, &dst).map_err(|e| format!("{}: {}", rel, e))?;
-        let _ = Command::new("git")
+        let _ = crate::spawn::tool("git")
             .current_dir(wt)
             .args(["add", "--"])
             .arg(rel)
             .output();
     }
     // The owner's identity when configured; a local fallback only so the seed commit can exist at all.
-    let mut commit = Command::new("git");
+    let mut commit = crate::spawn::tool("git");
     commit.current_dir(wt);
     if !has_identity(wt) {
         commit.args(["-c", "user.name=Dabir", "-c", "user.email=dabir@localhost"]);
@@ -588,7 +587,7 @@ pub struct WorktreeDiff {
 /// Everything the agent changed in its worktree, as a patch against the branch point.
 pub fn worktree_diff(root: &Path, run_id: &str) -> Result<WorktreeDiff, String> {
     let dir = worktree_dir(root, run_id);
-    let out = Command::new("git")
+    let out = crate::spawn::tool("git")
         .current_dir(&dir)
         .args(["add", "-A"])
         .output()
@@ -596,12 +595,12 @@ pub fn worktree_diff(root: &Path, run_id: &str) -> Result<WorktreeDiff, String> 
     if !out.status.success() {
         return Err(String::from_utf8_lossy(&out.stderr).to_string());
     }
-    let patch = Command::new("git")
+    let patch = crate::spawn::tool("git")
         .current_dir(&dir)
         .args(["diff", "--cached", "--binary", "HEAD"])
         .output()
         .map_err(|e| e.to_string())?;
-    let stat = Command::new("git")
+    let stat = crate::spawn::tool("git")
         .current_dir(&dir)
         .args(["diff", "--cached", "--numstat", "HEAD"])
         .output()
@@ -747,7 +746,7 @@ fn apply_selection(
             })
             .collect::<Vec<_>>()
     });
-    let full = Command::new("git")
+    let full = crate::spawn::tool("git")
         .current_dir(&dir)
         .args(["diff", "--cached", "--binary", "HEAD"])
         .output()
@@ -760,7 +759,7 @@ fn apply_selection(
             ps.iter().map(|p| p.path.clone()).collect(),
         ),
         _ => {
-            let stat = Command::new("git")
+            let stat = crate::spawn::tool("git")
                 .current_dir(&dir)
                 .args(["diff", "--cached", "--name-only", "HEAD"])
                 .output()
@@ -781,7 +780,7 @@ fn apply_selection(
         // started from exactly those, so a plain apply is the common case. A three-way merge is the
         // fallback for files edited since the run started; it needs the file to match the index.
         let run = |args: &[&str]| -> Result<std::process::Output, String> {
-            let mut child = Command::new("git")
+            let mut child = crate::spawn::tool("git")
                 .current_dir(&workdir)
                 .args(args)
                 .stdin(std::process::Stdio::piped())
@@ -1152,7 +1151,7 @@ pub fn checkpoint_undo(root: &Path, id: &str) -> Result<(), String> {
         args.push("--".into());
         args.push(prefix.trim_end_matches('/').to_string());
     }
-    let reverse = Command::new("git")
+    let reverse = crate::spawn::tool("git")
         .current_dir(&workdir)
         .args(&args)
         .output()
@@ -1181,7 +1180,7 @@ fn apply_bytes(workdir: &Path, patch: &[u8], check: bool) -> Result<std::process
         args.push("--check");
     }
     args.push("-");
-    let mut child = Command::new("git")
+    let mut child = crate::spawn::tool("git")
         .current_dir(workdir)
         .args(&args)
         .stdin(std::process::Stdio::piped())
@@ -1236,7 +1235,7 @@ pub fn discard(root: &Path, path: &str) -> Result<(), String> {
         .map(|t| t.get_path(Path::new(&repo_path)).is_ok())
         .unwrap_or(false);
     if in_head {
-        let out = Command::new("git")
+        let out = crate::spawn::tool("git")
             .current_dir(&workdir)
             .args(["checkout", "HEAD", "--"])
             .arg(&repo_path)
@@ -1275,12 +1274,12 @@ pub fn checkpoint_restore(root: &Path, id: &str) -> Result<(), String> {
 
 pub fn worktree_remove(root: &Path, run_id: &str) -> Result<(), String> {
     let dir = worktree_dir(root, run_id);
-    let _ = Command::new("git")
+    let _ = crate::spawn::tool("git")
         .current_dir(root)
         .args(["worktree", "remove", "--force"])
         .arg(&dir)
         .output();
-    let _ = Command::new("git")
+    let _ = crate::spawn::tool("git")
         .current_dir(root)
         .args(["branch", "-D", &format!("dabir/{}", run_id)])
         .output();
@@ -1292,7 +1291,7 @@ pub fn worktree_remove(root: &Path, run_id: &str) -> Result<(), String> {
 pub fn worktree_pull_request(root: &Path, run_id: &str, message: &str) -> Result<String, String> {
     let dir = worktree_dir(root, run_id);
     let branch = format!("dabir/{}", run_id);
-    let c = Command::new("git")
+    let c = crate::spawn::tool("git")
         .current_dir(&dir)
         .args(["commit", "-m", message])
         .output()
@@ -1300,7 +1299,7 @@ pub fn worktree_pull_request(root: &Path, run_id: &str, message: &str) -> Result
     if !c.status.success() && !String::from_utf8_lossy(&c.stdout).contains("nothing to commit") {
         return Err(String::from_utf8_lossy(&c.stderr).to_string());
     }
-    let p = Command::new("git")
+    let p = crate::spawn::tool("git")
         .current_dir(&dir)
         .args(["push", "-u", "origin", &branch])
         .output()
@@ -1311,7 +1310,7 @@ pub fn worktree_pull_request(root: &Path, run_id: &str, message: &str) -> Result
             String::from_utf8_lossy(&p.stderr)
         ));
     }
-    let gh = Command::new("gh")
+    let gh = crate::spawn::tool("gh")
         .current_dir(&dir)
         .args([
             "pr",
@@ -1342,7 +1341,7 @@ pub fn worktree_pull_request(root: &Path, run_id: &str, message: &str) -> Result
 // ---------------------------------------------------------------- remotes (Overleaf Git bridge and friends)
 
 fn git_out(root: &Path, args: &[&str]) -> Result<String, String> {
-    let o = Command::new("git")
+    let o = crate::spawn::tool("git")
         .current_dir(root)
         .args(args)
         .output()

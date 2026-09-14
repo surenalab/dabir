@@ -13,6 +13,7 @@ mod paper;
 mod refs;
 mod relay;
 mod setup;
+mod spawn;
 mod synctex;
 mod templates;
 mod terminal;
@@ -21,7 +22,6 @@ mod texlog;
 use serde::Serialize;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use tauri::menu::{
     AboutMetadata, MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder,
 };
@@ -333,10 +333,7 @@ fn project_snapshot(root: String) -> Result<Snapshot, String> {
 }
 
 fn sessions_dir() -> Result<PathBuf, String> {
-    let home = std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
-        .ok_or("No home directory")?;
+    let home = crate::spawn::home_dir().ok_or("No home directory")?;
     Ok(home.join("Dabir Sessions"))
 }
 
@@ -616,7 +613,7 @@ fn compile_typst(
     let pdf = outdir.join(format!("{}.pdf", stem));
     let started = std::time::Instant::now();
     let _ = app.emit("compile-progress", "typst compile".to_string());
-    let out = Command::new(&typst)
+    let out = crate::spawn::tool(&typst)
         .current_dir(root)
         .args(["compile", "--root"])
         .arg(root)
@@ -694,7 +691,7 @@ fn compile_cancel() -> bool {
     let pid = COMPILE_PID.lock().unwrap().take();
     match pid {
         Some(pid) => {
-            let _ = Command::new("kill").arg(pid.to_string()).output();
+            let _ = crate::spawn::tool("kill").arg(pid.to_string()).output();
             true
         }
         None => false,
@@ -732,7 +729,7 @@ fn compile(app: AppHandle, main_tex: String) -> Result<CompileResult, String> {
     };
 
     let started = std::time::Instant::now();
-    let child = Command::new(&tectonic)
+    let child = crate::spawn::tool(&tectonic)
         .current_dir(root)
         .args([
             "-X",
@@ -3308,7 +3305,7 @@ mod tests {
         }
         relay::start(1240).unwrap();
         let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-        let out = Command::new("node")
+        let out = crate::spawn::tool("node")
             .current_dir(&repo)
             .args(["relay/test-client.mjs", "ws://127.0.0.1:1240", "test-room"])
             .output()
