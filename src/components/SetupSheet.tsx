@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, Circle, LoaderCircle, TerminalSquare, X } from "lucide-react";
+import { Check, Circle, LoaderCircle, TerminalSquare, TriangleAlert, X } from "lucide-react";
 import { onSetupProgress, setupInstallTypst, setupStatus, setupWarmLatex, type Provider, type SetupProgress, type SetupStatus } from "../lib/backend";
 import { availableServers, serversFor, type ServerSpec } from "../lib/lsp";
 import { setUserName, userName } from "../lib/collab";
@@ -87,7 +87,7 @@ export function SetupSheet({ firstRun, onClose, focus }: Props) {
   const finish = () => { setUserName(name.trim()); onClose(); };
 
   const latex = tasks.latex ?? IDLE, typst = tasks.typst ?? IDLE;
-  const agentsInstalled = status?.agents.filter((a) => a.installed).length ?? 0;
+  const agentsInstalled = status?.agents.filter((a) => a.installed && a.signedIn !== false).length ?? 0;
   const ready = useMemo(() => {
     if (!status) return null;
     const parts = [status.latexReady, !!status.typst.path, agentsInstalled > 0];
@@ -187,24 +187,30 @@ export function SetupSheet({ firstRun, onClose, focus }: Props) {
   );
 }
 
-function AgentRow({ a, onRun }: { a: Provider; onRun: (command: string, label: string) => void }) {
+function AgentRow({ a, onRun }: { a: Provider & { signedIn: boolean | null }; onRun: (command: string, label: string) => void }) {
+  // Installed and signed in is the only green; installed but signed out is the case that otherwise fails
+  // at the first message with a cryptic CLI error, so it gets the warning and the primary action.
+  const state = !a.installed ? "todo" : a.signedIn === false ? "warn" : "ok";
   return (
-    <Row id={`agent-${a.id}`} state={a.installed ? "ok" : "todo"} title={a.label}
-      detail={a.installed ? <>Installed{a.path ? <>, <code>{a.path}</code></> : null}. Sign in once if you have not; it opens the browser.</> : <>Needs {a.plan}. One command from the vendor, shown as it runs.</>}
-      action={a.installed
-        ? <button className="btn small" onClick={() => onRun(a.login, `${a.label} sign-in`)}>Sign in</button>
-        : <button className="btn" onClick={() => onRun(a.install, `the ${a.label} installer`)}>Install</button>} />
+    <Row id={`agent-${a.id}`} state={state} title={a.label}
+      detail={!a.installed ? <>Needs {a.plan}. One command from the vendor, shown as it runs.</>
+        : a.signedIn === false ? <>Installed, but not signed in: a message to it would fail. Sign in opens the browser and comes back.</>
+        : a.signedIn ? <>Installed and signed in{a.path ? <>, <code>{a.path}</code></> : null}.</>
+        : <>Installed{a.path ? <>, <code>{a.path}</code></> : null}. Sign in once if you have not; it opens the browser.</>}
+      action={!a.installed
+        ? <button className="btn" onClick={() => onRun(a.install, `the ${a.label} installer`)}>Install</button>
+        : <button className={`btn small ${a.signedIn === false ? "primary" : ""}`} onClick={() => onRun(a.login, `${a.label} sign-in`)}>{a.signedIn ? "Sign in again" : "Sign in"}</button>} />
   );
 }
 
-function Row({ id, state, title, detail, action, progress, small }: { id: string; state: "ok" | "todo" | "busy" | "wait"; title: string; detail: React.ReactNode; action?: React.ReactNode; progress?: Task | null; small?: boolean }) {
+function Row({ id, state, title, detail, action, progress, small }: { id: string; state: "ok" | "todo" | "busy" | "wait" | "warn"; title: string; detail: React.ReactNode; action?: React.ReactNode; progress?: Task | null; small?: boolean }) {
   return (
     <div className={`setup-row ${small ? "small" : ""} ${state}`} data-row={id}>
       <span className={`setup-state ${state}`} aria-hidden>
-        {state === "ok" ? <Check /> : state === "busy" || state === "wait" ? <LoaderCircle /> : <Circle />}
+        {state === "ok" ? <Check /> : state === "warn" ? <TriangleAlert /> : state === "busy" || state === "wait" ? <LoaderCircle /> : <Circle />}
       </span>
       <div className="setup-text">
-        <span className="setup-title">{title}<span className="sr-only">{state === "ok" ? ", ready" : state === "busy" ? ", working" : state === "wait" ? ", checking" : ""}</span></span>
+        <span className="setup-title">{title}<span className="sr-only">{state === "ok" ? ", ready" : state === "warn" ? ", needs attention" : state === "busy" ? ", working" : state === "wait" ? ", checking" : ""}</span></span>
         <span className="setup-detail">{progress ? progress.message : detail}</span>
         {progress && <span className="setup-bar" role="progressbar" aria-valuemin={0} aria-valuemax={1} aria-valuenow={progress.fraction ?? undefined} aria-label={`${title} progress`}><span className={progress.fraction == null ? "indeterminate" : ""} style={progress.fraction != null ? { transform: `scaleX(${Math.max(0.02, progress.fraction)})` } : undefined} /></span>}
       </div>

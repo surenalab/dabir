@@ -353,12 +353,18 @@ const SAMPLE_PROVIDERS: Provider[] = [
   { id: "opencode", label: "OpenCode", hint: "", bin: "opencode", installed: false, path: null, install: "curl -fsSL https://opencode.ai/install | bash", login: "opencode auth login", plan: "your own key for any model provider, or OpenCode Zen" },
 ];
 
+/** Whether the provider's CLI has an account behind it; null when the tool cannot say without a request. */
+export async function agentSignedIn(provider: string): Promise<boolean | null> {
+  if (!native) return provider === "cursor" ? false : provider === "claude" ? true : null;
+  return invoke<boolean | null>("agent_signed_in", { provider });
+}
+
 // ---- Setup: what this machine has, and the two things Dabir installs itself ----
 export interface SetupEngine { path: string | null; version: string | null; managed: boolean }
 export interface SetupStatus {
   latex: SetupEngine; latexReady: boolean; latexCacheMb: number;
   typst: SetupEngine; typstSizeMb: number;
-  agents: Provider[]; pandoc: string | null; gh: string | null; home: string; platform: string;
+  agents: (Provider & { signedIn: boolean | null })[]; pandoc: string | null; gh: string | null; home: string; platform: string;
 }
 export interface SetupProgress { task: string; message: string; fraction: number | null; done: boolean; ok: boolean }
 
@@ -366,7 +372,7 @@ export async function setupStatus(): Promise<SetupStatus> {
   if (!native) return {
     latex: { path: "/Applications/Dabir.app/Contents/MacOS/tectonic", version: "0.15.0", managed: true }, latexReady: false, latexCacheMb: 0,
     typst: { path: null, version: null, managed: false }, typstSizeMb: 14,
-    agents: SAMPLE_PROVIDERS, pandoc: null, gh: "/opt/homebrew/bin/gh", home: "/Users/me", platform: "macos",
+    agents: SAMPLE_PROVIDERS.map((p, i) => ({ ...p, signedIn: p.installed ? i === 0 : null })), pandoc: null, gh: "/opt/homebrew/bin/gh", home: "/Users/me", platform: "macos",
   };
   return invoke<SetupStatus>("setup_status");
 }

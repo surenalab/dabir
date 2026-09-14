@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, Check, Loader2, Paperclip, RefreshCw, Square, X, FileText, Pencil, Terminal, Search, Wrench, Brain, FileDiff, PenLine, Sparkles, RotateCcw, Undo2 } from "lucide-react";
+import { ArrowUp, Check, Loader2, Paperclip, RefreshCw, Square, X, FileText, Pencil, Terminal, Search, Wrench, Brain, FileDiff, PenLine, Sparkles, RotateCcw, TriangleAlert, Undo2 } from "lucide-react";
 import {
-  agentAccept, agentApply, agentCancel, agentDiff, agentProviders, agentPullRequest, agentReject, agentRun, memoryRead, memorySetup,
+  agentAccept, agentApply, agentCancel, agentDiff, agentProviders, agentPullRequest, agentReject, agentRun, agentSignedIn, memoryRead, memorySetup,
   onAgentEvent, provenanceRerun, agentModels, checkpointPatch, type Artefact, type Checkpoint, type Memory, type ModelOptions, type Pick, type Project, type Provider, type WorktreeDiff, type Focus } from "../lib/backend";
 import { Segmented } from "./Segmented";
 import { renderMarkdown } from "../lib/md";
@@ -378,6 +378,22 @@ export function Inspector({ project, gitRepo, askFocus, prefill, tabRequest, onP
   const effort = settings.agentEffort[provider] ?? "";
   const setModel = (m: string) => updateSettings({ agentModel: { ...settings.agentModel, [provider]: m } });
   const setEffort = (e: string) => updateSettings({ agentEffort: { ...settings.agentEffort, [provider]: e } });
+  // Signed-out is the failure that otherwise shows up as a cryptic CLI error after the first message, so it is
+  // checked when the agent is chosen and shown before anything is sent. Rechecked when the window comes back
+  // (a sign-in happens in the browser) and after a run that failed for that reason.
+  const [signedIn, setSignedIn] = useState<boolean | null>(null);
+  const [signStamp, setSignStamp] = useState(0);
+  useEffect(() => {
+    if (!current?.installed) { setSignedIn(null); return; }
+    let alive = true;
+    agentSignedIn(provider).then((v) => { if (alive) setSignedIn(v); }).catch(() => { if (alive) setSignedIn(null); });
+    return () => { alive = false; };
+  }, [provider, current?.installed, signStamp]);
+  useEffect(() => {
+    const onFocus = () => setSignStamp((s) => s + 1);
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
   const [modelOpts, setModelOpts] = useState<ModelOptions | null>(null);
   useEffect(() => {
     if (!current?.installed) { setModelOpts(null); return; }
@@ -500,6 +516,9 @@ export function Inspector({ project, gitRepo, askFocus, prefill, tabRequest, onP
             </select>
             {current && !current.installed && <button className="btn small" onClick={onSetup}>Install {current.label}…</button>}
           </div>
+          {current?.installed && signedIn === false && (
+            <p className="composer-note warn" role="status"><TriangleAlert aria-hidden /><span>{current.label} is installed but not signed in; a message to it would fail. <button className="link" onClick={onSetup}>Sign in…</button></span></p>
+          )}
           {current?.installed && (
             <div className="steer">
               <label htmlFor="agent-model">Model</label>
@@ -565,7 +584,7 @@ export function Inspector({ project, gitRepo, askFocus, prefill, tabRequest, onP
                         {run.diff && run.diff.changes.length > 0 && <> · {run.diff.changes.length} file{run.diff.changes.length === 1 ? "" : "s"} · <em className="add">+{run.diff.changes.reduce((a, c) => a + c.add, 0)}</em> <em className="del">−{run.diff.changes.reduce((a, c) => a + c.del, 0)}</em></>}
                         {run.steps.some((x) => x.kind === "tool" && /tectonic|latexmk|pdflatex|xelatex|typst/.test(x.text)) && <> · compiled</>}
                       </span>
-                      {!run.ok && run.summary && <p>{run.summary}</p>}
+                      {!run.ok && run.summary && <p>{run.summary}{/not signed in/i.test(run.summary) && <> <button className="link" onClick={() => { setSignStamp((s) => s + 1); onSetup(); }}>Sign in…</button></>}</p>}
                     </div>
                   </div>
                   {run.error && <p className="composer-note" role="alert">{run.error}</p>}

@@ -945,8 +945,10 @@ fn open_sample(app: AppHandle, parent: Option<String>) -> Result<String, String>
 
 /// What Setup shows: engines, package cache, agents, optional tools.
 #[tauri::command]
-fn setup_status() -> setup::Status {
-    setup::status(find_tectonic(), find_typst())
+async fn setup_status() -> Result<setup::Status, String> {
+    tauri::async_runtime::spawn_blocking(|| setup::status(find_tectonic(), find_typst()))
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Fill Tectonic's package cache by compiling a document that uses the common packages. Progress
@@ -1251,6 +1253,15 @@ fn relay_stop() -> bool {
 }
 
 // ---------------------------------------------------------------- agents
+
+/// Whether the provider's CLI has an account behind it; `None` when the tool cannot say without a request.
+#[tauri::command]
+async fn agent_signed_in(provider: String) -> Option<bool> {
+    tauri::async_runtime::spawn_blocking(move || agents::signed_in(&provider))
+        .await
+        .ok()
+        .flatten()
+}
 
 #[tauri::command]
 fn agent_providers() -> Vec<agents::Provider> {
@@ -2542,6 +2553,7 @@ pub fn run() {
             checkpoints,
             checkpoint_restore,
             agent_providers,
+            agent_signed_in,
             agent_models,
             agent_run,
             agent_complete,

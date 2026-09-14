@@ -56,11 +56,20 @@ pub struct Status {
     pub latex_cache_mb: u64,
     pub typst: Engine,
     pub typst_size_mb: u64,
-    pub agents: Vec<agents::Provider>,
+    pub agents: Vec<AgentStatus>,
     pub pandoc: Option<String>,
     pub gh: Option<String>,
     pub home: String,
     pub platform: &'static str,
+}
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentStatus {
+    #[serde(flatten)]
+    pub provider: agents::Provider,
+    /// Has an account behind it; `None` when the CLI cannot say without making a request.
+    pub signed_in: Option<bool>,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -175,6 +184,33 @@ fn which(bin: &str) -> Option<PathBuf> {
         .find(|p| p.is_file())
 }
 
+/// Every installed CLI is asked at once whether it is signed in; the slowest answers in about a second.
+fn agents_with_sign_in() -> Vec<AgentStatus> {
+    let providers = agents::detect();
+    let handles: Vec<_> = providers
+        .iter()
+        .map(|p| {
+            let id = p.id.clone();
+            let installed = p.installed;
+            std::thread::spawn(move || {
+                if installed {
+                    agents::signed_in(&id)
+                } else {
+                    None
+                }
+            })
+        })
+        .collect();
+    providers
+        .into_iter()
+        .zip(handles)
+        .map(|(provider, h)| AgentStatus {
+            provider,
+            signed_in: h.join().unwrap_or(None),
+        })
+        .collect()
+}
+
 pub fn status(tectonic: Option<PathBuf>, typst: Option<PathBuf>) -> Status {
     let cache = tectonic_cache_dir();
     let managed = managed_typst();
@@ -194,7 +230,7 @@ pub fn status(tectonic: Option<PathBuf>, typst: Option<PathBuf>) -> Status {
             path: typst.map(|p| p.to_string_lossy().to_string()),
         },
         typst_size_mb: typst_asset().1,
-        agents: agents::detect(),
+        agents: agents_with_sign_in(),
         pandoc: which("pandoc").map(|p| p.to_string_lossy().to_string()),
         gh: which("gh").map(|p| p.to_string_lossy().to_string()),
         home: std::env::var("HOME")
