@@ -12,6 +12,7 @@ mod memory;
 mod paper;
 mod refs;
 mod relay;
+mod setup;
 mod synctex;
 mod templates;
 mod terminal;
@@ -522,6 +523,10 @@ fn find_typst() -> Option<PathBuf> {
     if let Ok(p) = std::env::var("DABIR_TYPST") {
         return Some(PathBuf::from(p));
     }
+    // The copy Setup downloaded, before anything on the PATH: it is the one the user chose in the app.
+    if let Some(p) = setup::managed_typst() {
+        return Some(p);
+    }
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
             for n in ["typst", "typst.exe"] {
@@ -602,7 +607,7 @@ fn compile_typst(
     outdir: &Path,
 ) -> Result<CompileResult, String> {
     let Some(typst) = find_typst() else {
-        return Ok(CompileResult { ok: false, pdf: None, log: String::new(), engine: "none".into(), millis: 0, diagnostics: vec![Diagnostic { severity: "error".into(), category: "other".into(), file: None, line: None, message: "Typst is not installed. Install it with `brew install typst`, or set DABIR_TYPST to its path.".into(), context: None }] });
+        return Ok(CompileResult { ok: false, pdf: None, log: String::new(), engine: "none".into(), millis: 0, diagnostics: vec![Diagnostic { severity: "error".into(), category: "other".into(), file: None, line: None, message: "Typst is not installed. Help › Set Up Dabir downloads it into the app in one step; or install it yourself and set DABIR_TYPST to its path.".into(), context: None }] });
     };
     let stem = main
         .file_stem()
@@ -936,6 +941,36 @@ fn open_sample(app: AppHandle, parent: Option<String>) -> Result<String, String>
     memory::setup(&dest, main.as_deref())?;
     git::commit(&dest, "Sample paper from Dabir", None)?;
     Ok(dest.to_string_lossy().to_string())
+}
+
+/// What Setup shows: engines, package cache, agents, optional tools.
+#[tauri::command]
+fn setup_status() -> setup::Status {
+    setup::status(find_tectonic(), find_typst())
+}
+
+/// Fill Tectonic's package cache by compiling a document that uses the common packages. Progress
+/// arrives as `setup-progress` events with task `latex`.
+#[tauri::command]
+async fn setup_warm_latex(app: AppHandle) -> Result<(), String> {
+    let tectonic = find_tectonic().ok_or("The LaTeX engine is missing from this build")?;
+    tauri::async_runtime::spawn_blocking(move || {
+        setup::warm_latex(&setup::window_report(&app), &tectonic)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Download Typst for this machine into the app's data folder; `setup-progress` events with task `typst`.
+#[tauri::command]
+async fn setup_install_typst(app: AppHandle) -> Result<String, String> {
+    let bin = setup::managed_bin().ok_or("No data folder for the app")?;
+    tauri::async_runtime::spawn_blocking(move || {
+        setup::install_typst(&setup::window_report(&app), &bin)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map(|p| p.to_string_lossy().to_string())
 }
 
 /// Fetched kits live here, keyed by id and version, so a paper can be started offline afterwards.
@@ -2395,6 +2430,8 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
         .build()?;
 
     let help = SubmenuBuilder::new(app, "Help")
+        .item(&MenuItemBuilder::with_id("setup", "Set Up Dabir…").build(app)?)
+        .separator()
         .item(&MenuItemBuilder::with_id("tour", "Guided Tour on the Sample Paper").build(app)?)
         .item(&MenuItemBuilder::with_id("guide", "User Guide").build(app)?)
         .build()?;
@@ -2429,6 +2466,9 @@ pub fn run() {
             if let Some(dir) = find_tectonic().and_then(|p| p.parent().map(Path::to_path_buf)) {
                 agents::register_tool_dir(dir);
             }
+            if let Some(dir) = setup::init(app.handle()) {
+                agents::register_tool_dir(dir);
+            }
             #[cfg(target_os = "macos")]
             {
                 // The sidebar material behind the window, through Tauri's own effects API (it wraps the same
@@ -2445,6 +2485,9 @@ pub fn run() {
             let _ = app.emit("menu", event.id().0.clone());
         })
         .invoke_handler(tauri::generate_handler![
+            setup_status,
+            setup_warm_latex,
+            setup_install_typst,
             open_project,
             paper_map,
             term_open,

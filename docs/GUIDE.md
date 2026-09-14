@@ -7,10 +7,15 @@ Keys are given for macOS. On Windows and Linux read ⌘ as Ctrl and ⌥ as Alt.
 ## 1. Install and open Dabir
 
 1. Download the build for your machine from the [releases page](https://github.com/surenalab/dabir/releases), or build it yourself with `npm install && npm run tauri build` (Node 22 and Rust stable). Dabir checks for updates itself; Dabir › Check for Updates does it now.
-2. Nothing else for LaTeX: the **Tectonic** engine ships inside the app and fetches the packages a paper uses on its first compile (a minute or two, once). Typst papers compile with `typst` (`brew install typst`, or the builds from typst.app).
-3. Optional, for agents: install the command-line tool of the agent you already use (Claude Code, Codex, Cursor, Grok or OpenCode). Dabir finds it on your PATH, and the Agent tab shows which were found.
+2. Open Dabir. The first launch opens **Setup**, a one-page check of what this machine has, with the fix beside anything missing. Nothing is installed unless you choose it, and everything runs where you can see it:
+   - **LaTeX** is built in (the Tectonic engine). Its packages download at the first compile, a minute or two; **Fetch packages** does that now so the wait never lands in the middle of writing.
+   - **Typst** is only for Typst papers. **Download Typst** fetches the compiler (about 14 MB, from Typst's own release) into the app.
+   - **Agents**: Dabir runs the vendor's own command-line tool on your own subscription. **Install** types the vendor's one-line installer into a shell that opens inside the sheet; **Sign in** runs the sign-in, which opens the browser and comes back. Claude Code, Codex, Cursor, Grok and OpenCode are known.
+   - **Code**: language servers for Python, Typst, Julia, R and the rest, each one command, optional.
+   - **You**: the name that goes on your comments and suggested changes.
+   **Continue** closes it; Help › Set Up Dabir (or Settings › This machine) brings it back any time. A Typst compile without Typst, or the Agent tab without an agent, offers the same fix in place.
 
-Open Dabir. The welcome screen offers **Open Folder**, **New Paper**, **Import from Overleaf**, **Clone from GitHub**, **Join a Live Session**, and the tour.
+The welcome screen then offers **Open Folder**, **New Paper**, **Import from Overleaf**, **Clone from GitHub**, **Join a Live Session**, and the tour.
 
 ## 2. Take the tour
 

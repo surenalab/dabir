@@ -25,7 +25,7 @@ export interface Change { path: string; status: string; add: number; del: number
 export interface CommitInfo { id: string; summary: string; author: string; when: number }
 export interface GitStatus { isRepo: boolean; branch: string | null; changes: Change[]; recent: CommitInfo[]; remote: string | null }
 
-export interface Provider { id: string; label: string; hint: string; bin: string; installed: boolean; path: string | null }
+export interface Provider { id: string; label: string; hint: string; bin: string; installed: boolean; path: string | null; install: string; login: string; plan: string }
 export interface AgentEvent { runId: string; kind: "text" | "tool" | "log" | "thinking" | "done" | "error"; text: string; tool: string | null; ok: boolean | null }
 export interface WorktreeDiff { patch: string; changes: Change[] }
 
@@ -341,14 +341,59 @@ export async function gitClone(url: string, dest: string): Promise<string> {
 // ---------------------------------------------------------------- agents
 
 export async function agentProviders(): Promise<Provider[]> {
-  if (!native) return [
-    { id: "claude", label: "Claude Code", hint: "", bin: "claude", installed: true, path: "/usr/local/bin/claude" },
-    { id: "codex", label: "Codex", hint: "", bin: "codex", installed: false, path: null },
-    { id: "cursor", label: "Cursor", hint: "", bin: "cursor-agent", installed: true, path: "~/.local/bin/cursor-agent" },
-    { id: "grok", label: "Grok", hint: "", bin: "grok", installed: false, path: null },
-    { id: "opencode", label: "OpenCode", hint: "", bin: "opencode", installed: false, path: null },
-  ];
+  if (!native) return SAMPLE_PROVIDERS;
   return invoke<Provider[]>("agent_providers");
+}
+
+const SAMPLE_PROVIDERS: Provider[] = [
+  { id: "claude", label: "Claude Code", hint: "", bin: "claude", installed: true, path: "/usr/local/bin/claude", install: "curl -fsSL https://claude.ai/install.sh | bash", login: "claude auth login", plan: "Claude Pro, Max, Team or Enterprise, or an Anthropic Console account" },
+  { id: "codex", label: "Codex", hint: "", bin: "codex", installed: false, path: null, install: "curl -fsSL https://chatgpt.com/codex/install.sh | sh", login: "codex login", plan: "ChatGPT Plus, Pro, Business, Edu or Enterprise, or an OpenAI API key" },
+  { id: "cursor", label: "Cursor", hint: "", bin: "cursor-agent", installed: true, path: "~/.local/bin/cursor-agent", install: "curl https://cursor.com/install -fsS | bash", login: "cursor-agent login", plan: "a Cursor account" },
+  { id: "grok", label: "Grok", hint: "", bin: "grok", installed: false, path: null, install: "curl -fsSL https://x.ai/cli/install.sh | bash", login: "grok login", plan: "an X or xAI account" },
+  { id: "opencode", label: "OpenCode", hint: "", bin: "opencode", installed: false, path: null, install: "curl -fsSL https://opencode.ai/install | bash", login: "opencode auth login", plan: "your own key for any model provider, or OpenCode Zen" },
+];
+
+// ---- Setup: what this machine has, and the two things Dabir installs itself ----
+export interface SetupEngine { path: string | null; version: string | null; managed: boolean }
+export interface SetupStatus {
+  latex: SetupEngine; latexReady: boolean; latexCacheMb: number;
+  typst: SetupEngine; typstSizeMb: number;
+  agents: Provider[]; pandoc: string | null; gh: string | null; home: string; platform: string;
+}
+export interface SetupProgress { task: string; message: string; fraction: number | null; done: boolean; ok: boolean }
+
+export async function setupStatus(): Promise<SetupStatus> {
+  if (!native) return {
+    latex: { path: "/Applications/Dabir.app/Contents/MacOS/tectonic", version: "0.15.0", managed: true }, latexReady: false, latexCacheMb: 0,
+    typst: { path: null, version: null, managed: false }, typstSizeMb: 14,
+    agents: SAMPLE_PROVIDERS, pandoc: null, gh: "/opt/homebrew/bin/gh", home: "/Users/me", platform: "macos",
+  };
+  return invoke<SetupStatus>("setup_status");
+}
+/** Compile a document that uses the common packages, so the first real compile does not wait on downloads. */
+export async function setupWarmLatex(): Promise<void> {
+  if (!native) { await sampleProgress("latex", ["Fetching latex.fmt", "Fetching amsmath.sty", "Fetching hyperref.sty", "Fetching tikz.sty", "Running BibTeX"], "LaTeX is ready: the packages most papers use are on this machine."); return; }
+  await invoke("setup_warm_latex");
+}
+/** Download Typst for this machine into the app's data folder. */
+export async function setupInstallTypst(): Promise<string> {
+  if (!native) { await sampleProgress("typst", ["Finding the latest release…", "Downloading Typst v0.15.1 · 4 of 14 MB", "Downloading Typst v0.15.1 · 11 of 14 MB", "Unpacking…"], "Typst 0.15.1 is installed."); return "/Users/me/Library/Application Support/com.surenalab.dabir/bin/typst"; }
+  return invoke<string>("setup_install_typst");
+}
+let setupHandlers: ((p: SetupProgress) => void)[] = [];
+export function onSetupProgress(handler: (p: SetupProgress) => void): () => void {
+  if (!native) { setupHandlers.push(handler); return () => { setupHandlers = setupHandlers.filter((h) => h !== handler); }; }
+  let un: (() => void) | null = null;
+  listen<SetupProgress>("setup-progress", (e) => handler(e.payload)).then((u) => { un = u; });
+  return () => { un?.(); };
+}
+async function sampleProgress(task: string, steps: string[], last: string) {
+  for (let i = 0; i < steps.length; i++) {
+    await new Promise((r) => setTimeout(r, 350));
+    setupHandlers.forEach((h) => h({ task, message: steps[i], fraction: (i + 1) / (steps.length + 1), done: false, ok: true }));
+  }
+  await new Promise((r) => setTimeout(r, 350));
+  setupHandlers.forEach((h) => h({ task, message: last, fraction: 1, done: true, ok: true }));
 }
 
 let sampleRunHandlers: ((e: AgentEvent) => void)[] = [];
