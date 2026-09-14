@@ -757,6 +757,216 @@ fn parse_line(id: &str, line: &str) -> Vec<(String, String, Option<String>, Opti
     out
 }
 
+/// Run a CLI with a short deadline and return its stdout and stderr together, or None on timeout or failure to start.
+fn probe(bin: &Path, args: &[&str], secs: u64) -> Option<(bool, String)> {
+    let bin = bin.to_path_buf();
+    let args: Vec<String> = args.iter().map(|a| a.to_string()).collect();
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut cmd = Command::new(&bin);
+        cmd.args(&args)
+            .stdin(Stdio::null())
+            .env("PATH", agent_path())
+            .env("NO_COLOR", "1");
+        for k in SCRUB_ENV {
+            cmd.env_remove(k);
+        }
+        let out = cmd.output().ok().map(|o| {
+            let mut t = String::from_utf8_lossy(&o.stdout).to_string();
+            t.push_str(&String::from_utf8_lossy(&o.stderr));
+            (o.status.success(), t)
+        });
+        let _ = tx.send(out);
+    });
+    rx.recv_timeout(std::time::Duration::from_secs(secs))
+        .ok()
+        .flatten()
+}
+
+/// Whether the CLI has an account behind it. `None` when the tool gives no way to tell without a request.
+/// Each vendor reports this differently; an environment API key counts as signed in.
+pub fn signed_in(id: &str) -> Option<bool> {
+    let p = detect().into_iter().find(|p| p.id == id)?;
+    let bin = PathBuf::from(p.path.as_ref()?);
+    let key = |k: &str| {
+        std::env::var(k)
+            .map(|v| !v.trim().is_empty())
+            .unwrap_or(false)
+    };
+    match id {
+        "claude" => {
+            if key("ANTHROPIC_API_KEY") {
+                return Some(true);
+            }
+            let (_, out) = probe(&bin, &["auth", "status"], 6)?;
+            let v: Value = serde_json::from_str(out.trim()).ok()?;
+            v["loggedIn"].as_bool()
+        }
+        "codex" => {
+            if key("OPENAI_API_KEY") {
+                return Some(true);
+            }
+            let (ok, out) = probe(&bin, &["login", "status"], 6)?;
+            let l = out.to_lowercase();
+            if l.contains("not logged in") || l.contains("not authenticated") {
+                Some(false)
+            } else if ok && l.contains("logged in") {
+                Some(true)
+            } else {
+                None
+            }
+        }
+        "cursor" => {
+            if key("CURSOR_API_KEY") {
+                return Some(true);
+            }
+            let (_, out) = probe(&bin, &["status"], 6)?;
+            let l = out.to_lowercase();
+            if l.contains("not logged in") || l.contains("not authenticated") {
+                Some(false)
+            } else if l.contains("logged in") {
+                Some(true)
+            } else {
+                None
+            }
+        }
+        "grok" => {
+            if key("GROK_DEPLOYMENT_KEY") || key("XAI_API_KEY") {
+                return Some(true);
+            }
+            // `grok login` writes ~/.grok/auth.json; there is no status command.
+            let home = std::env::var("HOME").ok()?;
+            let auth = PathBuf::from(home).join(".grok/auth.json");
+            Some(
+                std::fs::metadata(&auth)
+                    .map(|m| m.len() > 2)
+                    .unwrap_or(false),
+            )
+        }
+        "opencode" => {
+            let (ok, out) = probe(&bin, &["auth", "list"], 6)?;
+            if !ok {
+                return None;
+            }
+            let l = out.to_lowercase();
+            if l.contains("no credentials") || l.contains("0 credentials") {
+                Some(false)
+            } else if l.contains("credential")
+                || l.lines().filter(|x| !x.trim().is_empty()).count() > 1
+            {
+                Some(true)
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+/// Why a run stopped without a result, in the user's terms: the CLI is signed out, the plan is out of
+/// quota, the network is down, or something else (with the CLI's own last words). Never just "exited".
+pub fn explain_failure(p: &Provider, output: &str, code: Option<i32>) -> String {
+    let l = output.to_lowercase();
+    let last = output
+        .lines()
+        .rev()
+        .map(str::trim)
+        .find(|x| {
+            !x.is_empty() && !x.starts_with('{') && !x.starts_with("Reading additional input")
+        })
+        .unwrap_or("")
+        .to_string();
+    let last = if last.chars().count() > 240 {
+        format!("{}…", last.chars().take(240).collect::<String>())
+    } else {
+        last
+    };
+    let auth = [
+        "not logged in",
+        "not authenticated",
+        "unauthenticated",
+        "unauthorized",
+        "401",
+        "invalid api key",
+        "invalid_api_key",
+        "please run /login",
+        "please log in",
+        "please login",
+        "please sign in",
+        "authentication failed",
+        "authentication_failed",
+        "auth required",
+        "no credentials",
+        "token expired",
+        "oauth token",
+        "not signed in",
+        "sign in to",
+        "login required",
+        "requires login",
+        "credentials",
+    ];
+    let quota = [
+        "rate limit",
+        "rate_limit",
+        "429",
+        "quota",
+        "usage limit",
+        "insufficient_quota",
+        "overloaded",
+        "capacity",
+        "billing",
+        "credit balance",
+        "out of credits",
+    ];
+    let net = [
+        "enotfound",
+        "econnrefused",
+        "econnreset",
+        "getaddrinfo",
+        "network",
+        "dns",
+        "timed out",
+        "timeout",
+        "offline",
+        "could not connect",
+        "connection refused",
+        "fetch failed",
+    ];
+    let exit = code.map(|c| format!(" (exit {})", c)).unwrap_or_default();
+    if auth.iter().any(|k| l.contains(k)) {
+        format!(
+            "{} is installed but not signed in, or the sign-in expired. Run `{}` in a terminal, or use Help › Set Up Dabir › Agents › Sign in, then send again.",
+            p.label, p.login
+        )
+    } else if quota.iter().any(|k| l.contains(k)) {
+        format!(
+            "{} refused the request: {}. This is usually a rate or usage limit on your plan; wait a little, or pick another model or agent.",
+            p.label,
+            if last.is_empty() { "limit reached" } else { &last }
+        )
+    } else if net.iter().any(|k| l.contains(k)) {
+        format!(
+            "{} could not reach its service: {}. Check the connection and send again.",
+            p.label,
+            if last.is_empty() {
+                "network error"
+            } else {
+                &last
+            }
+        )
+    } else if !last.is_empty() {
+        format!(
+            "{} stopped without a result{}. Its last message: {}",
+            p.label, exit, last
+        )
+    } else {
+        format!(
+            "{} stopped without a result{}. Open the log below for what it printed; if it is empty, run `{}` in a terminal once to see whether it asks you to sign in.",
+            p.label, exit, p.bin
+        )
+    }
+}
+
 pub fn run(
     app: AppHandle,
     provider: String,
@@ -865,10 +1075,18 @@ where
         }
     };
     let emit_err = emit.clone();
-    std::thread::spawn(move || {
+    // The CLI's last words, kept so a failure can be explained rather than reported as "exited".
+    let tail: std::sync::Arc<Mutex<Vec<String>>> = Default::default();
+    let tail_err = tail.clone();
+    let stderr_thread = std::thread::spawn(move || {
         for line in BufReader::new(stderr).lines().map_while(Result::ok) {
             if !line.trim().is_empty() && !line.starts_with("Reading additional input from stdin") {
-                emit_err("log", line, None, None);
+                emit_err("log", line.clone(), None, None);
+                let mut t = tail_err.lock().unwrap();
+                t.push(line);
+                if t.len() > 40 {
+                    t.remove(0);
+                }
             }
         }
     });
@@ -876,26 +1094,39 @@ where
     std::thread::spawn(move || {
         let mut saw_done = false;
         for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-            for (kind, text, tool, ok) in parse_line(&provider, &line) {
+            let parsed = parse_line(&provider, &line);
+            if parsed.is_empty() && !line.trim().is_empty() {
+                // Plain text on stdout (a CLI that printed a message instead of an event) is a clue too.
+                let mut t = tail.lock().unwrap();
+                t.push(line.clone());
+                if t.len() > 40 {
+                    t.remove(0);
+                }
+            }
+            for (kind, text, tool, ok) in parsed {
                 if kind == "done" {
                     saw_done = true;
                 }
+                let text = if kind == "done" && ok == Some(false) {
+                    let t = tail.lock().unwrap().join("\n");
+                    explain_failure(&p, &format!("{}\n{}", text, t), None)
+                } else {
+                    text
+                };
                 emit(&kind, text, tool, ok);
             }
         }
         let status = child.wait().ok();
+        let _ = stderr_thread.join();
         let ok = status.map(|s| s.success()).unwrap_or(false);
         if !saw_done {
-            emit(
-                "done",
-                if ok {
-                    String::new()
-                } else {
-                    "The agent exited without a result.".into()
-                },
-                None,
-                Some(ok),
-            );
+            let text = if ok {
+                String::new()
+            } else {
+                let t = tail.lock().unwrap().join("\n");
+                explain_failure(&p, &t, status.and_then(|s| s.code()))
+            };
+            emit("done", text, None, Some(ok));
         }
         if let Ok(mut g) = RUNNING.lock() {
             if let Some(m) = g.as_mut() {
@@ -917,5 +1148,61 @@ pub fn cancel(run_id: &str) -> bool {
             true
         }
         None => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn claude() -> Provider {
+        detect().into_iter().find(|p| p.id == "claude").unwrap()
+    }
+
+    #[test]
+    fn a_signed_out_cli_is_explained_with_its_login_command() {
+        let p = claude();
+        for out in [
+            "Not logged in · Please run /login",
+            "Error: Invalid API key · Please run /login",
+            "{\"type\":\"system\",\"subtype\":\"api_retry\",\"error\":\"authentication_failed\"}\nauthentication failed (401)",
+            "Not authenticated. Please run `cursor-agent login`.",
+        ] {
+            let m = explain_failure(&p, out, Some(1));
+            assert!(m.contains("not signed in"), "{out} → {m}");
+            assert!(m.contains("claude auth login"), "{m}");
+        }
+    }
+
+    #[test]
+    fn limits_and_network_are_named_and_the_rest_quotes_the_cli() {
+        let p = claude();
+        assert!(
+            explain_failure(&p, "API Error: 429 rate limit reached", Some(1))
+                .contains("rate or usage limit")
+        );
+        assert!(explain_failure(
+            &p,
+            "fetch failed: getaddrinfo ENOTFOUND api.anthropic.com",
+            Some(1)
+        )
+        .contains("could not reach"));
+        let m = explain_failure(&p, "Something odd happened\nSegmentation fault", Some(139));
+        assert!(
+            m.contains("exit 139") && m.contains("Segmentation fault"),
+            "{m}"
+        );
+        let m = explain_failure(&p, "", Some(1));
+        assert!(m.contains("Open the log"), "{m}");
+    }
+
+    #[test]
+    fn signed_in_does_not_hang_or_panic() {
+        // Whatever this machine has, every probe returns within its deadline.
+        let t = std::time::Instant::now();
+        for id in ["claude", "codex", "cursor", "grok", "opencode", "nope"] {
+            eprintln!("{id}: {:?}", signed_in(id));
+        }
+        assert!(t.elapsed() < std::time::Duration::from_secs(40));
     }
 }
