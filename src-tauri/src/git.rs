@@ -183,6 +183,52 @@ pub fn init(root: &Path) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// What `ensure_repo` had to do so that a worktree can be made.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum Ensured {
+    /// The folder was not a repository: one was created with an empty root commit.
+    Initialised,
+    /// The repository existed but had no commit yet: an empty root commit was made.
+    RootCommit,
+    /// Nothing to do.
+    Ready,
+}
+
+/// The repository an agent run needs, made on the spot: `git init` when the folder has none, and an
+/// empty root commit when HEAD is unborn, so `worktree add` has something to branch from. The root
+/// commit holds no files: the worktree seeding carries the folder's contents into the run as its own
+/// base, so nothing of the user's is committed on their behalf and the sidebar keeps showing every
+/// file as uncommitted until they choose to commit.
+pub fn ensure_repo(root: &Path) -> Result<Ensured, String> {
+    let (repo, created) = match Repository::discover(root) {
+        Ok(r) => (r, false),
+        Err(_) => (Repository::init(root).map_err(|e| e.to_string())?, true),
+    };
+    if repo.head().is_ok() {
+        return Ok(Ensured::Ready);
+    }
+    let s = sig(&repo)?;
+    let tree_id = repo
+        .treebuilder(None)
+        .and_then(|b| b.write())
+        .map_err(|e| e.to_string())?;
+    let tree = repo.find_tree(tree_id).map_err(|e| e.to_string())?;
+    repo.commit(
+        Some("HEAD"),
+        &s,
+        &s,
+        "Dabir: repository initialised (no files yet)",
+        &tree,
+        &[],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(if created {
+        Ensured::Initialised
+    } else {
+        Ensured::RootCommit
+    })
+}
+
 /// `paths` are repository-relative (the form `git diff --name-only` prints). Without paths, everything
 /// under the paper is staged, so a paper inside a larger repository commits only its own files.
 pub fn commit(root: &Path, message: &str, paths: Option<Vec<String>>) -> Result<String, String> {

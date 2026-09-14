@@ -157,7 +157,7 @@ export function Navigator({ project, current, outline, git, commitFocus, busy, o
         </div>
         {!git?.isRepo ? (
           <div className="empty-nav">
-            This folder is not a Git repository yet. Agent runs need one, so each run can work on its own branch.
+            This folder is not a Git repository yet. The first agent run makes it one so the run can work on its own branch, with your files left uncommitted; or make it one now.
             <div style={{ marginTop: 8 }}><button className="btn" onClick={onInitGit}>Initialise Repository</button></div>
           </div>
         ) : changes.length === 0 ? (

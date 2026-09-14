@@ -65,6 +65,11 @@ pub struct Status {
     /// package manager to call and the installer at pandoc.org is the way.
     pub pandoc_install: Option<String>,
     pub gh: Option<String>,
+    /// The `git` command. Commits, history and snapshots use the built-in engine, but an agent run's
+    /// worktree and its diff go through `git`, so a machine without it cannot run agents.
+    pub git: Option<String>,
+    /// The one-line install for git on this machine, or None when git-scm.com is the way.
+    pub git_install: Option<String>,
     pub home: String,
     pub platform: &'static str,
 }
@@ -206,6 +211,24 @@ fn latex_ready(cache: Option<&Path>) -> bool {
 
 /// How pandoc is installed here: Homebrew on macOS, the distribution's package manager on Linux, winget on
 /// Windows. None when none of them is present; the Setup sheet then points at pandoc.org.
+fn git_install() -> Option<String> {
+    match std::env::consts::OS {
+        // Apple's command line tools carry git; the prompt that follows installs them.
+        "macos" => Some("xcode-select --install".to_string()),
+        "windows" => which("winget").map(|_| "winget install --id Git.Git -e".to_string()),
+        _ => [
+            ("apt-get", "sudo apt-get install -y git"),
+            ("dnf", "sudo dnf install -y git"),
+            ("pacman", "sudo pacman -S --noconfirm git"),
+            ("zypper", "sudo zypper install -y git"),
+            ("brew", "brew install git"),
+        ]
+        .iter()
+        .find(|(bin, _)| which(bin).is_some())
+        .map(|(_, cmd)| cmd.to_string()),
+    }
+}
+
 fn pandoc_install() -> Option<String> {
     match std::env::consts::OS {
         "macos" => which("brew").map(|_| "brew install pandoc".to_string()),
@@ -285,6 +308,8 @@ pub fn status(tectonic: Option<PathBuf>, typst: Option<PathBuf>) -> Status {
         pandoc: which("pandoc").map(|p| p.to_string_lossy().to_string()),
         pandoc_install: pandoc_install(),
         gh: which("gh").map(|p| p.to_string_lossy().to_string()),
+        git: which("git").map(|p| p.to_string_lossy().to_string()),
+        git_install: git_install(),
         home: crate::spawn::home_dir()
             .map(|h| h.to_string_lossy().to_string())
             .unwrap_or_default(),
