@@ -56,7 +56,7 @@ fn shell() -> String {
 /// Start a shell in `cwd` and stream its output as `term-data` events; returns the terminal's id.
 pub fn open(
     app: &AppHandle,
-    state: &Terminals,
+    state: &Shared,
     cwd: &Path,
     cols: u16,
     rows: u16,
@@ -81,7 +81,7 @@ pub fn open(
 
 /// The shell without the app: `on_data` gets each chunk of output as text, `on_exit` fires once.
 pub fn spawn(
-    state: &Terminals,
+    state: &Shared,
     cwd: &Path,
     cols: u16,
     rows: u16,
@@ -179,6 +179,30 @@ pub fn spawn(
             on_exit(id);
         })
         .map_err(|e| e.to_string())?;
+    // On Windows the read above does not return when the shell exits: ConPTY keeps the output pipe
+    // open until the pseudo-console itself is closed, so a shell that typed `exit` would leave a pane
+    // that looks alive. A watcher polls the child and drops the terminal when it is gone, which closes
+    // the console and ends the reader, and the exit reaches the window the same way as elsewhere.
+    #[cfg(windows)]
+    {
+        let state = Arc::clone(state);
+        std::thread::Builder::new()
+            .name(format!("pty-watch-{id}"))
+            .spawn(move || loop {
+                std::thread::sleep(std::time::Duration::from_millis(250));
+                let mut open = state.open.lock().unwrap();
+                match open.get_mut(&id) {
+                    None => break,
+                    Some(t) => {
+                        if !matches!(t.child.try_wait(), Ok(None)) {
+                            open.remove(&id);
+                            break;
+                        }
+                    }
+                }
+            })
+            .map_err(|e| e.to_string())?;
+    }
     Ok(id)
 }
 
@@ -229,7 +253,7 @@ mod tests {
 
     #[test]
     fn shell_runs_in_the_folder_and_streams_output() {
-        let state = Terminals::default();
+        let state = Shared::default();
         let (tx, rx) = mpsc::channel::<String>();
         let (etx, erx) = mpsc::channel::<u32>();
         let cwd = std::env::temp_dir();
@@ -247,12 +271,21 @@ mod tests {
             },
         )
         .expect("a shell starts");
+        // `$((20+22))` is arithmetic in every POSIX shell and a subexpression in PowerShell, so the
+        // line proves a real shell evaluated it wherever the test runs.
         write(&state, id, "echo dabir-$((20+22)); exit\n").unwrap();
         let mut seen = String::new();
+        let mut answered = false;
         let deadline = std::time::Instant::now() + Duration::from_secs(20);
         while std::time::Instant::now() < deadline && !seen.contains("dabir-42") {
             if let Ok(t) = rx.recv_timeout(Duration::from_millis(200)) {
                 seen.push_str(&t);
+            }
+            // PowerShell asks the terminal where the cursor is (CSI 6 n) before it reads input; a real
+            // terminal answers, so the test does too.
+            if !answered && seen.contains("\x1b[6n") {
+                answered = true;
+                write(&state, id, "\x1b[24;1R").unwrap();
             }
         }
         assert!(seen.contains("dabir-42"), "output: {seen}");
