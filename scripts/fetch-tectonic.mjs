@@ -15,8 +15,10 @@ if (existsSync(out)) { console.log(`tectonic sidecar present: ${out}`); process.
 const assets = {
   "aarch64-apple-darwin": `tectonic-${VERSION}-aarch64-apple-darwin.tar.gz`,
   "x86_64-apple-darwin": `tectonic-${VERSION}-x86_64-apple-darwin.tar.gz`,
-  "x86_64-unknown-linux-gnu": `tectonic-${VERSION}-x86_64-unknown-linux-gnu.tar.gz`,
-  "aarch64-unknown-linux-gnu": `tectonic-${VERSION}-aarch64-unknown-linux-gnu.tar.gz`,
+  // The static musl builds: Tectonic's own -gnu binaries are linked against glibc 2.39, so the sidecar
+  // would not start on Ubuntu 22.04 (2.35) or any distribution older than 2024 even though the app does.
+  "x86_64-unknown-linux-gnu": `tectonic-${VERSION}-x86_64-unknown-linux-musl.tar.gz`,
+  "aarch64-unknown-linux-gnu": `tectonic-${VERSION}-aarch64-unknown-linux-musl.tar.gz`,
   "x86_64-pc-windows-msvc": `tectonic-${VERSION}-x86_64-pc-windows-msvc.zip`,
 };
 const asset = assets[triple];
