@@ -41,6 +41,15 @@ const WRAPS: Record<string, [string, string]> = { abs: ["\\left|", "\\right|"], 
 
 type Tok = { t: "word" | "num" | "str" | "op" | "ws"; v: string };
 
+// Delimiters `lr(...)` may open or close with. Typst matches them in the parser, so `lr(] a, b ])` is legal and
+// means "a bracket on both sides"; each side is read on its own (`\left]` is fine in KaTeX) and `.` stands
+// in for a missing one. Ops are the raw characters; words are Typst's named symbols.
+const LR_OP: Record<string, string> = { "(": "(", ")": ")", "[": "[", "]": "]", "{": "\\{", "}": "\\}", "|": "|", "<": "\\langle", ">": "\\rangle" };
+const LR_WORD: Record<string, string> = {
+  "paren.l": "(", "paren.r": ")", "bracket.l": "[", "bracket.r": "]", "brace.l": "\\{", "brace.r": "\\}", "bar.v": "|", "bar.v.double": "\\|",
+  "angle.l": "\\langle", "angle.r": "\\rangle", "floor.l": "\\lfloor", "floor.r": "\\rfloor", "ceil.l": "\\lceil", "ceil.r": "\\rceil",
+};
+
 function lex(src: string): Tok[] {
   const out: Tok[] = [];
   const re = /\s+|"(?:[^"\\]|\\.)*"|[A-Za-z][A-Za-z0-9]*(?:\.[A-Za-z][A-Za-z0-9]*)*|\d+(?:\.\d+)?|->|<-|=>|<=|>=|!=|:=|\.\.\.|\\\\|\\[^\sA-Za-z]|[^\sA-Za-z0-9"]/gu;
@@ -65,7 +74,8 @@ const OPS: Record<string, string> = { "->": "\\to", "<-": "\\leftarrow", "=>": "
 
 class Parser {
   i = 0;
-  constructor(readonly toks: Tok[]) {}
+  /** Lenient: a closer with no opener is a symbol, not an error (inside `lr`, where Typst allows it). */
+  constructor(readonly toks: Tok[], readonly lenient = false) {}
   peek(k = 0): Tok | undefined { return this.toks[this.i + k]; }
   next(): Tok { const t = this.toks[this.i++]; if (!t) throw new Error("eof"); return t; }
   skipWs() { while (this.peek()?.t === "ws") this.i++; }
@@ -128,6 +138,42 @@ class Parser {
     return `\\left|${inner}\\right|`;
   }
 
+  /**
+   * `lr(...)`: the argument's raw tokens, with the delimiter at each end (if any) taken as the `\left` and
+   * `\right` and the body between them translated on its own. Parens nest; brackets and bars do not, so
+   * `lr(] a, b ])` and `lr(( a, b ])` both read. A trailing `size:` argument is dropped.
+   */
+  lr(): string {
+    this.next(); // (
+    // Any opener pairs with any closer, as in Typst's own parser; a closer with nothing open is a symbol.
+    const toks: Tok[] = [];
+    for (let d = 0; ;) {
+      const t = this.next();
+      if (t.t === "op" && /^[([{]$/.test(t.v)) d++;
+      else if (t.t === "op" && /^[)\]}]$/.test(t.v)) { if (d === 0) { if (t.v === ")") break; } else d--; }
+      toks.push(t);
+    }
+    // Named arguments come after the body: cut at the top-level comma that a `word :` follows.
+    for (let i = 0, d = 0; i < toks.length; i++) {
+      const t = toks[i];
+      if (t.t === "op" && /^[([{]$/.test(t.v)) d++;
+      else if (t.t === "op" && /^[)\]}]$/.test(t.v)) d = Math.max(0, d - 1);
+      else if (d === 0 && t.t === "op" && t.v === ",") {
+        let k = i + 1;
+        while (toks[k]?.t === "ws") k++;
+        if (toks[k]?.t === "word" && toks[k + 1]?.t === "op" && toks[k + 1].v === ":") { toks.length = i; break; }
+      }
+    }
+    const trim = () => { while (toks.length && toks[0].t === "ws") toks.shift(); while (toks.length && toks[toks.length - 1].t === "ws") toks.pop(); };
+    const delim = (t: Tok | undefined) => (t ? (t.t === "op" ? LR_OP[t.v] : t.t === "word" ? LR_WORD[t.v] : undefined) ?? null : null);
+    trim();
+    let open = ".", close = ".";
+    if (toks.length > 1 && delim(toks[0])) { open = delim(toks.shift())!; trim(); }
+    if (toks.length > 0 && delim(toks[toks.length - 1])) { close = delim(toks.pop())!; trim(); }
+    const inner = new Parser(toks, true).seq(() => false).trim();
+    return `\\left${open} ${inner} \\right${close}`;
+  }
+
   /** Call arguments split on top-level commas (and semicolons into rows). Named arguments are dropped. */
   args(): string[][] {
     this.next(); // (
@@ -173,7 +219,7 @@ class Parser {
       if (t.v in OPS) return OPS[t.v];
       if (t.v === "\\") return "\\\\"; // a lone backslash is Typst's line break
       if (t.v[0] === "\\" && t.v.length === 2) return t.v === "\\$" ? "\\$" : t.v[1] === "\\" ? "\\backslash" : `\\${t.v[1]}`;
-      if (t.v === ")" || t.v === "]" || t.v === "}") throw new Error("stray closer");
+      if (t.v === ")" || t.v === "]" || t.v === "}") { if (this.lenient) return t.v === "}" ? "\\}" : t.v; throw new Error("stray closer"); }
       return t.v;
     }
     // word
@@ -189,6 +235,7 @@ class Parser {
       if (w === "limits" || w === "scripts") { const [a] = this.args(); return a[0] ?? ""; }
       if (w in ACCENTS) { const [a] = this.args(); return `${ACCENTS[w]}{${a[0] ?? ""}}`; }
       if (w in STYLES) { const [a] = this.args(); return `${STYLES[w]}{${a.join(" ")}}`; }
+      if (w === "lr") return this.lr();
       if (w in WRAPS) { const [a] = this.args(); return `${WRAPS[w][0]} ${a.join(", ")} ${WRAPS[w][1]}`; }
       if (w === "mat") { const rows = this.args(); return `\\begin{pmatrix}${rows.map((r) => r.join(" & ")).join(" \\\\ ")}\\end{pmatrix}`; }
       if (w === "vec") { const [a] = this.args(); return `\\begin{pmatrix}${a.join(" \\\\ ")}\\end{pmatrix}`; }

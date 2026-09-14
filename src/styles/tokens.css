@@ -20,6 +20,10 @@
   --ink-4: #7a7c84;
 
   /* Brand pigments from the icon (lajvard lapis, saffron). Identity moments only; the UI accent stays madder. */
+  /* Bracket pairs by depth in code files: three tones that read as one family with the ink, not a rainbow. */
+  --bracket-1: #4a5d78;
+  --bracket-2: #7a5470;
+  --bracket-3: #566b4e;
   --lajvard: #22396b;
   --saffron: #e0a62e;
   --accent: #a8322d;
@@ -98,6 +102,9 @@
     --ok: #7dc48a;
     --ok-wash: #22301f;
     --warn: #d9b35a;
+    --bracket-1: #9db4d4;
+    --bracket-2: #cfa3c4;
+    --bracket-3: #a9c49a;
     --warn-wash: #332c18;
     --diff-add: #7dc48a;
     --diff-add-wash: #1f2e22;
@@ -132,6 +139,9 @@
   --ok: #7dc48a;
   --ok-wash: #22301f;
   --warn: #d9b35a;
+  --bracket-1: #9db4d4;
+  --bracket-2: #cfa3c4;
+  --bracket-3: #a9c49a;
   --warn-wash: #332c18;
   --diff-add: #7dc48a;
   --diff-add-wash: #1f2e22;

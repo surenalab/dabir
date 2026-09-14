@@ -4,6 +4,11 @@
 
 import { ChevronRight, CirclePlay, ListEnd, Terminal, WandSparkles, CircleX, TriangleAlert, CircleCheck } from "lucide-react";
 
+/** What the language server (or the file's own linter) says about the open code file, for the bar and the Problems list. */
+export interface LintItem { line: number; severity: "error" | "warning" | "info"; message: string }
+export interface LintReport { errors: number; warnings: number; items: LintItem[] }
+export const NO_LINT: LintReport = { errors: 0, warnings: 0, items: [] };
+
 export interface CodeState {
   run: { label: string; command: string } | null;
   repl: { label: string; command: string } | null;
@@ -11,7 +16,7 @@ export interface CodeState {
   /** The language server in charge: undefined while looking, null when none is installed. */
   server: { command: string } | null | undefined;
   installHint: string | null;
-  lint: { errors: number; warnings: number };
+  lint: LintReport;
   line: number;
   col: number;
 }

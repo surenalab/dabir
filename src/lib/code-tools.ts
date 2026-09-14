@@ -38,7 +38,7 @@ export function runRecipe(rel: string, files: string[] = []): RunRecipe | null {
 /** The interactive shell for a language, which ⇧⏎ then feeds line by line; null when there is none worth opening. */
 export function replCommand(rel: string): { label: string; command: string } | null {
   switch (ext(rel)) {
-    case "py": case "pyi": return { label: "Python", command: "python3" };
+    case "py": case "pyi": case "ipynb": return { label: "Python", command: "python3" };
     case "jl": return { label: "Julia", command: "julia" };
     case "r": return { label: "R", command: "R" };
     case "js": case "mjs": case "cjs": case "ts": case "tsx": case "jsx": return { label: "Node", command: "node" };
