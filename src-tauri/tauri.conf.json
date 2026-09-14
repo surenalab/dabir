@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build && node scripts/fetch-tectonic.mjs",
+    "beforeBuildCommand": "npm run build && node scripts/fetch-tectonic.mjs && node scripts/clean-sample.mjs",
     "frontendDist": "../dist"
   },
   "app": {
@@ -54,8 +54,8 @@
       }
     },
     "resources": {
-      "../templates/**/*": "templates/",
-      "../examples/score-anchor/**/*": "examples/score-anchor/"
+      "../templates": "templates/",
+      "../examples/score-anchor": "examples/score-anchor/"
     }
   },
   "plugins": {
