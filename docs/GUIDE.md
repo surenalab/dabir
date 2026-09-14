@@ -7,14 +7,14 @@ Keys are given for macOS. On Windows and Linux read ⌘ as Ctrl and ⌥ as Alt.
 ## 1. Install and open Dabir
 
 1. Download the build for your machine from the [releases page](https://github.com/surenalab/dabir/releases), or build it yourself with `npm install && npm run tauri build` (Node 22 and Rust stable). Dabir checks for updates itself; Dabir › Check for Updates does it now.
-2. Install **Tectonic** once (`brew install tectonic`, or the Windows and Linux builds from tectonic-typesetting.github.io). It fetches LaTeX packages on first use, so there is nothing else to install. Typst papers compile with `typst` (`brew install typst`).
+2. Nothing else for LaTeX: the **Tectonic** engine ships inside the app and fetches the packages a paper uses on its first compile (a minute or two, once). Typst papers compile with `typst` (`brew install typst`, or the builds from typst.app).
 3. Optional, for agents: install the command-line tool of the agent you already use (Claude Code, Codex, Cursor, Grok or OpenCode). Dabir finds it on your PATH, and the Agent tab shows which were found.
 
 Open Dabir. The welcome screen offers **Open Folder**, **New Paper**, **Import from Overleaf**, **Clone from GitHub**, **Join a Live Session**, and the tour.
 
 ## 2. Take the tour
 
-Click **Take the tour**. Dabir copies a sample paper into `Documents/Dabir/score-anchor-sample` (a manuscript, a bibliography, a figure and a table, and `code/sweep.py`, the script that produced them) and walks through the window on it: files, views, compile, the formatting bar, the outline, the agent, its memory, code, the terminal, history, and sharing. Every step opens the real panel, so you can try each thing as it is explained. → and ← move between steps, Esc leaves; Help › Guided Tour starts it again. The sample stays in your Documents folder to experiment on.
+Click **Take the tour**. Dabir copies a sample paper into `Documents/Dabir/score-anchor-sample` (a manuscript, a bibliography, a figure and a table, and `code/sweep.py`, the script that produced them) and walks through the window on it: files, views, compile, the formatting bar, the outline, the agent, its memory, code, the terminal, history, and sharing. Every step opens the real panel, so you can try each thing as it is explained. → and ← move between steps, Esc leaves; Help › Guided Tour starts it again. The sample stays in your Documents folder to experiment on. Dabir reopens the last paper when it starts; File › Close Paper (⇧⌘W) returns to the welcome screen.
 
 ## 3. Open your paper
 

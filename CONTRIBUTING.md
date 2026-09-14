@@ -78,7 +78,7 @@ Adding a dependency needs the same care in reverse: the pull request names the p
 
 - The gate is green locally and in CI.
 - Tests cover the new behaviour; a bug fix includes the test that failed before.
-- Docs are updated: README if a user sees it, PLAN.md if it changes the state or next steps, AGENTS.md if it changes how agents work, docs/TESTING.md if there is a manual step.
+- Docs are updated: README if a user sees it, docs/GUIDE.md if it changes what the user does, PLAN.md if it changes the state or next steps, docs/HANDOFF.md at the end of a working session, AGENTS.md if it changes how agents work, docs/TESTING.md if there is a manual step.
 - CHANGELOG.md has a line under Unreleased.
 - Screenshots or a capture for any visible change, attached to the pull request.
 - Reviews complete, comments resolved or answered.
