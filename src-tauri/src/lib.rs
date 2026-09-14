@@ -2426,9 +2426,12 @@ pub fn run() {
             }
             #[cfg(target_os = "macos")]
             {
-                use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
+                // The sidebar material behind the window, through Tauri's own effects API (it wraps the same
+                // NSVisualEffectView that the window-vibrancy crate does, without a second copy of that crate).
+                use tauri::window::{Effect, EffectsBuilder};
                 if let Some(window) = app.get_webview_window("main") {
-                    let _ = apply_vibrancy(&window, NSVisualEffectMaterial::Sidebar, None, None);
+                    let _ =
+                        window.set_effects(EffectsBuilder::new().effect(Effect::Sidebar).build());
                 }
             }
             Ok(())

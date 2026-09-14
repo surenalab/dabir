@@ -1,4 +1,6 @@
 # Weekly, grouped, so an update is one pull request per ecosystem rather than one per package.
+# Every pull request costs CI minutes (the Rust job runs on macOS), so majors that cannot move yet are ignored
+# here with the reason; drop the ignore when the blocker is gone.
 version: 2
 updates:
   - package-ecosystem: npm
@@ -9,6 +11,10 @@ updates:
       tauri: { patterns: ["@tauri-apps/*"] }
       minor-and-patch: { update-types: [minor, patch] }
     open-pull-requests-limit: 5
+    ignore:
+      # typescript-eslint's peer range is `<6.1.0`; TypeScript 7 (the native port) waits for it.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: cargo
     directory: /src-tauri
     schedule: { interval: weekly, day: monday }
@@ -16,6 +22,11 @@ updates:
       tauri: { patterns: ["tauri*"] }
       minor-and-patch: { update-types: [minor, patch] }
     open-pull-requests-limit: 5
+    ignore:
+      # yrs-axum 0.8 is built on yrs 0.18 and passes its Doc and Awareness types; two yrs versions cannot mix.
+      # Move both together when yrs-axum follows.
+      - dependency-name: yrs
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: monthly }
