@@ -1,6 +1,6 @@
 # Working on Dabir
 
-Read AGENTS.md first: it is the operating manual for every agent here (Claude Code, Codex, Cursor, Grok, OpenCode) and the only copy of these rules, so it does not drift from this file. CONTRIBUTING.md is the contract; PRODUCT.md and DESIGN.md come before any UI change.
+Read docs/HANDOFF.md (one page: where the project stands, what is next) and then AGENTS.md: it is the operating manual for every agent here (Claude Code, Codex, Cursor, Grok, OpenCode) and the only copy of these rules, so it does not drift from this file. CONTRIBUTING.md is the contract; PRODUCT.md and DESIGN.md come before any UI change.
 
 The three rules most often broken, repeated here so they are not missed:
 

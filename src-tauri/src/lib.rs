@@ -2155,6 +2155,11 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
                 .accelerator("CmdOrCtrl+S")
                 .build(app)?,
         )
+        .item(
+            &MenuItemBuilder::with_id("close-paper", "Close Paper")
+                .accelerator("CmdOrCtrl+Shift+W")
+                .build(app)?,
+        )
         .separator()
         .item(
             &MenuItemBuilder::with_id("share", "Share…")

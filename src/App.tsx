@@ -151,6 +151,9 @@ export default function App() {
   // Files opened this session, as tabs above the editor.
   const [openFiles, setOpenFiles] = useState<string[]>([]);
   const flushRef = useRef<() => Promise<void>>(async () => {});
+  // Close Paper needs the live session and its stop routine, both defined further down.
+  const sessionRef = useRef<Session | null>(null);
+  const stopSessionRef = useRef<() => Promise<void>>(async () => {});
   const selectFile = useCallback(async (path: string) => {
     try {
       await flushRef.current();   // an edit made in the last second must not be lost to the switch
@@ -214,6 +217,20 @@ export default function App() {
     readText(`${p.root}/.dabir/dictionary.txt`).then((t) => setDictionary(t.split("\n").map((w) => w.trim()).filter(Boolean))).catch(() => setDictionary([]));
     if (p.mainTex) await selectFile(p.mainTex); else { setFile(null); setSource(null); }
   }, [selectFile, loadBib, loadMap, refreshGit]);
+
+  // File › Close Paper: back to the welcome screen, and the paper is no longer the one reopened at launch. This is
+  // the way to reach the first-run path (the tour offer) again without clearing the app's data.
+  const closePaper = useCallback(async () => {
+    try { await flushRef.current(); } catch (e) { setError(String(e)); return; }
+    if (sessionRef.current) await stopSessionRef.current();
+    stopLanguageServers();
+    setTour(null); setSheet(null);
+    setProject(null); setFile(null); setSource(null); setOpenFiles([]); setDirty(false);
+    setCompileState({ status: "idle" }); setPdfTarget(null); setError(null);
+    setTerminal({ open: false, focusStamp: 0, run: null });
+    try { localStorage.removeItem("dabir.lastPaper"); } catch { /* private mode */ }
+    setWindowTitle("Dabir");
+  }, []);
 
   const reloadProject = useCallback(async () => {
     if (!project) return;
@@ -501,6 +518,7 @@ export default function App() {
     // The host's checkout is the record of the session: suggest the commit.
     if (live?.host) { setCommitDraft(`Live session${names.length ? ` with ${names.join(", ")}` : ""}`); setNavOpen(true); }
   }, [session, live, peers]);
+  useEffect(() => { sessionRef.current = session; stopSessionRef.current = stopSession; }, [session, stopSession]);
 
   // Every client writes shared files it does not have open to its own disk, so the host's checkout
   // and each joiner's mirror stay complete even for files only somebody else is editing.
@@ -803,6 +821,7 @@ export default function App() {
   const command = useCallback((id: string) => {
     switch (id) {
       case "open": open(); break;
+      case "close-paper": if (project) closePaper(); break;
       case "new": setSheet("new"); break;
       case "import-overleaf": importFromOverleaf(); break;
       case "clone": setSheet("clone"); break;
@@ -861,7 +880,7 @@ export default function App() {
         checkForUpdates(async (v, notes) => window.confirm(`Dabir ${v} is available.\n\n${notes}\n\nDownload and restart now?`)).then(setNote).catch((e) => setNote(String(e)));
         break;
     }
-  }, [open, startTour, importFromOverleaf, save, compile, showInPdf, toggleNav, toggleInspector, toggleTerminal, openFindPaper, toggleFocusMode, inspectorOpen, navOpen, runGrammar, mode, cycleFile, closeFile, file, project, runFile, runSelection, openRepl, formatDocument, settings.formatOnSave]);
+  }, [open, startTour, closePaper, importFromOverleaf, save, compile, showInPdf, toggleNav, toggleInspector, toggleTerminal, openFindPaper, toggleFocusMode, inspectorOpen, navOpen, runGrammar, mode, cycleFile, closeFile, file, project, runFile, runSelection, openRepl, formatDocument, settings.formatOnSave]);
 
   useEffect(() => onMenu(command), [command]);
   useEffect(() => onCompileProgress((line) => setProgress(line.length > 90 ? line.slice(0, 87) + "…" : line)), []);
