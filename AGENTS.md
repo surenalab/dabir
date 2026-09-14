@@ -1,5 +1,7 @@
 # Working on Dabir
 
+New session? Read docs/HANDOFF.md first: one page with the state, what was just done, what is next and the traps. Update it at the end of your session, in the same commit as the work.
+
 Read PRODUCT.md and DESIGN.md before touching UI. Tokens live in src/styles/tokens.css; never hard-code a colour, face or spacing value in a component.
 
 - Front end: React 19 + TypeScript in src/. Rust core in src-tauri/src/ (`lib.rs` holds the commands; logic lives in modules: `git`, `agents`, `memory`, `paper`, `lsp`, `terminal`, `templates`, `export`, `relay`). Commands are the only bridge, reached from `src/lib/backend.ts`.
@@ -7,7 +9,7 @@ Read PRODUCT.md and DESIGN.md before touching UI. Tokens live in src/styles/toke
 - Check before commit: `npm run check` (scripts/check.sh: types, lint, build, fmt, clippy, Rust tests, script tests, design detector). `SKIP_RUST=1` for the front-end half.
 - UI changes: run `/impeccable critique` on the screen and consult .agents/skills/apple-design-skill for the matching HIG article.
 - A paper project's own memory format is documented in examples/score-anchor/.dabir/.
-- Where things are written down: PLAN.md (state, log, decisions), CONTRIBUTING.md (the contract), docs/GUIDE.md (what the user sees), docs/REVIEW.md (review rubric), docs/TESTING.md (manual checks), CHANGELOG.md (one line per change under Unreleased). Update the one your change touches in the same pull request.
+- Where things are written down: docs/HANDOFF.md (the one-page state for the next session), PLAN.md (state, log, decisions), CONTRIBUTING.md (the contract), docs/GUIDE.md (what the user sees), docs/REVIEW.md (review rubric), docs/TESTING.md (manual checks), CHANGELOG.md (one line per change under Unreleased). Update the one your change touches in the same pull request.
 
 ## Rules every agent follows here
 - Commits are authored by the owner. Never add Co-Authored-By or any AI attribution trailer.
