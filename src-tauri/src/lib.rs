@@ -1328,6 +1328,13 @@ fn term_close(terms: tauri::State<terminal::Shared>, id: u32) {
 /// so this is how a "nothing happened" report becomes a cause.
 #[tauri::command]
 fn ui_log(app: AppHandle, message: String) {
+    append_ui_log(&app, &message);
+}
+
+/// One line to `ui.log` in the platform's log folder (`~/Library/Logs/Dabir`, `%LOCALAPPDATA%\\com.surenalab.dabir\\logs`,
+/// `~/.local/share/com.surenalab.dabir/logs`). The web view sends its errors here; the app itself writes a line at
+/// launch so the file exists from the first run and a tester can tail it.
+fn append_ui_log(app: &AppHandle, message: &str) {
     use std::io::Write as _;
     let Ok(dir) = app.path().app_log_dir() else {
         return;
@@ -2477,6 +2484,15 @@ pub fn run() {
             if let Some(dir) = setup::init(app.handle()) {
                 agents::register_tool_dir(dir);
             }
+            append_ui_log(
+                app.handle(),
+                &format!(
+                    "launch: Dabir {} on {} {}",
+                    env!("CARGO_PKG_VERSION"),
+                    std::env::consts::OS,
+                    std::env::consts::ARCH
+                ),
+            );
             #[cfg(target_os = "macos")]
             {
                 // The sidebar material behind the window, through Tauri's own effects API (it wraps the same
@@ -2570,6 +2586,17 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
+    /// A repository for a test: `git::init` plus `core.autocrlf=false`, so the files the test writes
+    /// with `\n` come back with `\n` on a Windows machine whose global Git config converts line endings.
+    fn init_repo(dir: &Path) {
+        git::init(dir).unwrap();
+        let repo = git2::Repository::open(dir).unwrap();
+        repo.config()
+            .unwrap()
+            .set_bool("core.autocrlf", false)
+            .unwrap();
+    }
+
     use super::*;
 
     #[test]
@@ -2655,7 +2682,7 @@ mod tests {
         .unwrap();
         let st = git::status(&dir).unwrap();
         assert!(!st.is_repo);
-        git::init(&dir).unwrap();
+        init_repo(&dir);
         let st = git::status(&dir).unwrap();
         assert!(st.is_repo);
         assert!(st
@@ -2680,11 +2707,20 @@ mod tests {
         assert!(m.provenance[0].missing);
         assert!(m.pointers.contains(&"AGENTS.md".to_string()));
         assert_eq!(m.skills.len(), 6, "starter skills");
-        assert!(
-            dir.join(".agents/skills/dabir-compile-and-fix/SKILL.md")
-                .exists(),
-            "skill symlink resolves"
-        );
+        if cfg!(unix) {
+            assert!(
+                dir.join(".agents/skills/dabir-compile-and-fix/SKILL.md")
+                    .exists(),
+                "skill symlink resolves"
+            );
+        } else {
+            // No symlinks without a privilege on Windows: a pointer file stands in for the link.
+            assert!(
+                dir.join(".agents/skills/dabir-compile-and-fix.md")
+                    .is_file(),
+                "skill pointer file written"
+            );
+        }
         let pack = memory::context_pack(&dir, "intro section", 2000);
         assert!(
             pack.contains("main.tex:"),
@@ -2714,7 +2750,7 @@ mod tests {
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("main.tex"), "\\documentclass{article}\nbody\n").unwrap();
         fs::write(dir.join("notes.tex"), "notes\n").unwrap();
-        git::init(&dir).unwrap();
+        init_repo(&dir);
         git::commit(&dir, "init", None).unwrap();
         let wt = git::worktree_add(&dir, "f1").unwrap();
         // The agent changes main.tex; meanwhile the author edits notes.tex, adds refs.bib, and also
@@ -2797,7 +2833,7 @@ mod tests {
         fs::create_dir_all(&paper).unwrap();
         fs::write(paper.join("main.tex"), "\\documentclass{article}\n").unwrap();
         fs::write(repo.join("README.md"), "top\n").unwrap();
-        git::init(&repo).unwrap();
+        init_repo(&repo);
         git::commit(&repo, "init", None).unwrap();
         let wt = git::worktree_add(&paper, "n1").unwrap();
         assert!(
@@ -2845,7 +2881,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("dabir-seed-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("main.tex"), "one\ntwo\nthree\n").unwrap();
-        git::init(&dir).unwrap();
+        init_repo(&dir);
         git::commit(&dir, "init", None).unwrap();
         fs::write(dir.join("main.tex"), "one\ntwo edited\nthree\n").unwrap();
         fs::write(dir.join("notes.tex"), "new file\n").unwrap();
@@ -2981,7 +3017,7 @@ mod tests {
         let p = open_project(dir.to_string_lossy().to_string()).unwrap();
         assert!(p.tree_truncated);
         assert!(p.tree.len() <= TREE_BUDGET);
-        assert!(p.main_tex.unwrap().ends_with("paper/thesis.tex"));
+        assert!(Path::new(&p.main_tex.unwrap()).ends_with(Path::new("paper").join("thesis.tex")));
         let empty = std::env::temp_dir().join(format!("dabir-empty-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&empty).unwrap();
         let q = open_project(empty.to_string_lossy().to_string()).unwrap();
@@ -3126,7 +3162,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("dabir-ckpt-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("main.tex"), "one\n").unwrap();
-        git::init(&dir).unwrap();
+        init_repo(&dir);
         git::commit(&dir, "init", None).unwrap();
         assert!(git::checkpoint(&dir, "nothing changed").unwrap().is_none());
         fs::write(dir.join("main.tex"), "two\n").unwrap();
@@ -3392,7 +3428,7 @@ mod tests {
         ] {
             let _ = fs::copy(src.join(f), dir.join(f));
         }
-        git::init(&dir).unwrap();
+        init_repo(&dir);
         git::commit(&dir, "seed", None).unwrap();
         let run_id = "live1".to_string();
         let wt = git::worktree_add(&dir, &run_id).unwrap();
@@ -3679,7 +3715,7 @@ mod tests {
                 );
                 fs::write(&p, body.replacen(&m.find, &m.replace, 1)).unwrap();
             }
-            git::init(&dir).unwrap();
+            init_repo(&dir);
             git::commit(&dir, "seed", None).unwrap();
             let run_id = format!("bench-{}", task.id);
             let wt = git::worktree_add(&dir, &run_id).unwrap();
