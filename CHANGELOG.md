@@ -4,6 +4,12 @@ Newest first. Every merged pull request adds a line under Unreleased; a release 
 
 ## Unreleased
 
+- Fixed, Windows: a shell that exited left its terminal pane looking alive. ConPTY keeps the output pipe open until the pseudo-console is closed, so the end of the shell never reached the reader; a watcher now polls the child and closes the console when it is gone, and the pane shows `[shell exited]` as on the Mac.
+- Fixed, Linux: the bundled Tectonic was the glibc build (needs 2.39), so no LaTeX paper compiled on Ubuntu 22.04 or any distribution from before 2024 although the app itself ran; `fetch-tectonic.mjs` takes Tectonic's static musl build for the Linux targets. Setup no longer calls the engine Ready when it cannot start: the row goes amber with the loader's message (`setup_status.latexError`) and *Fetch packages* fails at once instead of after a download.
+- Fixed, Windows and Linux: every shortcut shown in the app said ⌘. `keys.ts` `chord()` writes a chord in the platform's words (Ctrl, Alt, Shift, Enter) and the shortcut sheet, the tour stops, the format bar, the toolbar and code bar tooltips, the Agent composer hint, Settings and the status notes go through it.
+- Fixed: the middle column of the window grid was `1fr`, whose floor is its content's minimum width, so on the first launch the title bar and the inspector could be pushed past the right edge and the Setup sheet's buttons clipped; `minmax(0, 1fr)`. The "No manuscript in …" heading wraps long folder names instead of printing over them.
+- The app writes a `launch: Dabir <version> on <os> <arch>` line to `ui.log` at every start, so the log file exists from the first run and a tester can tail it.
+- Tests pass on a Windows checkout: repositories the tests create set `core.autocrlf=false`, paths are compared as paths, the skill link assertion accepts the pointer file Windows writes instead of a symlink, and the terminal test answers PowerShell's cursor-position query.
 - Fixed, Windows: every tool Dabir ran (the Setup checks, `--version` probes, sign-in probes, Tectonic, Typst, pandoc, git) flashed a console window, at launch, when the window regained focus and each time Setup opened; the shared `spawn::tool` now starts them with `CREATE_NO_WINDOW`. And agents were never found there: the home directory came from `$HOME`, unset on Windows, so `~/.local/bin` and `~/.grok/bin` were looked up under the drive root, and `claude.exe` was not matched by a lookup for `claude`; `spawn::home_dir` reads `%USERPROFILE%` and `spawn::bin_in` also accepts `.exe` and `.cmd`.
 
 ## 0.1.2
