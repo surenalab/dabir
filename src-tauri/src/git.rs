@@ -60,11 +60,11 @@ pub fn status(root: &Path) -> Result<GitStatus, String> {
     let branch = repo
         .head()
         .ok()
-        .and_then(|h| h.shorthand().map(|s| s.to_string()));
+        .and_then(|h| h.shorthand().ok().map(|s| s.to_string()));
     let remote = repo
         .find_remote("origin")
         .ok()
-        .and_then(|r| r.url().map(|u| u.to_string()));
+        .and_then(|r| r.url().ok().map(|u| u.to_string()));
 
     let mut opts = StatusOptions::new();
     opts.include_untracked(true)
@@ -161,7 +161,7 @@ pub fn status(root: &Path) -> Result<GitStatus, String> {
                 if let Ok(c) = repo.find_commit(oid) {
                     recent.push(CommitInfo {
                         id: oid.to_string()[..7].to_string(),
-                        summary: c.summary().unwrap_or("").to_string(),
+                        summary: c.summary().ok().flatten().unwrap_or("").to_string(),
                         author: c.author().name().unwrap_or("").to_string(),
                         when: c.time().seconds(),
                     });
@@ -850,7 +850,7 @@ const CHECKPOINT_REF: &str = "refs/dabir/checkpoints";
 const CHECKPOINT_MARK: &str = "\n\nDabir-Snapshot: 1";
 
 fn snapshot_message(c: &git2::Commit) -> Option<String> {
-    let m = c.message()?;
+    let m = c.message().ok()?;
     m.strip_suffix(CHECKPOINT_MARK.trim_start_matches('\n'))
         .map(|s| s.trim().to_string())
         .or_else(|| {
