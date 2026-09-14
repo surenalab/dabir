@@ -58,6 +58,9 @@ pub struct Status {
     pub typst_size_mb: u64,
     pub agents: Vec<AgentStatus>,
     pub pandoc: Option<String>,
+    /// The one-line install for pandoc on this machine (its package manager), or None when there is no
+    /// package manager to call and the installer at pandoc.org is the way.
+    pub pandoc_install: Option<String>,
     pub gh: Option<String>,
     pub home: String,
     pub platform: &'static str,
@@ -177,6 +180,27 @@ fn latex_ready(cache: Option<&Path>) -> bool {
         .unwrap_or(false)
 }
 
+/// How pandoc is installed here: Homebrew on macOS, the distribution's package manager on Linux, winget on
+/// Windows. None when none of them is present; the Setup sheet then points at pandoc.org.
+fn pandoc_install() -> Option<String> {
+    match std::env::consts::OS {
+        "macos" => which("brew").map(|_| "brew install pandoc".to_string()),
+        "windows" => {
+            which("winget").map(|_| "winget install --id JohnMacFarlane.Pandoc -e".to_string())
+        }
+        _ => [
+            ("apt-get", "sudo apt-get install -y pandoc"),
+            ("dnf", "sudo dnf install -y pandoc"),
+            ("pacman", "sudo pacman -S --noconfirm pandoc"),
+            ("zypper", "sudo zypper install -y pandoc"),
+            ("brew", "brew install pandoc"),
+        ]
+        .iter()
+        .find(|(bin, _)| which(bin).is_some())
+        .map(|(_, cmd)| cmd.to_string()),
+    }
+}
+
 fn which(bin: &str) -> Option<PathBuf> {
     let path = agents::agent_path();
     std::env::split_paths(&path)
@@ -232,6 +256,7 @@ pub fn status(tectonic: Option<PathBuf>, typst: Option<PathBuf>) -> Status {
         typst_size_mb: typst_asset().1,
         agents: agents_with_sign_in(),
         pandoc: which("pandoc").map(|p| p.to_string_lossy().to_string()),
+        pandoc_install: pandoc_install(),
         gh: which("gh").map(|p| p.to_string_lossy().to_string()),
         home: std::env::var("HOME")
             .or_else(|_| std::env::var("USERPROFILE"))

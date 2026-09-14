@@ -128,6 +128,12 @@ export function SetupSheet({ firstRun, onClose, focus }: Props) {
                 : <>Only for Typst papers. Dabir can download the compiler ({status.typstSizeMb} MB, from Typst's own release) and keep it inside the app.</>}
               progress={typst.running ? typst : null}
               action={status && !status.typst.path && !typst.running ? <button className="btn" onClick={() => start("typst")}>{typst.done && !typst.ok ? "Try again" : "Download Typst"}</button> : null} />
+            <Row id="pandoc" small state={!status ? "wait" : status.pandoc ? "ok" : "todo"} title="Word and HTML export"
+              detail={!status ? "Checking…"
+                : status.pandoc ? <>Ready. <code>pandoc</code> at <code>{status.pandoc}</code>.</>
+                : status.pandocInstall ? <>Only for File › Export to Word or HTML. Installs <code>pandoc</code> with <code>{status.pandocInstall}</code>, shown as it runs.</>
+                : <>Only for File › Export to Word or HTML. Install <code>pandoc</code> from <a href="https://pandoc.org/installing.html" target="_blank" rel="noreferrer">pandoc.org</a>, then check again.</>}
+              action={status && !status.pandoc && status.pandocInstall ? <button className="btn small" onClick={() => runInShell(status.pandocInstall!, "the pandoc installer")}>Install pandoc</button> : null} />
           </section>
 
           <section aria-labelledby="setup-agents" data-row="agents">
@@ -177,7 +183,6 @@ export function SetupSheet({ firstRun, onClose, focus }: Props) {
         <footer className="setup-foot">
           <span className="setup-summary" aria-live="polite">
             {ready == null ? "" : ready === 3 ? "Everything a paper needs is here." : `${ready} of 3 ready · LaTeX, Typst, an agent`}
-            {status && status.pandoc == null ? <> · Word export needs <code>pandoc</code></> : null}
           </span>
           <button className="btn" onClick={refresh}>Check again</button>
           <button className="btn primary" onClick={finish}>{firstRun ? "Continue" : "Done"}</button>

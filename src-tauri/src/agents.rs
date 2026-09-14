@@ -844,6 +844,38 @@ pub fn signed_in(id: &str) -> Option<bool> {
             )
         }
         "opencode" => {
+            // A provider key in the environment is enough for OpenCode.
+            if [
+                "ANTHROPIC_API_KEY",
+                "OPENAI_API_KEY",
+                "OPENROUTER_API_KEY",
+                "GEMINI_API_KEY",
+                "GOOGLE_GENERATIVE_AI_API_KEY",
+                "XAI_API_KEY",
+                "GROQ_API_KEY",
+                "MISTRAL_API_KEY",
+            ]
+            .iter()
+            .any(|k| key(k))
+            {
+                return Some(true);
+            }
+            // `opencode auth login` writes the credentials file under the XDG data dir; an empty `{}` means
+            // every provider was logged out. That is a definite answer, and cheaper than the CLI.
+            let data = std::env::var("XDG_DATA_HOME")
+                .map(PathBuf::from)
+                .ok()
+                .or_else(|| {
+                    std::env::var("HOME")
+                        .ok()
+                        .map(|h| PathBuf::from(h).join(".local/share"))
+                });
+            if let Some(auth) = data.map(|d| d.join("opencode/auth.json")) {
+                if let Ok(m) = std::fs::metadata(&auth) {
+                    return Some(m.len() > 2);
+                }
+            }
+            // No file: ask the CLI, whose `auth list` prints one line per stored credential.
             let (ok, out) = probe(&bin, &["auth", "list"], 6)?;
             if !ok {
                 return None;

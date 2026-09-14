@@ -22,6 +22,7 @@ A paper is a Git repository that also holds the code that made its figures. The 
 1. **2026-09-13, sweep.py corruption → tour → plumbing.** The sample's `code/sweep.py` had become `main.tex`: undo after a file switch restored the old text into the new file and autosave wrote it. Fixed in `SourceEditor` (swap in a layout effect, history compartment reset, `addToHistory: false`) and `App` (save/flush read synchronous refs). Then: the welcome screen's *Take the tour* (twelve spotlight stops on a copy of the sample under `~/Documents/Dabir`), `docs/GUIDE.md`, CI split by path, contribution scheme (issue templates, Dependabot, SECURITY, CoC, CLA, TRADEMARK), licence review (AGPL kept, notice in About).
 2. **2026-09-14, early.** Found that Tauri flattens glob resources: the installed app's `templates/` and the sample were flat folders. Both are now directory resources; `scripts/clean-sample.mjs` runs before a build.
 3. **2026-09-14, later.** First-run **Setup** sheet (`SetupSheet.tsx`, `setup.rs`): checks LaTeX cache, Typst, agent CLIs, language servers, name; fetches LaTeX packages and downloads Typst itself with progress; installs agents and servers by typing the vendor's command into a terminal inside the sheet; reopens from Help and Settings; point-of-use links from a Typst compile without Typst and from the Agent tab. Live tests `cargo test -- --ignored setup::` hit the real Typst release and the bundled engine. Before that: Dependabot's thirteen PRs taken as one branch (`82c809c`): React 19.3, git2 0.21 (Result accessors), zip 4, toml 1, action bumps incl. tauri-action v1; `window-vibrancy` and `@types/diff` removed; `yrs` and TypeScript 7 held with reasons in `dependabot.yml`. AGENTS.md refreshed, CLAUDE.md made a pointer, CONTRIBUTING.md gained "Dependency updates". Then File › Close Paper (⇧⌘W) and `scripts/first-run.sh`, because the app reopens the last paper and the owner could not reach the welcome screen to test the tour.
+4. **2026-09-14, afternoon: the engineering backlog.** LSP `documentSymbol` outline with the regex fallback; language-server diagnostics in the Problems list (`LintReport`, category `code`); read-only `.ipynb` viewer (`Notebook.tsx`) and a sample notebook; bracket-pair colours and sticky scroll for code files (`bracket-colours.ts`, `sticky-scroll.ts`); Typst `#stack`, `#columns`, richer `#bibliography` chip, token-level `lr` parsing; pandoc install row in Setup linked from Export; OpenCode sign-in from its `auth.json`.
 
 ## Open, in order
 
@@ -31,12 +32,9 @@ A paper is a Git repository that also holds the code that made its figures. The 
 3. Test the first launch: `scripts/first-run.sh --install` opens Setup; try *Fetch packages* (already warm here, so it reads Ready), an agent *Install*/*Sign in* in the in-sheet shell, *Continue*, then *Take the tour*; report anything that felt wrong by row or stop.
 4. Windows and Linux installers against docs/TESTING.md; a two-machine live session.
 
-**Engineering, by value**
-1. LSP document symbols for the code outline (regex outline is the fallback).
-2. Problems list fed by language-server diagnostics.
-3. `.ipynb` viewing; bracket-pair colours; sticky scroll.
-4. Typst visual gaps: `#stack`, `#columns`, `#bibliography` styles, `lr` with mismatched delimiters.
-5. Deferred by decision: SSH level two, plugin API, hosted relay, continuation latency.
+**Engineering**
+- The backlog is empty as of 2026-09-14 (LSP outline, Problems from language servers, notebooks, bracket colours, sticky scroll, Typst `#stack`/`#columns`/`#bibliography`/`lr`, pandoc in Setup, OpenCode sign-in all landed). Deferred by decision: SSH level two, plugin API, hosted relay, continuation latency. New items come from the owner's hands-on pass and from users.
+- Untested on real servers: the LSP outline was written against the protocol (pyright returns hierarchical `DocumentSymbol`s); open `code/sweep.py` with pyright installed and check the sidebar shows methods nested under classes. Sticky scroll and bracket colours were checked in the browser preview only.
 
 ## Traps that have already cost time
 

@@ -26,7 +26,7 @@ import { rust } from "@codemirror/lang-rust";
 import { css } from "@codemirror/lang-css";
 import { html } from "@codemirror/lang-html";
 
-export type FileKind = "tex" | "typst" | "bib" | "code" | "prose" | "data" | "text";
+export type FileKind = "tex" | "typst" | "bib" | "code" | "notebook" | "prose" | "data" | "text";
 
 /** What kind of file a path names, by extension; null and unknown extensions are plain text. */
 export function fileKind(path: string | null): FileKind {
@@ -34,6 +34,7 @@ export function fileKind(path: string | null): FileKind {
   if (["tex", "sty", "cls", "ltx", "dtx", "bbx", "cbx"].includes(ext)) return "tex";
   if (ext === "typ") return "typst";
   if (ext === "bib") return "bib";
+  if (ext === "ipynb") return "notebook";
   if (["py", "pyi", "jl", "r", "sh", "bash", "zsh", "m", "js", "jsx", "mjs", "cjs", "ts", "tsx", "rs", "c", "cc", "cpp", "cxx", "h", "hh", "hpp", "cu", "cuh", "f", "f90", "f95", "lua", "sql", "css", "html", "htm", "svelte", "vue"].includes(ext)) return "code";
   if (["cmake", "dockerfile"].includes(ext) || /(^|\/)(CMakeLists\.txt|Dockerfile|Makefile)$/.test(path ?? "")) return "code";
   if (["md", "markdown", "txt", "rst"].includes(ext)) return "prose";

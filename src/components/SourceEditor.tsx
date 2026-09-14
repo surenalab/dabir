@@ -2,7 +2,10 @@ import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef } f
 import { EditorState, Compartment, StateEffect, StateField, Prec, Transaction } from "@codemirror/state";
 import { logUi } from "../lib/diag";
 import { forEachDiagnostic, nextDiagnostic, setDiagnostics } from "@codemirror/lint";
+import { NO_LINT, type LintItem, type LintReport } from "./CodeBar";
 import { todoHighlight } from "../lib/todo-highlight";
+import { bracketColours } from "../lib/bracket-colours";
+import { stickyScroll } from "../lib/sticky-scroll";
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, dropCursor, rectangularSelection, crosshairCursor, Decoration, hoverTooltip, type DecorationSet } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, indentWithTab, undo, redo } from "@codemirror/commands";
 import { bracketMatching, syntaxHighlighting, HighlightStyle, indentOnInput, foldGutter, foldKeymap } from "@codemirror/language";
@@ -44,7 +47,7 @@ const highlight = HighlightStyle.define([
 ]);
 
 /** Code files share the manuscript's palette: keywords where LaTeX has commands, names where it has environments. */
-const codeHighlight = HighlightStyle.define([
+export const codeHighlight = HighlightStyle.define([
   { tag: [tags.keyword, tags.controlKeyword, tags.operatorKeyword, tags.definitionKeyword, tags.moduleKeyword], class: "tok-cmd" },
   { tag: tags.comment, class: "tok-cmt" },
   { tag: [tags.string, tags.special(tags.string), tags.regexp], class: "tok-str" },
@@ -176,7 +179,7 @@ interface Props {
   /** Which language server took the file, or null when none is installed; undefined while looking. */
   onLanguageServer?: (server: { command: string } | null) => void;
   /** Counts of the editor's own diagnostics (language server, linters), when they change. */
-  onLint?: (counts: { errors: number; warnings: number }) => void;
+  onLint?: (report: LintReport) => void;
 }
 
 const sourceOnly = (path: string | null) => [
@@ -185,6 +188,8 @@ const sourceOnly = (path: string | null) => [
   errorLens(lintSource, marksSource),
   todoHighlight(),
   ...(fileKind(path) === "tex" ? [matchingEnvironment(), headingEmphasis()] : []),
+  // Code files: bracket pairs coloured by depth, the enclosing block headers pinned while their bodies scroll.
+  ...(fileKind(path) === "code" ? [bracketColours(), stickyScroll(codeHighlight)] : []),
   // Code files: guides down each indentation level, as an IDE draws them.
   ...(fileKind(path) === "code" || fileKind(path) === "data" ? [indentationMarkers({ hideFirstIndent: true, thickness: 1, colors: { light: "rgba(29,31,36,0.12)", dark: "rgba(255,255,255,0.12)", activeLight: "rgba(29,31,36,0.3)", activeDark: "rgba(255,255,255,0.3)" } })] : []),
 ];
@@ -268,7 +273,7 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
   const onRunSelRef = useRef(onRunSelection); onRunSelRef.current = onRunSelection;
   const onServerRef = useRef(onLanguageServer); onServerRef.current = onLanguageServer;
   const onLintRef = useRef(onLint); onLintRef.current = onLint;
-  const lintSeen = useRef({ errors: -1, warnings: -1 });
+  const lintSeen = useRef<string | null>(null);
   const assistRef = useRef(assist); assistRef.current = assist;
   const langComp = useRef(new Compartment());
   const lspComp = useRef(new Compartment());
@@ -334,8 +339,13 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
           }
           if (onLintRef.current && u.transactions.some((tr) => tr.effects.length > 0)) {
             let errors = 0, warnings = 0;
-            forEachDiagnostic(u.state, (d) => { if (d.severity === "error") errors++; else if (d.severity === "warning") warnings++; });
-            if (errors !== lintSeen.current.errors || warnings !== lintSeen.current.warnings) { lintSeen.current = { errors, warnings }; onLintRef.current({ errors, warnings }); }
+            const items: LintItem[] = [];
+            forEachDiagnostic(u.state, (d) => {
+              if (d.severity === "error") errors++; else if (d.severity === "warning") warnings++;
+              if (d.severity === "error" || d.severity === "warning" || d.severity === "info") items.push({ line: u.state.doc.lineAt(d.from).number, severity: d.severity, message: d.message });
+            });
+            const key = items.map((i) => `${i.line}:${i.severity}:${i.message}`).join("\n");
+            if (key !== lintSeen.current) { lintSeen.current = key; onLintRef.current({ errors, warnings, items }); }
           }
           if (!loading.current) {
             const c = changesIn(u.state);
@@ -372,8 +382,8 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
   }, [assist]); // eslint-disable-line react-hooks/exhaustive-deps
   /** A language server, when one is installed for this kind of file; the answer may arrive after another file opened. */
   const attachLanguageServer = (path: string | null, root: string | null) => {
-    lintSeen.current = { errors: -1, warnings: -1 };
-    onLintRef.current?.({ errors: 0, warnings: 0 });
+    lintSeen.current = null;
+    onLintRef.current?.(NO_LINT);
     if (path && root && !isManuscript(path)) {
       languageServerFor(root, `${root}/${path}`).then((got) => {
         if (pathRef.current !== path) return;

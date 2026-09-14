@@ -157,13 +157,14 @@ class TypstTableWidget extends VzWidget {
   ignoreEvent() { return false; }
 }
 
-/** A `#grid(...)`: its cells side by side in as many columns as it declares, each cell as inline markup. */
+/** A `#grid(...)`: its cells side by side in as many columns as it declares, each cell as inline markup.
+ * A `#stack(...)` is the same widget in one column (or one row for `dir: ltr`), without the grid's frame. */
 class GridWidget extends VzWidget {
-  constructor(readonly cells: string[], readonly columns: number, readonly from: number) { super(); }
-  eq(o: GridWidget) { return this.sameBadges(o) && o.columns === this.columns && JSON.stringify(o.cells) === JSON.stringify(this.cells); }
+  constructor(readonly cells: string[], readonly columns: number, readonly from: number, readonly kind: "grid" | "stack" = "grid") { super(); }
+  eq(o: GridWidget) { return this.sameBadges(o) && o.kind === this.kind && o.columns === this.columns && JSON.stringify(o.cells) === JSON.stringify(this.cells); }
   render() {
     const el = document.createElement("div");
-    el.className = "vz-grid";
+    el.className = this.kind === "stack" ? "vz-grid vz-stack" : "vz-grid";
     el.dataset.from = String(this.from);
     el.style.gridTemplateColumns = `repeat(${this.columns}, minmax(0, 1fr))`;
     for (const c of this.cells) {
@@ -172,6 +173,39 @@ class GridWidget extends VzWidget {
       if (fig) { const img = document.createElement("div"); img.className = "vz-grid-image"; img.textContent = fig[1].split("/").pop() ?? fig[1]; cell.appendChild(img); }
       else cell.innerHTML = inlineTypst(c);
       el.appendChild(cell);
+    }
+    return el;
+  }
+  ignoreEvent() { return false; }
+}
+
+/** The children of a `stack(...)` and whether they run across (`dir: ltr` or `rtl`) rather than down. */
+function parseStack(args: string): { cells: string[]; across: boolean } | null {
+  const [pos, named] = splitArgs(args);
+  const cells = pos.map(unwrap).filter((c) => c.trim());
+  const dir = named.dir?.trim() ?? "ttb";
+  return cells.length ? { cells: dir === "rtl" ? cells.reverse() : cells, across: dir === "ltr" || dir === "rtl" } : null;
+}
+
+/** A `#columns(n)[...]`: the body flowing through n columns, paragraph by paragraph. Block-level pieces inside
+ * (headings, display math, figures) are set as text; click to edit them in the source. */
+class ColumnsWidget extends VzWidget {
+  constructor(readonly body: string, readonly columns: number, readonly from: number) { super(); }
+  eq(o: ColumnsWidget) { return this.sameBadges(o) && o.columns === this.columns && o.body === this.body; }
+  render() {
+    const el = document.createElement("div");
+    el.className = "vz-columns";
+    el.dataset.from = String(this.from);
+    el.style.columnCount = String(this.columns);
+    el.title = `${this.columns} columns; click to edit`;
+    for (const para of this.body.split(/\n\s*\n/)) {
+      const lines = para.split("\n").map((l) => l.trim()).filter(Boolean);
+      // A heading line stands on its own; the lines after it are the paragraph that follows.
+      while (lines.length && /^=+\s+/.test(lines[0])) {
+        const h = document.createElement("h4"); h.innerHTML = inlineTypst(lines.shift()!.replace(/^=+\s+/, "")); el.appendChild(h);
+      }
+      if (!lines.length) continue;
+      const p = document.createElement("p"); p.innerHTML = inlineTypst(lines.join(" ")); el.appendChild(p);
     }
     return el;
   }
@@ -306,6 +340,33 @@ export function buildTypstDecorations(state: EditorState): DecorationSet {
     if (selectionTouches(state, from, end)) { push(from, from + m[0].length, mark("vz-envtag")); push(to - 1, to, mark("vz-envtag")); continue; }
     push(from, end, Decoration.replace({ widget: badge(new GridWidget(parsed.cells, parsed.columns, from), from, end), block: true }));
   }
+  // Stacks: #stack(dir: ttb, spacing: 1em, [a], [b]) on its own becomes its children one under the other.
+  const stackRe = /^#stack\(/gm;
+  while ((m = stackRe.exec(text))) {
+    const from = m.index, to = closeOf(text, m.index + m[0].length - 1);
+    if (to < 0 || from < preambleEnd || blocked.some(([a, b]) => from >= a && from < b)) continue;
+    const parsed = parseStack(text.slice(from + m[0].length, to - 1));
+    if (!parsed) continue;
+    blocked.push([from, to]);
+    if (selectionTouches(state, from, to)) { push(from, from + m[0].length, mark("vz-envtag")); push(to - 1, to, mark("vz-envtag")); continue; }
+    push(from, to, Decoration.replace({ widget: badge(new GridWidget(parsed.cells, parsed.across ? parsed.cells.length : 1, from, "stack"), from, to), block: true }));
+  }
+  // Columns: #columns(2)[ body ] or #columns(2, gutter: 1em)[ body ] shows the body flowing in that many columns.
+  const colRe = /^#columns\(/gm;
+  while ((m = colRe.exec(text))) {
+    const from = m.index, argsEnd = closeOf(text, m.index + m[0].length - 1);
+    if (argsEnd < 0 || from < preambleEnd || blocked.some(([a, b]) => from >= a && from < b)) continue;
+    const open = argsEnd + (/^\s*/.exec(text.slice(argsEnd))?.[0].length ?? 0);
+    if (text[open] !== "[") continue;
+    const to = closeOf(text, open);
+    if (to < 0) continue;
+    const [pos] = splitArgs(text.slice(from + m[0].length, argsEnd - 1));
+    const n = /^\d+$/.test(pos[0]?.trim() ?? "") ? Number(pos[0]) : 2;
+    const body = text.slice(open + 1, to - 1);
+    blocked.push([from, to]);
+    if (selectionTouches(state, from, to)) { push(from, open + 1, mark("vz-envtag")); push(to - 1, to, mark("vz-envtag")); continue; }
+    push(from, to, Decoration.replace({ widget: badge(new ColumnsWidget(body, n, from), from, to), block: true }));
+  }
   const inBlocked = (pos: number) => blocked.some(([a, b]) => pos >= a && pos < b);
 
   // Math: every $…$ pair. Padded delimiters ($ x $) mean display; on a line of its own it becomes a block.
@@ -365,10 +426,19 @@ export function buildTypstDecorations(state: EditorState): DecorationSet {
       if (!revealed && l.to > l.from) push(l.from, l.to, hide);
       continue;
     }
-    const bibl = /^\s*#bibliography\(\s*"([^"]*)"/.exec(s);
+    const bibl = /^\s*#bibliography\(/.exec(s);
     if (bibl) {
       push(l.from, l.from, line("vz-references"));
-      if (!revealed) push(l.from, l.to, Decoration.replace({ widget: new ChipWidget("ref", `References are generated at compile time from ${bibl[1]}`, s, l.from) }));
+      if (!revealed) {
+        // The chip says what the compiled list will be: its title, the style, the .bib files it draws from.
+        const end = closeOf(s, bibl[0].length - 1);
+        const [pos, named] = splitArgs(end > 0 ? s.slice(bibl[0].length, end - 1) : "");
+        const files = pos.flatMap((a) => Array.from(a.matchAll(/"([^"]*)"/g), (x) => x[1]));
+        const title = named.title ? (named.title.trim() === "none" ? "" : unwrap(named.title).replace(/^"|"$/g, "")) : "Bibliography";
+        const style = named.style ? unwrap(named.style).replace(/^"|"$/g, "") : "ieee";
+        const parts = [title || "Untitled reference list", `${style} style`, files.length ? `from ${files.join(", ")}` : null, named.full?.trim() === "true" ? "every entry, cited or not" : null].filter(Boolean);
+        push(l.from, l.to, Decoration.replace({ widget: new ChipWidget("ref", `${parts.join(" · ")} — generated at compile time`, s, l.from) }));
+      }
       continue;
     }
 

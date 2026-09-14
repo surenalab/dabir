@@ -31,7 +31,7 @@ interface Props {
 }
 
 const ICON = { error: AlertCircle, warning: AlertTriangle, info: Info } as const;
-const LABEL: Record<string, string> = { syntax: "syntax", citation: "citation", reference: "reference", rerun: "rerun", box: "layout", font: "font", package: "package", file: "file", other: "" };
+const LABEL: Record<string, string> = { syntax: "syntax", citation: "citation", reference: "reference", rerun: "rerun", box: "layout", font: "font", package: "package", file: "file", code: "code", other: "" };
 
 export function Problems({ problems, mainFile, agentReady, onJump, onFix }: Props) {
   const [showInfo, setShowInfo] = useState(false);
@@ -46,11 +46,17 @@ export function Problems({ problems, mainFile, agentReady, onJump, onFix }: Prop
   const fixAll = () => {
     const list = errors.length ? errors : warnings;
     const body = list.slice(0, 12).map((p) => `- ${p.file ?? mainFile}${p.line != null ? `:${p.line}` : ""}: ${p.message}`).join("\n");
-    onFix(`Fix these LaTeX ${errors.length ? "errors" : "warnings"} one by one, recompiling after each:\n${body}\n\nFollow the compile-and-fix skill. Make the smallest change at the source of each problem; do not silence warnings. Finish with a clean compile and list what you changed.`);
+    const kind = errors.length ? "errors" : "warnings";
+    // Code findings come from the language server, so the compile-and-fix recipe does not apply to them.
+    if (list.every((p) => p.category === "code")) {
+      onFix(`Fix these ${kind} the language server reports, one by one:\n${body}\n\nMake the smallest change at the source of each; do not suppress diagnostics with comments or config. Rerun the file's own tests or the script if there is a cheap way to. List what you changed.`);
+      return;
+    }
+    onFix(`Fix these LaTeX ${kind} one by one, recompiling after each:\n${body}\n\nFollow the compile-and-fix skill. Make the smallest change at the source of each problem; do not silence warnings. Finish with a clean compile and list what you changed.`);
   };
 
   return (
-    <section className="problems" aria-label="Compile problems">
+    <section className="problems" aria-label="Problems">
       <header className="problems-head">
         <span className="summary">
           {errors.length > 0 && <span className="pill error"><AlertCircle aria-hidden /> {errors.length} error{errors.length > 1 ? "s" : ""}</span>}
