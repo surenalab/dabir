@@ -5,10 +5,10 @@ draft release at github.com/surenalab/dabir/releases; download the one for your 
 
 | Machine | File | Notes |
 |---|---|---|
-| Windows 10/11 | `Dabir_0.1.0_x64-setup.exe` or `Dabir_0.1.0_x64_en-US.msi` | Unsigned. SmartScreen shows "Windows protected your PC": More info › Run anyway. WebView2 is downloaded on first launch if missing. |
-| Linux x86_64 | `Dabir_0.1.0_amd64.AppImage` (any distro) or `dabir_0.1.0_amd64.deb` | `chmod +x` the AppImage. Needs `libwebkit2gtk-4.1`; the .deb pulls it in. |
+| Windows 10/11 | `Dabir_0.1.2_x64-setup.exe` | Unsigned. SmartScreen shows "Windows protected your PC": More info › Run anyway. WebView2 is downloaded on first launch if missing. |
+| Linux x86_64 | `Dabir_0.1.2_amd64.AppImage` (any distro), `Dabir_0.1.2_amd64.deb` or `Dabir-0.1.2-1.x86_64.rpm` | `chmod +x` the AppImage. Needs `libwebkit2gtk-4.1`; the .deb pulls it in. |
 | WSL | prefer the Windows build | WSLg can run the AppImage from inside WSL, but the app then compiles with the Linux Tectonic and reads files under `\\wsl$`; simpler to test the native Windows build on the same laptop and open a folder under `\\wsl$\Ubuntu\home\...` |
-| macOS | `Dabir_0.1.0_aarch64.dmg` / `x64.dmg` | Unsigned until the Apple secrets exist: right-click › Open the first time. |
+| macOS | no 0.1.2 build (notarisation fails until the Apple secrets are reset); install from a local `npm run tauri build` | Unsigned until the Apple secrets exist: right-click › Open the first time. |
 
 ## What to check, in order
 
@@ -21,6 +21,29 @@ draft release at github.com/surenalab/dabir/releases; download the one for your 
 7. **Agents.** Ask the Agent (`Ctrl+J`) with whichever CLI is installed and signed in on that machine: `claude`, `codex`, `cursor-agent`, `grok` or `opencode` on `PATH`. The inspector says which are found.
 8. **Live session across machines.** Host on the Mac (Share › Same network gives a `dabir://join?...` link; Tailscale makes the LAN address reachable from anywhere), join on the laptop with no paper open: the laptop should receive the whole folder under `Dabir Sessions` in your home directory, open it, and compile. Then try the direct mode: the host makes an invite code, the guest answers, the host pastes the answer.
 9. **Update check.** App menu › Check for Updates. Until a newer tag exists this reports "up to date"; the endpoint is the latest release's `latest.json`.
+
+## New in 0.1.2, never seen off the Mac
+
+10. **Setup's Typst download.** *Download Typst* fetches `typst-x86_64-pc-windows-msvc.zip` (unzipped in-process) or `typst-x86_64-unknown-linux-musl.tar.xz` (needs the system `tar` to read xz; on a minimal distro install `xz-utils`). Afterwards `bin/typst` sits under the app data folder (`%APPDATA%\com.surenalab.dabir\bin` or `~/.local/share/com.surenalab.dabir/bin`) and a `.typ` file compiles.
+11. **Setup's shell.** *Install* on an agent row runs the vendor's command in a terminal inside the sheet: PowerShell on Windows (`irm … | iex` forms), the login shell on Linux. Check the terminal renders, the command runs to the end, *Check again* then reads the tool as installed, and *Sign in* opens the browser and returns.
+12. **Setup's pandoc row.** With `winget` (Windows) or `apt-get`/`dnf`/`pacman`/`zypper` (Linux) present, the row offers *Install pandoc*; after it, File › Export offers Word and HTML.
+13. **The tour** with `Ctrl` chords: every stop's shortcut text should say Ctrl, not ⌘.
+14. **Code files.** Open `code/sweep.py`: bracket colours, pinned block headers when scrolled into `write_pdf`, TODO badges. With pyright installed (`npm i -g pyright`), the sidebar outline should switch to the server's symbols and an introduced error should appear both at the end of its line and in the Problems panel under `code`.
+15. **The notebook.** `code/analysis.ipynb` opens as cells with the saved outputs, including the image and the red traceback; *Open REPL* starts `python3` in the terminal (Windows: whichever `python3` is on PATH; `py` is not tried), ▶ on a cell types it in.
+16. **Terminal.** Ctrl+` opens the pane: PowerShell on Windows, the login shell on Linux; resizing, colours, Ctrl+C to a running command.
+17. **Close Paper** (Ctrl+Shift+W) returns to the welcome screen; relaunch must not reopen the paper.
+
+## Hand this to an agent on the test machine
+
+The agent can do the mechanical part; a person has to look at the window. Paste this, then answer its questions:
+
+> Install Dabir 0.1.2 from the file I downloaded and help me test it. Do not build anything from source.
+> 1. Install it (Windows: run the setup .exe, accept the SmartScreen prompt; Linux: `sudo apt install ./Dabir_0.1.2_amd64.deb` or `chmod +x` the AppImage) and launch it.
+> 2. Tell me where the log is (`%LOCALAPPDATA%\com.surenalab.dabir\logs\ui.log` on Windows, `~/.local/share/com.surenalab.dabir/logs/ui.log` on Linux) and tail it while I click through; report any line as it appears.
+> 3. Before I start, check and tell me which of these are on PATH: `tar` (and whether it reads .xz), `git`, `python3`, `node`, `pyright`, `pandoc`, `claude`, `codex`, `cursor-agent`, `grok`, `opencode`, `winget`/`apt-get`/`dnf`. Install pyright (`npm i -g pyright`) if node is there, so the language-server checks are possible.
+> 4. Walk me through docs/TESTING.md from github.com/surenalab/dabir (steps 1 to 17), one step at a time; I will describe what I see. For each step record pass, fail or skipped, with my words for anything that looked wrong.
+> 5. After the Setup sheet finishes, verify on disk: the app data folder holds `bin/typst` (if I downloaded Typst) and the Tectonic cache has a built format (`~/.cache/Tectonic` on Linux, `%LOCALAPPDATA%\TectonicProject\Tectonic` on Windows).
+> 6. Write the results as a Markdown table (step, result, notes) plus the relevant log lines, ready to paste as a GitHub issue titled "0.1.2 on <Windows 11 | Ubuntu 24.04 | …>".
 
 ## Known gaps to expect
 
