@@ -18,7 +18,7 @@ function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) =
   return <button role="switch" aria-checked={on} aria-label={label} className={`switch ${on ? "on" : ""}`} onClick={() => onChange(!on)}><span className="knob" /></button>;
 }
 
-export function SettingsSheet({ onClose }: { onClose: () => void }) {
+export function SettingsSheet({ onClose, onSetup }: { onClose: () => void; onSetup: () => void }) {
   const s = useSettings();
   const [dicts, setDicts] = useState<Dictionary[]>([{ id: "en-GB", label: "English (UK)" }, { id: "en-US", label: "English (US)" }]);
   useEffect(() => { dictionaries().then(setDicts); }, []);
@@ -33,6 +33,12 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
     <div className="sheet-backdrop" onClick={onClose}>
       <div className="sheet wide" role="dialog" aria-modal="true" aria-labelledby="settings-title" onClick={(e) => e.stopPropagation()}>
         <h2 id="settings-title">Settings</h2>
+
+        <section className="share-section">
+          <Row label="This machine" hint="Engines, agents and language servers: what is installed, what is missing, and the fix beside each. Runs by itself on the first launch.">
+            <button className="btn" onClick={() => { onClose(); onSetup(); }}>Set up Dabir…</button>
+          </Row>
+        </section>
 
         <section className="share-section">
           <h3>Writing</h3>

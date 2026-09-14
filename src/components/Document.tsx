@@ -96,6 +96,7 @@ interface Props {
   onNew: (template?: string) => void;
   /** Featured templates for the welcome card, label and id. */
   onTour: () => void;
+  onSetup: (focus?: string) => void;
   onJoin: () => void;
   hostAway: boolean;
   onOutline: (o: ReturnType<typeof parseDocument>["outline"]) => void;
@@ -324,6 +325,7 @@ export function Document(p: Props) {
         {compileState.status === "running" && <span className="state running"><Loader2 aria-hidden /> {p.progress ? <span className="progress" title={p.progress}>{p.progress}</span> : "Compiling…"}</span>}
         {result && result.ok && errors === 0 && <span className={`state ${warnings ? "warn" : "ok"}`}><CheckCircle2 aria-hidden /> Compiled {compileState.status === "done" && compileState.agent ? `${compileState.agent}'s version ` : ""}in {(result.millis / 1000).toFixed(1)} s{warnings ? `, ${warnings} warning${warnings > 1 ? "s" : ""}` : ""}</span>}
         {result && (!result.ok || errors > 0) && <span className="state error"><AlertCircle aria-hidden /> {compileState.status === "done" && compileState.agent ? `${compileState.agent}'s version failed to compile` : "Compile failed"}{errors ? `, ${errors} error${errors > 1 ? "s" : ""}` : ""}</span>}
+        {result && result.engine === "none" && <button className="btn small" onClick={() => p.onSetup(file?.endsWith(".typ") ? "typst" : "latex")}>Install the compiler…</button>}
         {result && <button onClick={p.onToggleLog} data-p="2">{showLog ? "Hide log" : "Show log"}</button>}
         {project && <button onClick={onToggleTerminal} data-p="2" title="A shell in the paper's folder (⌃`)">{terminal.open ? "Hide terminal" : "Terminal"}</button>}
         <button data-p="1" className={`toggle ${p.compileOnSave ? "on" : ""}`} aria-pressed={p.compileOnSave} onClick={p.onToggleCompileOnSave} title="Compile every time you save (⌘S)">{p.compileOnSave ? "Compiles on save" : "Compile on save"}</button>

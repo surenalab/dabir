@@ -280,6 +280,7 @@ interface Props {
   /** The tour (or a menu item) asking for a tab. */
   tabRequest?: { tab: Tab; stamp: number } | null;
   onProviderReady: (ready: boolean) => void;
+  onSetup: () => void;
   onChanged: () => void;         // git status or files changed; reloads the open buffer from disk
   /** Writes the open buffer to disk when it is dirty, so a run starts from, and Accept lands on, what the author sees. */
   onBeforeRun: () => Promise<void>;
@@ -312,7 +313,7 @@ export interface ReviewHandle {
   reject: () => void;
 }
 
-export function Inspector({ project, gitRepo, askFocus, prefill, tabRequest, onProviderReady, onChanged, onBeforeRun, onOpenFile, onNote, live, peers, comments, currentFile, hasSelection, focus, onAddComment, onResolveComment, onReplyComment, onRemoveComment, onJumpComment, onShare, autoRun, changes, suggesting, onToggleSuggesting, onResolveChanges, onJumpChange, onReview, history, historyBusy, onRestoreStep, onUndoStep, historyFocus }: Props) {
+export function Inspector({ project, gitRepo, askFocus, prefill, tabRequest, onProviderReady, onSetup, onChanged, onBeforeRun, onOpenFile, onNote, live, peers, comments, currentFile, hasSelection, focus, onAddComment, onResolveComment, onReplyComment, onRemoveComment, onJumpComment, onShare, autoRun, changes, suggesting, onToggleSuggesting, onResolveChanges, onJumpChange, onReview, history, historyBusy, onRestoreStep, onUndoStep, historyFocus }: Props) {
   const [commentDraft, setCommentDraft] = useState("");
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [replyDraft, setReplyDraft] = useState("");
@@ -497,7 +498,7 @@ export function Inspector({ project, gitRepo, askFocus, prefill, tabRequest, onP
             <select id="provider" value={provider} onChange={(e) => setProvider(e.target.value)} title={current?.hint}>
               {providers.map((p) => <option key={p.id} value={p.id} disabled={!p.installed}>{p.label}{p.installed ? "" : " (not installed)"}</option>)}
             </select>
-            {current && !current.installed && <span className="hint">Install the {current.bin} CLI and sign in</span>}
+            {current && !current.installed && <button className="btn small" onClick={onSetup}>Install {current.label}…</button>}
           </div>
           {current?.installed && (
             <div className="steer">
