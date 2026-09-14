@@ -4,6 +4,7 @@
 
 import { LSPClient, languageServerExtensions, languageServerSupport, type Transport } from "@codemirror/lsp-client";
 import type { Extension } from "@codemirror/state";
+import type { OutlineItem } from "./latex";
 import { lspAvailable, lspProbe, lspStart, lspSend, lspStop, onLspMessage, onLspExit } from "./backend";
 
 export interface ServerSpec {
@@ -129,6 +130,42 @@ export async function languageServerFor(root: string, file: string): Promise<{ e
   const client = await clientFor(root, spec);
   if (!client) return null;
   return { extension: languageServerSupport(client, toUri(file), spec.languageId), spec };
+}
+
+// LSP SymbolKind → the outline's glyph column (same glyphs as code-outline.ts). Kinds not listed are left out:
+// variables, fields and constants at every level would bury the functions the outline exists to show.
+const SYMBOL_GLYPH: Record<number, string> = { 2: "M", 3: "M", 4: "M", 5: "C", 6: "ƒ", 9: "ƒ", 10: "C", 11: "I", 12: "ƒ", 23: "C" };
+interface LspRange { start: { line: number; character: number }; end: { line: number; character: number } }
+interface DocumentSymbol { name: string; kind: number; range: LspRange; selectionRange?: LspRange; children?: DocumentSymbol[] }
+interface SymbolInformation { name: string; kind: number; location: { range: LspRange }; containerName?: string }
+
+/**
+ * The outline of `file` as its language server sees it, or null when no server for that language is running
+ * or it does not answer within two seconds (the regex outline stays in place then). Hierarchical answers
+ * nest to three levels; flat answers put everything with a container one level down.
+ */
+export async function documentSymbols(root: string, file: string): Promise<OutlineItem[] | null> {
+  const specs = serversFor(file);
+  const r = specs.map((s) => running.get(`${root}::${s.command}`)).find(Boolean);
+  if (!r) return null;
+  let symbols: (DocumentSymbol | SymbolInformation)[] | null;
+  try {
+    symbols = await Promise.race([
+      r.client.request<{ textDocument: { uri: string } }, (DocumentSymbol | SymbolInformation)[] | null>("textDocument/documentSymbol", { textDocument: { uri: toUri(file) } }),
+      new Promise<null>((res) => setTimeout(() => res(null), 2000)),
+    ]);
+  } catch { return null; }
+  if (!Array.isArray(symbols)) return null;
+  const out: OutlineItem[] = [];
+  const add = (s: DocumentSymbol | SymbolInformation, depth: number) => {
+    const glyph = SYMBOL_GLYPH[s.kind];
+    const range = "location" in s ? s.location.range : (s.selectionRange ?? s.range);
+    if (glyph && s.name) out.push({ level: Math.min(3, Math.max(1, depth)) as 1 | 2 | 3, number: glyph, text: s.name, line: range.start.line + 1 });
+    if ("children" in s && s.children) for (const c of s.children) add(c, glyph ? depth + 1 : depth);
+  };
+  for (const s of symbols) add(s, "containerName" in s && s.containerName ? 2 : 1);
+  out.sort((a, b) => a.line - b.line);
+  return out;
 }
 
 /** Stop every server (when the paper closes). */

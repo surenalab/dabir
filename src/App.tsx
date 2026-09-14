@@ -14,6 +14,7 @@ import { ReferencesSheet } from "./components/ReferencesSheet";
 import { useRefSync } from "./lib/refsync";
 import { SettingsSheet } from "./components/SettingsSheet";
 import { SetupSheet } from "./components/SetupSheet";
+import { NO_LINT, type LintReport } from "./components/CodeBar";
 import type { EditorApi } from "./components/SourceEditor";
 import { useSettings, updateSettings, getSettings } from "./lib/settings";
 import { checkGrammar, type GrammarMatch } from "./lib/grammar";
@@ -64,7 +65,7 @@ export default function App() {
   const [cursorCol, setCursorCol] = useState(1);
   const onCursor = useCallback((line: number, col: number) => { setCursorLine(line); setCursorCol(col); }, []);
   const [codeServer, setCodeServer] = useState<{ command: string } | null | undefined>(undefined);
-  const [codeLint, setCodeLint] = useState({ errors: 0, warnings: 0 });
+  const [codeLint, setCodeLint] = useState<LintReport>(NO_LINT);
   const [compileState, setCompileState] = useState<CompileState>({ status: "idle" });
   // An agent run under review: the document can show the agent's version and ⌘B compiles it, before anything lands.
   const [review, setReview] = useState<ReviewHandle | null>(null);
@@ -1134,7 +1135,7 @@ export default function App() {
           onReferences={() => setSheet("refs")} onExport={() => setSheet("export")} signalingUrl={settings.signalingUrl} direct={directApi} />
       )}
       {sheet === "refs" && project && <ReferencesSheet project={project} sync={refSync} bibCount={Object.keys(bib).length} onClose={() => setSheet(null)} onChanged={onRefsChanged} agentReady={agentReady} onCheck={checkReferences} />}
-      {sheet === "export" && project && <ExportSheet project={project} onClose={() => setSheet(null)} ensurePdf={ensurePdf} onNote={setNote} />}
+      {sheet === "export" && project && <ExportSheet project={project} onClose={() => setSheet(null)} ensurePdf={ensurePdf} onNote={setNote} onSetup={() => openSetup("pandoc")} />}
       {sheet === "new" && <NewPaperSheet onClose={() => setSheet(null)} onCreate={createPaper} initial={newTemplate} />}
       {sheet === "settings" && <SettingsSheet onClose={() => setSheet(null)} onSetup={() => openSetup()} />}
       {sheet === "setup" && <SetupSheet firstRun={firstRun} onClose={closeSetup} focus={setupFocus} />}

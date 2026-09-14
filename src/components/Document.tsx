@@ -2,14 +2,16 @@ import { useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
 import { AlertCircle, CheckCircle2, FolderOpen, FilePlus, GitBranch, Loader2, Circle, Upload, Radio, Sparkles, Check, X, Compass } from "lucide-react";
 import { parseDocument, type BibEntry } from "../lib/latex";
 import { setVisualContext } from "../lib/visual";
-import { readBinary, type PdfPos, type Project } from "../lib/backend";
+import { readBinary, type Diagnostic, type PdfPos, type Project } from "../lib/backend";
 import type { ViewMode } from "./Toolbar";
 import type { CompileState } from "../App";
 import { SourceEditor, type CommentRange, type EditorApi } from "./SourceEditor";
 import { FormatBar } from "./FormatBar";
 import { TerminalPane } from "./Terminal";
 import { FileTabs } from "./FileTabs";
-import { CodeBar, type CodeState } from "./CodeBar";
+import { CodeBar, type CodeState, type LintReport } from "./CodeBar";
+import { documentSymbols } from "../lib/lsp";
+import { Notebook, notebookOutline } from "./Notebook";
 import { codeOutline } from "../lib/code-outline";
 import { fileKind } from "../lib/languages";
 import { Problems, groupProblems } from "./Problems";
@@ -104,7 +106,7 @@ interface Props {
   onSave: () => void;
   onCursorLine: (line: number, col: number) => void;
   /** The code bar's state and actions, for code files. */
-  code: CodeState & { onRun: () => void; onRunSelection: (text?: string) => void; onRepl: () => void; onFormat: () => void; onServer: (s: { command: string } | null) => void; onLint: (n: { errors: number; warnings: number }) => void };
+  code: CodeState & { onRun: () => void; onRunSelection: (text?: string) => void; onRepl: () => void; onFormat: () => void; onServer: (s: { command: string } | null) => void; onLint: (r: LintReport) => void };
   onSelectFile: (path: string) => void;
   onJump: (line: number, inSource?: boolean) => void;
   onPdfClick: (page: number, x: number, y: number) => void;
@@ -183,7 +185,18 @@ export function Document(p: Props) {
     });
   }, [project, p.bib, macros, p.onSelectFile, p.settings.revealOnClick]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { p.onOutline(source ? (fileKind(file) === "code" || /\.(md|markdown)$/i.test(file ?? "") ? codeOutline(file, source) : parseDocument(source).outline) : []); }, [source, file]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { p.onOutline(source ? (fileKind(file) === "notebook" ? notebookOutline(source) : fileKind(file) === "code" || /\.(md|markdown)$/i.test(file ?? "") ? codeOutline(file, source) : parseDocument(source).outline) : []); }, [source, file]); // eslint-disable-line react-hooks/exhaustive-deps
+  // When a language server is attached, its symbols replace the regex outline once they arrive (nesting, methods,
+  // names the patterns miss). Asked shortly after each edit, and again when the server first attaches.
+  const serverCommand = p.code.server?.command ?? null;
+  useEffect(() => {
+    if (!source || !file || !project || !serverCommand || fileKind(file) !== "code") return;
+    let alive = true;
+    const t = window.setTimeout(() => {
+      documentSymbols(project.root, file).then((items) => { if (alive && items && items.length) p.onOutline(items); }).catch(() => { /* the regex outline stays */ });
+    }, 700);
+    return () => { alive = false; clearTimeout(t); };
+  }, [source, file, project, serverCommand]); // eslint-disable-line react-hooks/exhaustive-deps
   // Prose words only: commands, math, comments and the arguments of \cite, \ref and paths do not count.
   const wordCount = useMemo(() => (source ? proseWords(source).length : 0), [source]);
   // The whole paper: every manuscript file's saved count, with the open file's live count in place of its saved one.
@@ -196,13 +209,19 @@ export function Document(p: Props) {
   }, [paperWords, project, openFile, wordCount]);
 
   const result = compileState.status === "done" ? compileState.result : null;
-  const diagnostics = result?.diagnostics ?? [];
+  const currentRelForLint = p.file && project ? p.file.replace(project.root + "/", "") : null;
+  // The language server's findings for the open code file sit beside the compile's, under the "code" category.
+  const codeDiagnostics: Diagnostic[] = fileKind(p.file) === "code" && currentRelForLint
+    ? p.code.lint.items.map((i) => ({ severity: i.severity, category: "code", file: currentRelForLint, line: i.line, message: i.message, context: null }))
+    : [];
+  const diagnostics = [...(result?.diagnostics ?? []), ...codeDiagnostics];
   const grouped = groupProblems(diagnostics);
   const errors = grouped.filter((d) => d.severity === "error").length;
   const warnings = grouped.filter((d) => d.severity === "warning").length;
   const mainRel = project?.mainTex ? project.mainTex.replace(project.root + "/", "") : "main.tex";
   const currentRel = p.file && project ? p.file.replace(project.root + "/", "") : null;
-  const editorMarks = grouped.filter((d) => d.line != null && (d.file ?? mainRel) === currentRel).map((d) => ({ line: d.line!, severity: d.severity, message: d.message }));
+  // Code diagnostics already live in the editor through the language server; only compile marks are added.
+  const editorMarks = grouped.filter((d) => d.category !== "code" && d.line != null && (d.file ?? mainRel) === currentRel).map((d) => ({ line: d.line!, severity: d.severity, message: d.message }));
 
   if (project && !p.file && mode !== "pdf") {
     // A folder is open but holds no manuscript: say so, rather than showing the welcome card over a full sidebar.
@@ -268,6 +287,8 @@ export function Document(p: Props) {
       changes={previewing ? [] : p.changes} suggesting={p.settings.suggesting} author={p.author} onChanges={p.onChanges}
       review={previewing ? rv!.marks : null} dictionary={p.dictionary} onAddWord={p.onAddWord} onContinue={p.onContinue}
       settings={p.settings} grammar={p.grammar} assist={p.assist} headText={headText} onRunSelection={code.onRunSelection} onLanguageServer={code.onServer} onLint={code.onLint} />
+  ) : source != null && fileKind(p.file) === "notebook" ? (
+    <Notebook source={source} path={p.file!} jumpLine={p.jumpLine} jumpStamp={p.jumpStamp} onRunCode={project ? (text) => code.onRunSelection(text) : undefined} onRepl={project && code.repl ? code.onRepl : null} />
   ) : source != null ? <div className="doc-empty"><div className="card"><p>This file type is not editable in Dabir yet.</p></div></div> : null;
   const pdf = showPdf ? (
     <Suspense fallback={<div className="doc-empty"><div className="card"><p>Loading PDF…</p></div></div>}>
@@ -303,7 +324,7 @@ export function Document(p: Props) {
         </div>
       )}
       {project && <FileTabs root={project.root} files={openFiles} active={file} dirty={fileDirty} onSelect={onSelectFile} onClose={onCloseFile} />}
-      {showEditor && !isProse && !previewing && file && project && <CodeBar rel={file.replace(project.root + "/", "")} state={code} onRun={code.onRun} onRunSelection={() => code.onRunSelection()} onRepl={code.onRepl} onFormat={code.onFormat} onNextProblem={() => p.editorRef.current?.nextDiagnostic()} />}
+      {showEditor && !isProse && !previewing && file && project && fileKind(file) !== "notebook" && <CodeBar rel={file.replace(project.root + "/", "")} state={code} onRun={code.onRun} onRunSelection={() => code.onRunSelection()} onRepl={code.onRepl} onFormat={code.onFormat} onNextProblem={() => p.editorRef.current?.nextDiagnostic()} />}
       {showEditor && isProse && !previewing && <FormatBar api={p.editorRef.current} lang={markupLang} onFind={p.onFind} onComment={p.onCommentSelection} canComment={p.hasSelection} suggesting={p.settings.suggesting} onToggleSuggesting={p.onToggleSuggesting} pending={p.changes.length} />}
       <div className={`panes ${mode === "split" ? "split" : ""}`} ref={splitRef} style={mode === "split" ? { "--split": `${Math.round(p.splitRatio * 100)}%` } as React.CSSProperties : undefined}>
         <div className="scroll" hidden={!showEditor}>{editor}</div>
@@ -330,7 +351,7 @@ export function Document(p: Props) {
         {project && <button onClick={onToggleTerminal} data-p="2" title="A shell in the paper's folder (⌃`)">{terminal.open ? "Hide terminal" : "Terminal"}</button>}
         <button data-p="1" className={`toggle ${p.compileOnSave ? "on" : ""}`} aria-pressed={p.compileOnSave} onClick={p.onToggleCompileOnSave} title="Compile every time you save (⌘S)">{p.compileOnSave ? "Compiles on save" : "Compile on save"}</button>
         <span className="grow" />
-        {mode !== "pdf" && source != null && (isProse ? <span data-p="3" title={`${source.split("\n").length} lines`}>{wordCount.toLocaleString()} words{paperTotal != null && <span className="paper-words" title={Object.entries(paperWords!).map(([f, n]) => `${f}: ${n.toLocaleString()}`).join("\n")}> · {paperTotal.toLocaleString()} in paper</span>}</span> : <span data-p="3">{source.split("\n").length} lines</span>)}
+        {mode !== "pdf" && source != null && (isProse ? <span data-p="3" title={`${source.split("\n").length} lines`}>{wordCount.toLocaleString()} words{paperTotal != null && <span className="paper-words" title={Object.entries(paperWords!).map(([f, n]) => `${f}: ${n.toLocaleString()}`).join("\n")}> · {paperTotal.toLocaleString()} in paper</span>}</span> : <span data-p="3">{fileKind(file) === "notebook" ? `${(source.match(/"cell_type"/g) ?? []).length} cells` : `${source.split("\n").length} lines`}</span>)}
         {mode !== "pdf" && (
           <button data-p="2" className="toggle writing" onClick={p.onOpenSettings} title="Spelling, grammar, completion and prediction. Click to change in Settings (⌘,)">
             {[p.settings.spellcheck ? "spelling" : null, p.settings.grammar !== "off" ? "grammar" : null, p.settings.autocomplete || p.settings.citeComplete ? "completion" : null, p.settings.prediction ? "prediction" : null].filter(Boolean).join(" · ") || "writing aids off"}

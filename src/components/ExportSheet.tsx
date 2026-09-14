@@ -19,7 +19,7 @@ function fmtBytes(n: number): string {
 }
 
 /** File › Export…: one list of formats, what each holds, and Export. */
-export function ExportSheet({ project, onClose, ensurePdf, onNote }: { project: Project; onClose: () => void; ensurePdf: () => Promise<boolean>; onNote: (s: string) => void }) {
+export function ExportSheet({ project, onClose, ensurePdf, onNote, onSetup }: { project: Project; onClose: () => void; ensurePdf: () => Promise<boolean>; onNote: (s: string) => void; onSetup: () => void }) {
   const isTypst = /\.typ$/i.test(project.mainTex ?? "");
   const [kind, setKind] = useState<ExportKind>("pdf");
   const [pandoc, setPandoc] = useState<string | null | undefined>(undefined);
@@ -69,7 +69,7 @@ export function ExportSheet({ project, onClose, ensurePdf, onNote }: { project: 
             );
           })}
         </div>
-        {pandoc === null && <p className="export-hint">Word and HTML need pandoc: <code>brew install pandoc</code>, or the installer at pandoc.org. Dabir looks for it on your shell's PATH.</p>}
+        {pandoc === null && <p className="export-hint">Word and HTML need <code>pandoc</code>, which is not installed. <button className="link" onClick={onSetup}>Install it from Setup…</button></p>}
         {done && (
           <p className="export-done" role="status">
             <Check aria-hidden /> <span>Exported {done.files === 1 ? "" : `${done.files} files, `}{fmtBytes(done.bytes)} to <code>{done.path.replace(/^\/Users\/[^/]+/, "~")}</code>.
