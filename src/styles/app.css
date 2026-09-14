@@ -542,6 +542,9 @@ button { background: none; border: 0; padding: 0; cursor: default; }
 .composer .send:disabled { background: var(--line-strong); color: var(--paper); }
 .composer .send svg { width: 15px; height: 15px; stroke-width: 2; }
 .composer-note { font-size: var(--text-xs); color: var(--ink-3); padding: 0 var(--space-1); line-height: 1.5; }
+.composer-note.warn { display: flex; align-items: flex-start; gap: 6px; margin: 0 0 var(--space-2); padding: 6px 8px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--paper-2); color: var(--ink-2); }
+.composer-note.warn svg { width: 14px; height: 14px; flex: none; color: var(--warn); margin-top: 1px; }
+.composer-note .link, .result .link { border: 0; background: none; padding: 0; color: var(--accent); font: inherit; text-decoration: underline; text-underline-offset: 2px; white-space: nowrap; }
 
 .run { display: flex; flex-direction: column; gap: var(--space-2); }
 .run .prompt { font-size: var(--text-md); color: var(--ink-2); padding: var(--space-2) var(--space-3); border-left: 2px solid var(--line-strong); user-select: text; line-height: 1.45; }
@@ -1216,6 +1219,7 @@ input[type="range"] { accent-color: var(--accent); width: 140px; }
 .setup-state { display: inline-flex; width: 20px; height: 20px; align-items: center; justify-content: center; color: var(--ink-4); }
 .setup-state svg { width: 16px; height: 16px; stroke-width: 2; }
 .setup-state.ok { color: var(--ok); }
+.setup-state.warn { color: var(--warn); }
 .setup-state.todo svg { stroke-width: 1.5; }
 .setup-state.busy svg, .setup-state.wait svg { animation: spin 1.2s linear infinite; color: var(--accent); }
 .setup-state.wait svg { color: var(--ink-4); }

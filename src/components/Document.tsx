@@ -246,7 +246,7 @@ export function Document(p: Props) {
               </div>
               <button className="btn tour-start" onClick={p.onTour}><Compass /> Take the tour</button>
             </div>
-            <div className="hint">Press <kbd>⌘/</kbd> for shortcuts. Dabir is free software under the GNU AGPL v3, © Sadegh Salehi.</div>
+            <div className="hint">Press <kbd>⌘/</kbd> for shortcuts.</div>
           </div>
         </div>
       </main>
