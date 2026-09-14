@@ -13,6 +13,7 @@ import { ExportSheet } from "./components/ExportSheet";
 import { ReferencesSheet } from "./components/ReferencesSheet";
 import { useRefSync } from "./lib/refsync";
 import { SettingsSheet } from "./components/SettingsSheet";
+import { SetupSheet } from "./components/SetupSheet";
 import type { EditorApi } from "./components/SourceEditor";
 import { useSettings, updateSettings, getSettings } from "./lib/settings";
 import { checkGrammar, type GrammarMatch } from "./lib/grammar";
@@ -90,7 +91,29 @@ export default function App() {
   const [focused, setFocused] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  const [sheet, setSheet] = useState<"shortcuts" | "clone" | "share" | "new" | "settings" | "export" | "refs" | null>(null);
+  const [sheet, setSheet] = useState<"shortcuts" | "clone" | "share" | "new" | "settings" | "export" | "refs" | "setup" | null>(null);
+  // Setup opens by itself on the first launch (skippable), and from Help › Set Up Dabir, Settings, or the place
+  // that misses a tool (a Typst compile without Typst, the agent tab with no agent installed).
+  const [setupFocus, setSetupFocus] = useState<string | null>(null);
+  const [firstRun, setFirstRun] = useState(false);
+  const openSetup = useCallback((focus: string | null = null) => { setSetupFocus(focus); setSheet("setup"); }, []);
+  useEffect(() => {
+    if (!native) return;
+    let seen = "1";
+    try { seen = localStorage.getItem("dabir.setupSeen") ?? ""; } catch { /* private mode */ }
+    if (seen) return;
+    const t = window.setTimeout(() => { setFirstRun(true); setSheet("setup"); }, 350);
+    return () => clearTimeout(t);
+  }, []);
+  // Browser preview only: ?setup=1 shows the first-run sheet with sample detection, for screenshots.
+  useEffect(() => {
+    if (native) return;
+    if (new URLSearchParams(location.search).get("setup") === "1") { setFirstRun(true); setSheet("setup"); }
+  }, []);
+  const closeSetup = useCallback(() => {
+    try { localStorage.setItem("dabir.setupSeen", "1"); } catch { /* private mode */ }
+    setFirstRun(false); setSheet(null); setSetupFocus(null);
+  }, []);
   // The template the New Paper chooser opens on, when a welcome-card starter was clicked.
   const [newTemplate, setNewTemplate] = useState<string | null>(null);
   // The guided tour: which stop is open, and the inspector tab it asks for.
@@ -870,6 +893,7 @@ export default function App() {
       case "shortcuts": setSheet((v) => (v === "shortcuts" ? null : "shortcuts")); break;
       case "settings": setSheet("settings"); break;
       case "tour": startTour(); break;
+      case "setup": openSetup(); break;
       case "guide": openGuide().catch((e) => setNote(String(e))); break;
       case "zoom-in": setPdfZoom((z) => Math.min(4, (typeof z === "number" ? z : 1) * 1.18)); if (mode !== "pdf" && mode !== "split") setMode("pdf"); break;
       case "zoom-out": setPdfZoom((z) => Math.max(0.3, (typeof z === "number" ? z : 1) * 0.85)); break;
@@ -880,7 +904,7 @@ export default function App() {
         checkForUpdates(async (v, notes) => window.confirm(`Dabir ${v} is available.\n\n${notes}\n\nDownload and restart now?`)).then(setNote).catch((e) => setNote(String(e)));
         break;
     }
-  }, [open, startTour, closePaper, importFromOverleaf, save, compile, showInPdf, toggleNav, toggleInspector, toggleTerminal, openFindPaper, toggleFocusMode, inspectorOpen, navOpen, runGrammar, mode, cycleFile, closeFile, file, project, runFile, runSelection, openRepl, formatDocument, settings.formatOnSave]);
+  }, [open, startTour, openSetup, closePaper, importFromOverleaf, save, compile, showInPdf, toggleNav, toggleInspector, toggleTerminal, openFindPaper, toggleFocusMode, inspectorOpen, navOpen, runGrammar, mode, cycleFile, closeFile, file, project, runFile, runSelection, openRepl, formatDocument, settings.formatOnSave]);
 
   useEffect(() => onMenu(command), [command]);
   useEffect(() => onCompileProgress((line) => setProgress(line.length > 90 ? line.slice(0, 87) + "…" : line)), []);
@@ -1083,7 +1107,7 @@ export default function App() {
         onShare={() => setSheet("share")} live={!!live} terminalOpen={terminal.open} onToggleTerminal={() => command("show-terminal")} run={runRecipeNow} onRun={() => command("run-file")} />
       <Navigator project={project} current={file} outline={fileKind(file) === "code" || /\.(md|markdown)$/i.test(file ?? "") ? outline : paperOutline(map) ?? outline} git={git} commitFocus={commitFocus} busy={gitBusy || historyBusy} draftMessage={commitDraft} onDiscard={discardChange} onHistory={() => { if (!inspectorOpen) toggleInspector(); setHistoryFocus(Date.now()); }} historyCount={versions.length}
         onSelect={selectFile} onJump={(l, f) => (f ? jumpToFile(f, l) : jumpTo(l))} onInitGit={initGit} onCommit={commitAll} find={findPaper} onCloseFind={closeFindPaper} />
-      <Document project={project} file={file} source={source} bib={bib} paperWords={paperWordsNow} openFiles={openFiles} dirty={dirty} onCloseFile={closeFile} headText={headText} code={codeState} mode={mode} jumpLine={jumpLine} jumpStamp={jumpStamp}
+      <Document project={project} onSetup={(f) => openSetup(f ?? null)} file={file} source={source} bib={bib} paperWords={paperWordsNow} openFiles={openFiles} dirty={dirty} onCloseFile={closeFile} headText={headText} code={codeState} mode={mode} jumpLine={jumpLine} jumpStamp={jumpStamp}
         compileState={compileState} progress={progress} showLog={showLog} onToggleLog={() => setShowLog((v) => !v)} terminal={terminal} onToggleTerminal={toggleTerminal} findRequest={findRequest}
         error={error ?? note} onDismissError={() => { setError(null); setNote(null); }} pdfTarget={pdfTarget}
         onOpen={open} onImport={importFromOverleaf} onClone={() => setSheet("clone")} onNew={openNew} onTour={startTour} onJoin={() => setSheet("share")} hostAway={hostAway} onOutline={setOutline}
@@ -1096,7 +1120,7 @@ export default function App() {
         onPdfComment={onPdfComment} pdfFindRequest={pdfFindRequest} editorRef={editorRef} onFind={() => command("find")} onCommentSelection={() => { if (!inspectorOpen) toggleInspector(); setAskFocus(0); setNote("Type the comment in the People tab; it attaches to your selection."); }} hasSelection={selection.to > selection.from}
         review={docReview} dictionary={dictionary} onAddWord={addWord} onContinue={continueWithAgent} splitRatio={splitRatio} onSplitRatio={setSplitRatio} onPin={(id) => { const c = allComments.find((x) => x.id === id); if (c) jumpToComment(c); }}
         assist={assist} />
-      <Inspector project={project} gitRepo={!!git?.isRepo} askFocus={askFocus} prefill={prefill} tabRequest={tabRequest} onProviderReady={setAgentReady} onChanged={onChanged} onBeforeRun={flush} onOpenFile={selectFile} history={versions} historyBusy={historyBusy} onRestoreStep={restoreVersion} onUndoStep={undoVersion} historyFocus={historyFocus} onNote={setNote} autoRun={autoRun} onReview={setReview}
+      <Inspector project={project} onSetup={() => openSetup("agents")} gitRepo={!!git?.isRepo} askFocus={askFocus} prefill={prefill} tabRequest={tabRequest} onProviderReady={setAgentReady} onChanged={onChanged} onBeforeRun={flush} onOpenFile={selectFile} history={versions} historyBusy={historyBusy} onRestoreStep={restoreVersion} onUndoStep={undoVersion} historyFocus={historyFocus} onNote={setNote} autoRun={autoRun} onReview={setReview}
         live={!!live} peers={peers} comments={allComments} currentFile={rel(file)} hasSelection={selection.to > selection.from} focus={agentFocus}
         changes={changeItems} suggesting={settings.suggesting} onToggleSuggesting={toggleSuggesting} onResolveChanges={resolveChange} onJumpChange={jumpToChange}
         onAddComment={(t) => addCommentAtSelection(t)} onResolveComment={resolveAnyComment} onReplyComment={replyAnyComment} onRemoveComment={removeAnyComment} onJumpComment={jumpToComment} onShare={() => setSheet("share")} />
@@ -1112,7 +1136,8 @@ export default function App() {
       {sheet === "refs" && project && <ReferencesSheet project={project} sync={refSync} bibCount={Object.keys(bib).length} onClose={() => setSheet(null)} onChanged={onRefsChanged} agentReady={agentReady} onCheck={checkReferences} />}
       {sheet === "export" && project && <ExportSheet project={project} onClose={() => setSheet(null)} ensurePdf={ensurePdf} onNote={setNote} />}
       {sheet === "new" && <NewPaperSheet onClose={() => setSheet(null)} onCreate={createPaper} initial={newTemplate} />}
-      {sheet === "settings" && <SettingsSheet onClose={() => setSheet(null)} />}
+      {sheet === "settings" && <SettingsSheet onClose={() => setSheet(null)} onSetup={() => openSetup()} />}
+      {sheet === "setup" && <SetupSheet firstRun={firstRun} onClose={closeSetup} focus={setupFocus} />}
       {tour != null && <Tour steps={tourSteps} step={tour} onStep={setTour} onClose={() => setTour(null)} />}
     </div>
   );

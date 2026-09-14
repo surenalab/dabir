@@ -20,6 +20,12 @@ pub struct Provider {
     pub bin: String,
     pub installed: bool,
     pub path: Option<String>,
+    /// The vendor's own one-line installer for this platform, typed into the in-app terminal by Setup.
+    pub install: String,
+    /// The command that signs in (opens the vendor's browser flow).
+    pub login: String,
+    /// What the account needs, in one line, so the user knows before installing.
+    pub plan: String,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -144,28 +150,98 @@ fn find_bin(bin: &str) -> Option<PathBuf> {
     }
 }
 
-fn defs() -> Vec<(&'static str, &'static str, &'static str, &'static str)> {
+struct Def {
+    id: &'static str,
+    label: &'static str,
+    bin: &'static str,
+    /// (macOS and Linux shell, Windows PowerShell)
+    install: (&'static str, &'static str),
+    login: &'static str,
+    plan: &'static str,
+}
+
+/// The vendors' documented installers and sign-in commands (checked 2026-09-14). Each installer is the
+/// one the vendor publishes; Setup shows the command in the terminal as it runs rather than hiding it.
+fn defs() -> Vec<Def> {
     vec![
-        ("claude", "Claude Code", "", "claude"),
-        ("codex", "Codex", "", "codex"),
-        ("cursor", "Cursor", "", "cursor-agent"),
-        ("grok", "Grok", "", "grok"),
-        ("opencode", "OpenCode", "", "opencode"),
+        Def {
+            id: "claude",
+            label: "Claude Code",
+            bin: "claude",
+            install: (
+                "curl -fsSL https://claude.ai/install.sh | bash",
+                "irm https://claude.ai/install.ps1 | iex",
+            ),
+            login: "claude auth login",
+            plan: "Claude Pro, Max, Team or Enterprise, or an Anthropic Console account",
+        },
+        Def {
+            id: "codex",
+            label: "Codex",
+            bin: "codex",
+            install: (
+                "curl -fsSL https://chatgpt.com/codex/install.sh | sh",
+                "npm install -g @openai/codex",
+            ),
+            login: "codex login",
+            plan: "ChatGPT Plus, Pro, Business, Edu or Enterprise, or an OpenAI API key",
+        },
+        Def {
+            id: "cursor",
+            label: "Cursor",
+            bin: "cursor-agent",
+            install: (
+                "curl https://cursor.com/install -fsS | bash",
+                "irm 'https://cursor.com/install?win32=true' | iex",
+            ),
+            login: "cursor-agent login",
+            plan: "a Cursor account",
+        },
+        Def {
+            id: "grok",
+            label: "Grok",
+            bin: "grok",
+            install: (
+                "curl -fsSL https://x.ai/cli/install.sh | bash",
+                "irm https://x.ai/cli/install.ps1 | iex",
+            ),
+            login: "grok login",
+            plan: "an X or xAI account",
+        },
+        Def {
+            id: "opencode",
+            label: "OpenCode",
+            bin: "opencode",
+            install: (
+                "curl -fsSL https://opencode.ai/install | bash",
+                "npm install -g opencode-ai",
+            ),
+            login: "opencode auth login",
+            plan: "your own key for any model provider, or OpenCode Zen",
+        },
     ]
 }
 
 pub fn detect() -> Vec<Provider> {
     defs()
         .into_iter()
-        .map(|(id, label, hint, bin)| {
-            let path = find_bin(bin);
+        .map(|d| {
+            let path = find_bin(d.bin);
             Provider {
-                id: id.into(),
-                label: label.into(),
-                hint: hint.into(),
-                bin: bin.into(),
+                id: d.id.into(),
+                label: d.label.into(),
+                hint: String::new(),
+                bin: d.bin.into(),
                 installed: path.is_some(),
                 path: path.map(|p| p.to_string_lossy().to_string()),
+                install: if cfg!(windows) {
+                    d.install.1
+                } else {
+                    d.install.0
+                }
+                .into(),
+                login: d.login.into(),
+                plan: d.plan.into(),
             }
         })
         .collect()
