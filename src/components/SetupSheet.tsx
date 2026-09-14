@@ -140,6 +140,12 @@ export function SetupSheet({ firstRun, onClose, focus }: Props) {
           <section aria-labelledby="setup-agents" data-row="agents">
             <h3 id="setup-agents">Agents</h3>
             <p className="setup-note">Dabir runs the agent's own command-line tool on your own subscription; no model is proxied and no key is stored here. Install the ones you use, then sign in where the tool asks. The command is shown in the shell as it runs.</p>
+            <Row id="git" small state={!status ? "wait" : status.git ? "ok" : "todo"} title="Git"
+              detail={!status ? "Checking…"
+                : status.git ? <>Ready. <code>git</code> at <code>{status.git}</code>. Every run works on its own branch in a worktree; the paper's folder becomes a repository on the first run if it is not one.</>
+                : status.gitInstall ? <>Agent runs work on a Git worktree, which needs the <code>git</code> command. Installs it with <code>{status.gitInstall}</code>, shown as it runs.</>
+                : <>Agent runs work on a Git worktree, which needs the <code>git</code> command. Install it from <a href="https://git-scm.com/downloads" target="_blank" rel="noreferrer">git-scm.com</a>, then check again.</>}
+              action={status && !status.git && status.gitInstall ? <button className="btn small" onClick={() => runInShell(status.gitInstall!, "the Git installer")}>Install Git</button> : null} />
             {!status && <div className="setup-row"><span className="setup-state wait"><LoaderCircle aria-hidden /></span><div className="setup-text"><span className="setup-title">Looking for installed agents…</span></div></div>}
             {status?.agents.map((a) => <AgentRow key={a.id} a={a} onRun={runInShell} />)}
           </section>

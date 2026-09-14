@@ -422,7 +422,7 @@ export default function App() {
 
   const initGit = useCallback(async () => {
     if (!project) return;
-    try { await gitInit(project.root); await reloadProject(); setNote("Initialised an empty Git repository. Make a first commit so agents can branch from it."); }
+    try { await gitInit(project.root); await reloadProject(); setNote("Initialised a Git repository with an empty first commit; agents can branch from it, and your files stay uncommitted until you commit."); }
     catch (e) { setError(String(e)); }
   }, [project, reloadProject]);
 

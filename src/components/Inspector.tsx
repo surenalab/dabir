@@ -417,6 +417,8 @@ export function Inspector({ project, gitRepo, askFocus, prefill, tabRequest, onP
       // The earlier turn's changes stay on screen while the follow-up works on them.
       setRun({ phase: "running", runId: started.runId, worktree: started.worktree, prompt, steps: [], provider: follow ? follow.provider : provider, steer: steerLabel || undefined, started: Date.now(), turns, pending: follow?.diff ?? undefined });
       setDraft("");
+      // The run set the repository up first: say so, and let the sidebar drop its "no git" badge.
+      if (started.repoNote) { onNote(started.repoNote); onChanged(); }
     } catch (e) { onNote(String(e)); }
   };
 
@@ -616,7 +618,7 @@ export function Inspector({ project, gitRepo, askFocus, prefill, tabRequest, onP
             <p className="composer-note" role="status">{run.text} <button className="btn" style={{ height: 22, marginLeft: 6 }} onClick={() => setRun({ phase: "idle" })}>OK</button></p>
           )}
           {run.phase === "idle" && project && !finishedRun && (
-            <p className="composer-note">The agent works on a copy of the paper as it is now. When it finishes, the document shows its version with the changes marked and {chord("⌘B")} compiles it; then Accept (lands the change and takes a snapshot), Reject, or open a pull request.{gitRepo ? "" : " This folder needs a Git repository first."}</p>
+            <p className="composer-note">The agent works on a copy of the paper as it is now. When it finishes, the document shows its version with the changes marked and {chord("⌘B")} compiles it; then Accept (lands the change and takes a snapshot), Reject, or open a pull request.{gitRepo ? "" : " This folder is not a Git repository yet; the first run makes it one, with your files left uncommitted."}</p>
           )}
         </div>
       )}
