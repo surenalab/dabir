@@ -397,28 +397,18 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
   useEffect(() => { view.current?.dispatch({ effects: spellComp.current.reconfigure(spellCfg(settings, dictionary, pathRef.current)) }); }, [settings, dictionary]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Bind the editor to the session's shared text for this file. Unbind first: while the previous file's binding
-  // is live, replacing the document would be sent to that file's shared text and overwrite it for everyone
-  // (0.1.5 did exactly this, and the host's autosave then wrote the other file's content over the paper).
-  // An empty shared text means nobody has seeded this file yet: the host seeds it from its own copy, so there
-  // is one seeder and no duplicate; a guest shows it empty, without reporting a change, and the host's seed
-  // arrives through the binding a moment later. A layout effect, so no keystroke lands between the swap and it.
+  // is live, replacing the document would be sent to that file's shared text and overwrite it for everyone.
+  // The host seeds an empty shared text from this file's `value`. A guest must not bind yCollab (or replace the
+  // document) while that text is still empty: y-codemirror would treat the empty Y.Text as truth and blank the
+  // editor, which is why 0.1.6 joiners saw filenames and no .tex. They keep the snapshot on screen and bind
+  // once the host's seed arrives. A layout effect, so no keystroke lands between the swap and it.
   useLayoutEffect(() => {
     const v = view.current;
     if (!v) return;
     v.dispatch({ effects: collabComp.current.reconfigure([]) });
     if (!collab) return;
-    const current = v.state.doc.toString();
-    let shared = collab.text.toString();
-    // Seed from `value`, this file's text, never from the editor: on a file switch the editor still holds the
-    // previous file until the swap below.
-    if (shared.length === 0 && value.length > 0 && collab.host) { collab.text.insert(0, value); shared = value; }
-    if (shared !== current) {
-      replaceDoc(v, shared);
-      if (shared.length > 0) onChangeRef.current(shared);
-    }
-    v.dispatch({ effects: collabComp.current.reconfigure(yCollab(collab.text, collab.awareness)) });
-    // Coauthors' carets as offsets, so Visual widgets can show who is inside the source they hide.
-    const sync = () => {
+
+    const syncCursors = () => {
       const view_ = view.current; if (!view_) return;
       const out: RemoteCursor[] = [];
       const doc = collab.text.doc; if (!doc) return;
@@ -433,8 +423,44 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
       });
       view_.dispatch({ effects: setRemoteCursors.of(out) });
     };
-    collab.awareness.on("change", sync); sync();
-    return () => { collab.awareness.off("change", sync); view.current?.dispatch({ effects: setRemoteCursors.of([]) }); };
+
+    const bind = () => {
+      const view_ = view.current; if (!view_) return;
+      const shared = collab.text.toString();
+      const current = view_.state.doc.toString();
+      if (shared !== current) {
+        replaceDoc(view_, shared);
+        if (shared.length > 0) onChangeRef.current(shared);
+      }
+      view_.dispatch({ effects: collabComp.current.reconfigure(yCollab(collab.text, collab.awareness)) });
+      syncCursors();
+    };
+
+    let shared = collab.text.toString();
+    if (shared.length === 0 && value.length > 0 && collab.host) { collab.text.insert(0, value); shared = value; }
+    if (shared.length === 0) {
+      if (value.length > 0 && v.state.doc.toString() !== value) replaceDoc(v, value);
+      let done = false;
+      const onSeed = () => {
+        if (done || collab.text.length === 0) return;
+        done = true;
+        collab.text.unobserve(onSeed);
+        collab.text.doc?.off("update", onSeed);
+        bind();
+      };
+      collab.text.observe(onSeed);
+      collab.text.doc?.on("update", onSeed);
+      collab.awareness.on("change", syncCursors); syncCursors();
+      return () => {
+        collab.text.unobserve(onSeed);
+        collab.text.doc?.off("update", onSeed);
+        collab.awareness.off("change", syncCursors);
+        view.current?.dispatch({ effects: setRemoteCursors.of([]) });
+      };
+    }
+    bind();
+    collab.awareness.on("change", syncCursors);
+    return () => { collab.awareness.off("change", syncCursors); view.current?.dispatch({ effects: setRemoteCursors.of([]) }); };
   }, [collab]); // eslint-disable-line react-hooks/exhaustive-deps -- `value` is read once, at the moment the binding changes
 
   useEffect(() => { view.current?.dispatch({ effects: setComments.of(comments) }); }, [comments]);

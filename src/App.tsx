@@ -22,7 +22,7 @@ import { paperSymbols, paperOutline, flattenFiles, type AssistSources } from "./
 import { stopLanguageServers } from "./lib/lsp";
 import type { PdfPin, PdfZoom } from "./components/PdfView";
 import type { ManualProvider } from "./lib/manual";
-import { addComment as yAddComment, connect as yConnect, decodeRange, disconnect as yDisconnect, encodeRange, peers as yPeers, randomRoom, removeComment as yRemoveComment, resolveComment as yResolveComment, setCurrentFile, textFor, whenSynced, signalUrl, iceServers, parseShareLink, type Comment, type Peer, type Session, type Transport, replyComment as yReplyComment, userName, colorFor, markHost, hostPresent, publishProject, republishChanged, awaitSnapshot, sharedTexts, persist, setFileChanges } from "./lib/collab";
+import { addComment as yAddComment, connect as yConnect, decodeRange, disconnect as yDisconnect, encodeRange, peers as yPeers, randomRoom, removeComment as yRemoveComment, resolveComment as yResolveComment, setCurrentFile, textFor, whenSynced, signalUrl, iceServers, parseShareLink, type Comment, type Peer, type Session, type Transport, replyComment as yReplyComment, userName, colorFor, markHost, hostPresent, publishProject, republishChanged, awaitSnapshot, sharedTexts, persist, setFileChanges, seedLiveFiles } from "./lib/collab";
 import type { CommentRange } from "./components/SourceEditor";
 import { safeColor, type Change, type ChangeRange } from "./lib/changes";
 import { proseWords } from "./lib/spell";
@@ -499,6 +499,7 @@ export default function App() {
       // Every joiner rebuilds this working tree locally, so figures, tables and the .bib match.
       const snap = await projectSnapshot(project.root);
       await publishProject(sess, snap.files, snap.skipped);
+      seedLiveFiles(sess, snap.files);
       setNote(transport === "direct" ? "Direct session ready. Make an invite code for each coauthor." : "Live session started. Send the link from the Share sheet." + (snap.skipped.length ? ` ${snap.skipped.length} large file${snap.skipped.length > 1 ? "s" : ""} stay on this machine.` : ""));
     } finally { setLiveBusy(null); }
   }, [project, file, source, rel, attachSession, settings.signalingUrl]);

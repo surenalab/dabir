@@ -4,6 +4,10 @@ Newest first. Every merged pull request adds a line under Unreleased; a release 
 
 ## Unreleased
 
+## 0.1.7
+
+- Live sessions: a joiner no longer sees filenames with a blank editor. 0.1.6 bound y-codemirror to the live text before the host had seeded it, so an empty Y.Text replaced the snapshot already on disk. The guest now keeps that snapshot on screen and binds once the seed arrives; the host puts every text file into the live document when the session starts, not only the file they have open.
+
 ## 0.1.6
 
 - Live sessions: switching files during a session no longer overwrites the previous file's shared text with the new file's content. The editor rebound to the new file while the old binding was still live, so the swap went to the old file's text on every machine, and the host's autosave then wrote it to disk; a guest opening a file nobody had seeded saw it empty. Now the editor unbinds before the swap, the host alone seeds an empty shared text from its own copy of that file, and a guest waits for the host's seed without reporting an empty document. The binding is also made once per file instead of on every keystroke. Files touched by a 0.1.5 session are recoverable from History.
