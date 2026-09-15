@@ -116,7 +116,7 @@ interface Props {
   agentReady: boolean;
   onJumpFile: (file: string | null, line: number) => void;
   onFix: (prompt: string) => void;
-  collab: { text: Y.Text; awareness: Awareness } | null;
+  collab: { text: Y.Text; awareness: Awareness; host: boolean } | null;
   comments: CommentRange[];
   changes: ChangeRange[];
   author: { name: string; color: string };

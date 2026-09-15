@@ -619,13 +619,10 @@ export default function App() {
 
   useEffect(() => { if (session) setCurrentFile(session, rel(file)); }, [session, file, rel]);
 
-  const collab = session && file && rel(file) ? { text: textFor(session, rel(file)!), awareness: session.awareness } : null;
-  // When a joiner opens a file the host has not seeded yet, seed from their own copy.
-  useEffect(() => {
-    if (!session || !file || source == null) return;
-    const t = textFor(session, rel(file)!);
-    if (t.length === 0 && source.length > 0 && live?.host) t.insert(0, source);
-  }, [session, file, source, rel, live]);
+  // One object per (session, file), so the editor binds once per file rather than on every keystroke; the editor
+  // seeds an empty shared text from the host's copy when the host opens it, and the host's seedFor above covers
+  // files a guest opens first.
+  const collab = useMemo(() => session && file && rel(file) ? { text: textFor(session, rel(file)!), awareness: session.awareness, host: !!live?.host } : null, [session, file, rel, live?.host]);
 
   // Comments live in the shared doc during a session, otherwise in .dabir/comments.json next to the paper.
   // Local anchors are plain offsets plus the quoted text, re-found by search when the offset drifts.
