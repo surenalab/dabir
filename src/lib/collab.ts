@@ -99,6 +99,15 @@ export function textFor(s: Session, relPath: string): Y.Text {
   return t;
 }
 
+/** Put each snapshot text file into the live CRDT if that file is still empty. Host only: two seeders would duplicate. */
+export function seedLiveFiles(s: Session, files: SnapFile[]): void {
+  for (const f of files) {
+    if (f.text == null || f.text.length === 0) continue;
+    const t = textFor(s, f.path);
+    if (t.length === 0) t.insert(0, f.text);
+  }
+}
+
 export function peers(s: Session): Peer[] {
   const out: Peer[] = [];
   s.awareness.getStates().forEach((state, clientId) => {
