@@ -50,6 +50,20 @@ pub fn bin_in(dir: &Path, bin: &str) -> Option<PathBuf> {
     None
 }
 
+/// End a process we started, by pid: `kill` (SIGTERM, so a CLI can clean up its worktree) off Windows, where
+/// `kill` exists; `taskkill /T /F` on Windows, where it does not, taking the children too since an agent
+/// CLI is usually a `node` under a `.cmd` shim and killing the shim alone leaves the run going.
+pub fn terminate(pid: u32) -> bool {
+    let out = if cfg!(windows) {
+        tool("taskkill")
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .output()
+    } else {
+        tool("kill").arg(pid.to_string()).output()
+    };
+    out.map(|o| o.status.success()).unwrap_or(false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

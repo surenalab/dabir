@@ -1167,7 +1167,7 @@ pub fn cancel(run_id: &str) -> bool {
         .and_then(|g| g.as_ref().and_then(|m| m.get(run_id).copied()));
     match pid {
         Some(pid) => {
-            let _ = crate::spawn::tool("kill").arg(pid.to_string()).output();
+            crate::spawn::terminate(pid);
             true
         }
         None => false,

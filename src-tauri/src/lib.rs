@@ -691,7 +691,7 @@ fn compile_cancel() -> bool {
     let pid = COMPILE_PID.lock().unwrap().take();
     match pid {
         Some(pid) => {
-            let _ = crate::spawn::tool("kill").arg(pid.to_string()).output();
+            crate::spawn::terminate(pid);
             true
         }
         None => false,
