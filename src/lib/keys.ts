@@ -13,7 +13,7 @@ export function chord(text: string): string {
     const parts: string[] = [];
     let rest = "";
     for (const c of m) {
-      if (c in NAMES) parts.push(NAMES[c]);
+      if (c in NAMES) { if (!parts.includes(NAMES[c])) parts.push(NAMES[c]); }
       else if (c === "↩" || c === "⏎") rest += "Enter";
       else rest += c;
     }

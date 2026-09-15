@@ -44,6 +44,13 @@ export type CompileState =
 const NAV_W = 232, INSP_W = 380;
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
+/** A text field or the editor has the keyboard: Ctrl+Enter there means send or a newline, not Run File. */
+function isEditable(t: EventTarget | null): boolean {
+  const el = t as HTMLElement | null;
+  if (!el || !el.tagName) return false;
+  return el.tagName === "TEXTAREA" || el.tagName === "INPUT" || el.isContentEditable;
+}
+
 export default function App() {
   const [project, setProject] = useState<Project | null>(null);
   const [file, setFile] = useState<string | null>(null);
@@ -843,7 +850,13 @@ export default function App() {
     ];
   }, [project, selectFile]);
 
+  // A chord the native menu does deliver reaches command() twice within a few milliseconds off the Mac
+  // (the menu event and the keyboard fallback below); the second is dropped.
+  const lastCommand = useRef<{ id: string; at: number }>({ id: "", at: 0 });
   const command = useCallback((id: string) => {
+    const now = performance.now();
+    if (lastCommand.current.id === id && now - lastCommand.current.at < 150) return;
+    lastCommand.current = { id, at: now };
     switch (id) {
       case "open": open(); break;
       case "close-paper": if (project) closePaper(); break;
@@ -914,14 +927,18 @@ export default function App() {
   useEffect(() => onWindowFocus((f) => { setFocused(f); if (f) refreshGit(); }), [refreshGit]);
   useEffect(() => { if (!note) return; const t = setTimeout(() => setNote(null), 6000); return () => clearTimeout(t); }, [note]);
 
-  // Keyboard fallback for the browser preview only; the native app owns accelerators through its menu.
+  // Keyboard fallback. On the Mac the native menu owns every accelerator, so this runs only in the browser
+  // preview there. On Windows and Linux the menu's accelerators did not reach the app while the web view had
+  // the keyboard (the 0.1.2 test on Windows: none of Ctrl+/, Ctrl+N, Ctrl+, or Ctrl+Shift+W fired), so the same
+  // table runs here with Ctrl in place of ⌘; a chord the menu does deliver is deduplicated in command().
   useEffect(() => {
-    if (native) return;
+    if (native && isMac) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.ctrlKey && !e.metaKey && e.key === "`") { e.preventDefault(); command("show-terminal"); return; }
-      if (e.ctrlKey && !e.metaKey && e.key === "Enter") { e.preventDefault(); command("run-file"); return; }
+      const mod = isMac ? e.metaKey : e.ctrlKey;
+      if (e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === "`") { e.preventDefault(); command("show-terminal"); return; }
+      if (e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === "Enter" && !isEditable(e.target)) { e.preventDefault(); command("run-file"); return; }
       if (e.shiftKey && e.altKey && !e.metaKey && !e.ctrlKey && (e.code === "KeyF") && !e.defaultPrevented) { e.preventDefault(); command("format-doc"); return; }
-      if (!e.metaKey) return;
+      if (!mod) return;
       const k = e.key.toLowerCase();
       const map: Record<string, string> = { o: "open", n: "new", s: "save", b: "compile", "1": "view-visual", "2": "view-source", "3": "view-pdf", "4": "view-split", j: "ask-agent", f: "find", "/": "shortcuts", ",": "settings", k: "fmt-link" };
       const shifted: Record<string, string> = { g: "check-grammar", b: "fmt-bold", i: "fmt-italic", e: "fmt-emph", m: "fmt-math", c: "fmt-cite", r: "fmt-ref", l: "show-log", j: "sync-pdf", s: "share", o: "clone", f: "find-paper" };
@@ -934,7 +951,8 @@ export default function App() {
       if (k === "=" || k === "+") { e.preventDefault(); command("zoom-in"); return; }
       if (k === "-") { e.preventDefault(); command("zoom-out"); return; }
       if (k === "0") { e.preventDefault(); command("zoom-fit"); return; }
-      if (e.ctrlKey && k === "s") { e.preventDefault(); command("toggle-sidebar"); return; }
+      // ⌃⌘S on the Mac; Ctrl+Alt+S elsewhere, where Ctrl+Shift+S is Share.
+      if (isMac ? (e.ctrlKey && k === "s") : (e.altKey && (k === "s" || e.code === "KeyS"))) { e.preventDefault(); command("toggle-sidebar"); return; }
       if (e.altKey && (k === "i" || e.code === "KeyI")) { e.preventDefault(); command("toggle-inspector"); return; }
       if (e.altKey && (k === "f" || e.code === "KeyF")) { e.preventDefault(); command("focus-mode"); return; }
       if (!e.altKey && !e.ctrlKey && !e.shiftKey && map[k]) { e.preventDefault(); command(map[k]); }

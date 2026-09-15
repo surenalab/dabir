@@ -2320,7 +2320,8 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
                 .accelerator(if cfg!(target_os = "macos") {
                     "Ctrl+Cmd+S"
                 } else {
-                    "CmdOrCtrl+Shift+S"
+                    // Ctrl+Shift+S is Share; Ctrl+Alt+S is free, like the other Ctrl+Alt chords here.
+                    "CmdOrCtrl+Alt+S"
                 })
                 .build(app)?,
         )

@@ -2,6 +2,7 @@ import { PanelLeft, PanelRight, Play, Share2, Square, SquareTerminal, CirclePlay
 import type { Project } from "../lib/backend";
 import { Segmented } from "./Segmented";
 import { chord } from "../lib/keys";
+import { isMac } from "../lib/backend";
 
 export type ViewMode = "visual" | "source" | "pdf" | "split";
 
@@ -35,7 +36,7 @@ export function Toolbar({ project, file, dirty, saveLabel, mode, navOpen, inspec
   return (
     <header className="titlebar" data-tauri-drag-region>
       <div className="leading">
-        <button className="tb-btn icon" onClick={onToggleNav} aria-pressed={!navOpen} aria-label={navOpen ? "Hide Sidebar" : "Show Sidebar"} title={chord(`${navOpen ? "Hide" : "Show"} Sidebar (⌃⌘S)`)}>
+        <button className="tb-btn icon" onClick={onToggleNav} aria-pressed={!navOpen} aria-label={navOpen ? "Hide Sidebar" : "Show Sidebar"} title={chord(`${navOpen ? "Hide" : "Show"} Sidebar (${isMac ? "⌃⌘S" : "⌥⌘S"})`)}>
           <PanelLeft />
         </button>
       </div>
