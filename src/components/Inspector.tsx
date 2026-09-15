@@ -8,6 +8,7 @@ import { renderMarkdown } from "../lib/md";
 import { updateSettings, useSettings } from "../lib/settings";
 import type { Comment, Peer } from "../lib/collab";
 import { chord } from "../lib/keys";
+import { isMac } from "../lib/backend";
 
 export type Tab = "agent" | "memory" | "people" | "history";
 
@@ -552,7 +553,7 @@ export function Inspector({ project, gitRepo, askFocus, prefill, tabRequest, onP
             <textarea ref={textarea}
               placeholder={project ? (run.phase === "review" && run.diff && run.diff.changes.length > 0 ? "Ask for more on top of these changes…" : current?.installed ? `Ask ${current.label} to change the paper or rerun an experiment…` : "Choose an installed agent first") : "Open a paper first"}
               value={draft} onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && e.metaKey) { e.preventDefault(); send(); } }}
+              onKeyDown={(e) => { if (e.key === "Enter" && (isMac ? e.metaKey : e.ctrlKey)) { e.preventDefault(); send(); } }}
               disabled={!project || !current?.installed || run.phase === "running"} aria-label="Message to the agent" />
             <div className="bar">
               <span className="scope" title="The agent sees the whole repository and works on a Git worktree on its own branch, with permission prompts bypassed inside that worktree. Your checkout is untouched until you accept."><Paperclip aria-hidden /> whole repo · worktree · <kbd>{chord("⌘↩")}</kbd></span>
