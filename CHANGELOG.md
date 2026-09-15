@@ -4,6 +4,9 @@ Newest first. Every merged pull request adds a line under Unreleased; a release 
 
 ## Unreleased
 
+## 0.1.6
+
+- Live sessions: switching files during a session no longer overwrites the previous file's shared text with the new file's content. The editor rebound to the new file while the old binding was still live, so the swap went to the old file's text on every machine, and the host's autosave then wrote it to disk; a guest opening a file nobody had seeded saw it empty. Now the editor unbinds before the swap, the host alone seeds an empty shared text from its own copy of that file, and a guest waits for the host's seed without reporting an empty document. The binding is also made once per file instead of on every keystroke. Files touched by a 0.1.5 session are recoverable from History.
 ## 0.1.5
 
 - Live sessions from anywhere: *Anywhere* is the first choice in Share and needs no setup. Machines meet through Dabir's meeting point (the signalling worker on Cloudflare's free tier, now also serving `/ice` with STUN and, when a TURN key is configured, Cloudflare TURN credentials so university and corporate networks that block peer traffic still connect) and the paper travels peer to peer, encrypted with the key in the link. Settings › Meeting point overrides it for a lab's own; the link leaves the address out when it is Dabir's.

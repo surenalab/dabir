@@ -149,7 +149,8 @@ interface Props {
   visual: false | "tex" | "typst";
   settings: Settings;
   assist: AssistSources;
-  collab: { text: Y.Text; awareness: Awareness } | null;
+  /** The session's shared text for this file; `host` marks the one client allowed to seed an empty one. */
+  collab: { text: Y.Text; awareness: Awareness; host: boolean } | null;
   comments: CommentRange[];
   changes: ChangeRange[];
   suggesting: boolean;
@@ -395,17 +396,25 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
   useEffect(() => { view.current?.dispatch({ effects: [prefsComp.current.reconfigure(prefs(settings)), keysComp.current.reconfigure(settings.keymap === "vim" ? vim() : []), completeComp.current.reconfigure(completionExt(settings))] }); }, [settings]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { view.current?.dispatch({ effects: spellComp.current.reconfigure(spellCfg(settings, dictionary, pathRef.current)) }); }, [settings, dictionary]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
+  // Bind the editor to the session's shared text for this file. Unbind first: while the previous file's binding
+  // is live, replacing the document would be sent to that file's shared text and overwrite it for everyone
+  // (0.1.5 did exactly this, and the host's autosave then wrote the other file's content over the paper).
+  // An empty shared text means nobody has seeded this file yet: the host seeds it from its own copy, so there
+  // is one seeder and no duplicate; a guest shows it empty, without reporting a change, and the host's seed
+  // arrives through the binding a moment later. A layout effect, so no keystroke lands between the swap and it.
+  useLayoutEffect(() => {
     const v = view.current;
     if (!v) return;
-    if (!collab) { v.dispatch({ effects: collabComp.current.reconfigure([]) }); return; }
-    const shared = collab.text.toString();
+    v.dispatch({ effects: collabComp.current.reconfigure([]) });
+    if (!collab) return;
     const current = v.state.doc.toString();
+    let shared = collab.text.toString();
+    // Seed from `value`, this file's text, never from the editor: on a file switch the editor still holds the
+    // previous file until the swap below.
+    if (shared.length === 0 && value.length > 0 && collab.host) { collab.text.insert(0, value); shared = value; }
     if (shared !== current) {
-      loading.current = true;
-      v.dispatch({ changes: { from: 0, to: current.length, insert: shared } });
-      loading.current = false;
-      onChangeRef.current(shared);
+      replaceDoc(v, shared);
+      if (shared.length > 0) onChangeRef.current(shared);
     }
     v.dispatch({ effects: collabComp.current.reconfigure(yCollab(collab.text, collab.awareness)) });
     // Coauthors' carets as offsets, so Visual widgets can show who is inside the source they hide.
@@ -426,7 +435,7 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
     };
     collab.awareness.on("change", sync); sync();
     return () => { collab.awareness.off("change", sync); view.current?.dispatch({ effects: setRemoteCursors.of([]) }); };
-  }, [collab]);
+  }, [collab]); // eslint-disable-line react-hooks/exhaustive-deps -- `value` is read once, at the moment the binding changes
 
   useEffect(() => { view.current?.dispatch({ effects: setComments.of(comments) }); }, [comments]);
   useEffect(() => { view.current?.dispatch({ effects: suggestComp.current.reconfigure(suggestConfig.of({ on: suggesting, author })) }); }, [suggesting, author]);
@@ -445,32 +454,36 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
     v.focus();
   }, [jumpOffset]);
 
+  // The document is being replaced from outside: another file, the agent's version, a checkout, the session's
+  // shared text. The old undo history, completion state and diagnostics belong to the old text: dropping them
+  // keeps ⌘Z from bringing the previous file back into this one (which autosave would then write to disk).
+  const replaceDoc = (v: EditorView, text: string) => {
+    const current = v.state.doc.toString();
+    loading.current = true;
+    try {
+      closeCompletion(v);
+      const clearDiag = setDiagnostics(v.state, []).effects;
+      const diag = Array.isArray(clearDiag) ? clearDiag : clearDiag ? [clearDiag as StateEffect<unknown>] : [];
+      v.dispatch({ changes: { from: 0, to: current.length, insert: text }, selection: { anchor: 0 }, effects: [historyComp.current.reconfigure([]), ...diag], annotations: Transaction.addToHistory.of(false) });
+      v.dispatch({ effects: historyComp.current.reconfigure(history()) });
+    } catch (e) {
+      // A stale extension state that cannot map onto the new text must not leave the old text on screen.
+      logUi(`editor: replacing the document failed (${String(e)}); starting a fresh state`);
+      v.setState(createState(text));
+      v.dispatch({ effects: [setMarks.of(marks), setHeadText.of(headText), setComments.of(comments), setGrammar.of(grammar), setReview.of(review ?? null)] });
+      attachLanguageServer(pathRef.current, assistRef.current.root());
+    } finally { loading.current = false; }
+    v.scrollDOM.scrollTop = 0;
+  };
+
   // A layout effect: it runs in the same commit that changed `file`, so no keystroke can land in the old text
   // between React's render and the swap (a passive effect leaves that window open).
   useLayoutEffect(() => {
     const v = view.current;
     if (!v) return;
     if (collab) return;
-    const current = v.state.doc.toString();
-    if (current === value) return;
-    // The document is being replaced from outside: another file, the agent's version, a checkout. The old undo
-    // history, completion state and diagnostics belong to the old text: dropping them keeps ⌘Z from bringing the
-    // previous file back into this one (which autosave would then write to disk).
-    loading.current = true;
-    try {
-      closeCompletion(v);
-      const clearDiag = setDiagnostics(v.state, []).effects;
-      const diag = Array.isArray(clearDiag) ? clearDiag : clearDiag ? [clearDiag as StateEffect<unknown>] : [];
-      v.dispatch({ changes: { from: 0, to: current.length, insert: value }, selection: { anchor: 0 }, effects: [historyComp.current.reconfigure([]), ...diag], annotations: Transaction.addToHistory.of(false) });
-      v.dispatch({ effects: historyComp.current.reconfigure(history()) });
-    } catch (e) {
-      // A stale extension state that cannot map onto the new text must not leave the old text on screen.
-      logUi(`editor: replacing the document failed (${String(e)}); starting a fresh state`);
-      v.setState(createState(value));
-      v.dispatch({ effects: [setMarks.of(marks), setHeadText.of(headText), setComments.of(comments), setGrammar.of(grammar), setReview.of(review ?? null)] });
-      attachLanguageServer(pathRef.current, assistRef.current.root());
-    } finally { loading.current = false; }
-    v.scrollDOM.scrollTop = 0;
+    if (v.state.doc.toString() === value) return;
+    replaceDoc(v, value);
   }, [value, collab]); // eslint-disable-line react-hooks/exhaustive-deps -- the fallback reads the current props once
   // After the document is the agent's version: mark its lines and open on the first change.
   useEffect(() => {
