@@ -933,7 +933,9 @@ export default function App() {
   // table runs here with Ctrl in place of ⌘; a chord the menu does deliver is deduplicated in command().
   useEffect(() => {
     if (native && isMac) return;
-    const onKey = (e: KeyboardEvent) => {
+    const onKey = (raw: KeyboardEvent) => {
+      // Handled chords stop here, ahead of the editor (Ctrl+/ is CodeMirror's comment toggle) and text fields.
+      const e = new Proxy(raw, { get: (t, k) => k === "preventDefault" ? () => { t.preventDefault(); t.stopPropagation(); } : Reflect.get(t, k) }) as KeyboardEvent;
       const mod = isMac ? e.metaKey : e.ctrlKey;
       if (e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === "`") { e.preventDefault(); command("show-terminal"); return; }
       if (e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === "Enter" && !isEditable(e.target)) { e.preventDefault(); command("run-file"); return; }
@@ -941,7 +943,7 @@ export default function App() {
       if (!mod) return;
       const k = e.key.toLowerCase();
       const map: Record<string, string> = { o: "open", n: "new", s: "save", b: "compile", "1": "view-visual", "2": "view-source", "3": "view-pdf", "4": "view-split", j: "ask-agent", f: "find", "/": "shortcuts", ",": "settings", k: "fmt-link" };
-      const shifted: Record<string, string> = { g: "check-grammar", b: "fmt-bold", i: "fmt-italic", e: "fmt-emph", m: "fmt-math", c: "fmt-cite", r: "fmt-ref", l: "show-log", j: "sync-pdf", s: "share", o: "clone", f: "find-paper" };
+      const shifted: Record<string, string> = { g: "check-grammar", b: "fmt-bold", i: "fmt-italic", e: "fmt-emph", m: "fmt-math", c: "fmt-cite", r: "fmt-ref", l: "show-log", j: "sync-pdf", s: "share", o: "clone", f: "find-paper", w: "close-paper" };
       if (e.shiftKey && !e.altKey && shifted[k]) { e.preventDefault(); command(shifted[k]); return; }
       if (e.shiftKey && (e.key === "]" || e.key === "}" || e.code === "BracketRight")) { e.preventDefault(); command("next-file"); return; }
       if (e.shiftKey && (e.key === "[" || e.key === "{" || e.code === "BracketLeft")) { e.preventDefault(); command("prev-file"); return; }
@@ -957,8 +959,8 @@ export default function App() {
       if (e.altKey && (k === "f" || e.code === "KeyF")) { e.preventDefault(); command("focus-mode"); return; }
       if (!e.altKey && !e.ctrlKey && !e.shiftKey && map[k]) { e.preventDefault(); command(map[k]); }
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   }, [command]);
 
   useEffect(() => {
