@@ -94,7 +94,7 @@ Citation keys complete inside `\cite{` with the title and authors shown; ⌘-cli
 
 ## 8. Ask an agent
 
-The **Agent** tab (⌘J) sends a request to the agent you choose: Claude Code, Codex, Cursor, Grok or OpenCode, whichever is installed. The **dial** under the agent chooser sets the model and the effort in one sweep: Fast at the left (the smallest model at low effort), Deep at the right (the largest at maximum). Drag the needle, click a tick, or focus it and use ← →; the readout names the position and what it costs in time and money. *Default* hands both choices back to the CLI's own configuration, *Type a model id…* takes an id the list does not know. Codex, which does not list models, offers its four effort levels; Cursor, whose model ids carry their effort, offers its models.
+The **Agent** tab (⌘J) sends a request to the agent you choose: Claude Code, Codex, Cursor, Grok or OpenCode, whichever is installed. The **effort pill** in the composer's bar (⚡ *Select effort*, or the current *Sonnet · High*) opens the model and effort control: a slider with one dot per effort level the CLI accepts, low at the left and the deepest at the right. Drag the knob or click a dot; it settles on the nearest level, the level's name shows above in red with the model under it, and a line tells you what that level costs in plain words. The models the CLI lists sit below as chips, weakest to strongest; *Type a model id…* takes one the list does not know. The reset arrow hands both choices back to the CLI's own configuration. From the keyboard: ← → Home End on the slider, Backspace for the default, Escape to close. Codex, which does not list models, offers its effort levels; Cursor, whose model ids carry their effort, offers its models.
 
 What happens on a run:
 
@@ -149,7 +149,7 @@ Recorded provenance commands then run there over ssh and their artefacts are cop
 
 Dabir keeps three kinds of history, all in the repository:
 
-- **Steps**: every save is a step in the History tab; click one to restore the file as it was, or undo the restore. The row of dashes at the top is the same history at a glance, oldest at the left, newest at the right edge: taller accent dashes are agent changes, short grey ones are yours, a gap is a new day. Hover or drag across it to read each step and see it marked below; release to open it. New steps slide in from the right.
+- **Steps**: every save is a step in the History tab; click one to restore the file as it was, or undo the restore. The column of dashes down the left edge is the same history at a glance, newest at the top: longer red dashes are agent changes, short grey ones are yours, the shortest are restores and autosaves. Run the pointer down it and the dash under it stretches while a card beside it names the step, its time and its files, and the row in the list lights up; click, or release after a drag, to open that step, which stays long and red. New steps slide in at the top. ↑ ↓ and Enter do the same from the keyboard.
 - **Snapshots**: every accepted agent run is a snapshot with its report.
 - **Commits**: the sidebar's Changes section shows what changed since the last commit with a drafted message; **Commit** (⌥⌘C) commits under your name. Agents never commit as you; when they open a pull request the commit is theirs.
 

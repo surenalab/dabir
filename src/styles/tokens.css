@@ -31,6 +31,9 @@
   --accent-ink: #ffffff;
   --accent-wash: #f6e6e4;
   --selection: rgba(168, 50, 45, 0.18);
+  /* The effort slider: its travelled fill and the knob, which stays light in both themes so it reads on the fill. */
+  --effort-fill: color-mix(in srgb, var(--accent) 55%, var(--paper-2));
+  --effort-knob: #ffffff;
 
   --ok: #2f6b3a;
   --ok-wash: #e3efe4;
@@ -98,6 +101,7 @@
     --accent-ink: #1a1b1e;
     --accent-wash: #3a2624;
     --selection: rgba(224, 106, 99, 0.24);
+    --effort-knob: #ebe9e2;
 
     --ok: #7dc48a;
     --ok-wash: #22301f;

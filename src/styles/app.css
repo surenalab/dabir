@@ -189,29 +189,44 @@ button { background: none; border: 0; padding: 0; cursor: default; }
 .change .discard:hover { background: var(--paper); color: var(--ink); }
 .versions-toggle svg { width: 12px; height: 12px; }
 
-/* History scrubber: one dash per step, oldest left, newest at the right edge. Pitch 6px = 3px dash + 3px gap (Scrubber.tsx PITCH).
-   Every dash is 22px tall and scaled from its foot, so the hover growth is a transform, not a layout change. */
-.scrub { display: flex; flex-direction: column; gap: 2px; margin: 0 0 var(--space-2); }
-.scrub-rail { position: relative; height: 28px; padding: 0 var(--space-1); border-radius: var(--radius-sm); cursor: ew-resize; overflow: hidden; touch-action: none; user-select: none; }
-.scrub-rail:focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; }
-.scrub-rail::before { content: ""; position: absolute; left: var(--space-1); right: var(--space-1); bottom: 3px; height: 1px; background: var(--line); }
-.scrub-row { position: absolute; right: var(--space-1); bottom: 4px; display: flex; align-items: flex-end; gap: 3px; height: 22px; }
-.scrub .dash { flex: none; width: 3px; height: 22px; border-radius: 1.5px; background: var(--ink-4); transform: scaleY(.5); transform-origin: bottom; transition: transform var(--dur-fast) var(--ease-out), background-color var(--dur-fast); }
-.scrub .dash.agent { transform: scaleY(.73); background: var(--accent); }
-.scrub .dash.system { transform: scaleY(.32); background: var(--line-strong); }
-.scrub .dash.day { margin-left: 6px; }
-.scrub .dash:last-child { animation: dash-in var(--dur-slow) var(--ease-out); }
-@keyframes dash-in { from { opacity: 0; translate: 0 8px; } to { opacity: 1; translate: 0 0; } }
-.scrub .dash.at { transform: scaleY(1); background: var(--ink); }
-.scrub .dash.open { transform: scaleY(1); background: var(--accent); }
-.scrub .dash.at.open { background: var(--accent-hover); }
-.scrub .stub { flex: none; width: 3px; height: 11px; margin-right: 6px; border-radius: 1.5px; background: repeating-linear-gradient(to top, var(--line-strong) 0 2px, transparent 2px 4px); }
-.scrub-read { display: flex; justify-content: space-between; gap: var(--space-2); font-size: var(--text-xs); color: var(--ink-2); padding: 0 var(--space-1); min-height: 16px; }
-.scrub-read .msg { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.scrub-read .msg.quiet { color: var(--ink-3); }
-.scrub-read .when { color: var(--ink-4); font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* History rail: one dash per step down the left edge of the pane, newest at the top. Pitch 7px = 2px dash + 5px
+   gap. Every dash is the rail's full width and scaled from its left edge, so the growth under the pointer is a
+   transform, not a layout change. The pane is a grid: the rail in the first column, sticky, as tall as the pane;
+   everything else in the second. */
+.inspector-body.history { display: grid; grid-template-columns: 18px minmax(0, 1fr); column-gap: var(--space-2); row-gap: var(--space-3); align-content: start; }
+.inspector-body.history > :not(.rail) { grid-column: 2; }
+.rail { grid-column: 1; grid-row: 1 / span 6; position: sticky; top: 0; align-self: start; width: 18px; padding: 10px 0; margin-left: -2px; border-radius: var(--radius-sm); cursor: ns-resize; touch-action: none; user-select: none; }
+.rail:focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; }
+.rail-col { display: flex; flex-direction: column; gap: 5px; align-items: flex-start; }
+.rail .dash { flex: none; width: 16px; height: 2px; border-radius: 1px; background: var(--ink-4); transform: scaleX(.45); transform-origin: left center; transition: transform var(--dur-fast) var(--ease-out), background-color var(--dur-fast); }
+.rail .dash.agent { transform: scaleX(.65); background: var(--accent); }
+.rail .dash.system { transform: scaleX(.28); background: var(--line-strong); }
+.rail .dash.far { transform: scaleX(.75); }
+.rail .dash.near { transform: scaleX(.88); background: var(--ink-3); }
+.rail .dash.at { transform: scaleX(1); background: var(--ink); }
+.rail .dash.open { transform: scaleX(1); background: var(--accent); }
+.rail .dash.at.open { background: var(--accent-hover); }
+.rail .dash:first-child { animation: dash-in var(--dur-slow) var(--ease-out); }
+@keyframes dash-in { from { transform: scaleX(0); } }
+.rail .stub { flex: none; width: 8px; height: 10px; margin-top: 2px; border-radius: 1px; background: repeating-linear-gradient(to right, var(--line-strong) 0 2px, transparent 2px 4px); }
+.rail-card { position: absolute; left: calc(100% + 8px); top: 2px; width: 236px; padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--raised); border: 1px solid var(--line); box-shadow: var(--shadow-popover); display: flex; flex-direction: column; gap: 3px; z-index: 6; pointer-events: none; transition: transform var(--dur-fast) var(--ease-out); animation: card-in var(--dur-fast) var(--ease-out); }
+@keyframes card-in { from { opacity: 0; transform: translateX(-4px); } }
+.rail-card-head { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 6px; align-items: start; }
+.rail-card .who { display: grid; place-items: center; height: 16px; color: var(--ink-4); }
+.rail-card .who svg { width: 12px; height: 12px; }
+.rail-card .who.agent { color: var(--accent); }
+.rail-card .who.you { color: var(--ink-2); }
+.rail-card .msg { font-size: var(--text-sm); font-weight: 600; color: var(--ink); line-height: 16px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.rail-card .when { font-size: var(--text-xs); color: var(--ink-4); font-variant-numeric: tabular-nums; padding-left: 20px; }
+.rail-card .files { display: flex; flex-direction: column; gap: 1px; padding-left: 20px; font-size: var(--text-xs); font-family: var(--font-mono); color: var(--ink-3); }
+.rail-card .files .f { display: flex; gap: 4px; min-width: 0; }
+.rail-card .files .name { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rail-card .files .add { color: var(--diff-add); margin-left: auto; }
+.rail-card .files .del { color: var(--diff-del); }
+.rail-card .files .bin { color: var(--ink-4); margin-left: auto; }
+.rail-card .files .more { font-family: var(--font-ui); color: var(--ink-4); }
 .timeline .step.peek .step-row { background: var(--wash-hover); }
-@media (prefers-reduced-motion: reduce) { .scrub .dash:last-child { animation: none; } .scrub .dash { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .rail .dash:first-child, .rail-card { animation: none; } .rail .dash, .rail-card { transition: none; } }
 
 /* History: the paper's steps, newest first */
 .history .memory-note.small { font-size: var(--text-xs); margin: 0; }
@@ -556,41 +571,64 @@ button { background: none; border: 0; padding: 0; cursor: default; }
 .steer select:disabled { color: var(--ink-4); }
 .run .prompt .steer-tag { font-weight: 400; color: var(--ink-3); }
 
-/* Model dial: one needle over the provider's models and effort levels, Fast at the left, Deep at the right */
-.dial { display: grid; grid-template-columns: 132px minmax(0, 1fr); gap: 0 var(--space-3); align-items: center; padding: 2px var(--space-1) 0; }
-.dial-face { width: 132px; height: 73px; display: block; cursor: ew-resize; touch-action: none; border-radius: var(--radius-md); overflow: visible; }
-.dial-face:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
-.dial-face .track { fill: none; stroke: var(--line-strong); stroke-width: 1.5; stroke-linecap: round; }
-.dial-face .travel { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-linecap: round; }
-.dial-face .tick { stroke: var(--ink-4); stroke-width: 1.5; stroke-linecap: round; }
-.dial-face .tick.major { stroke: var(--ink-2); stroke-width: 2; }
-.dial-face .tick.past { stroke: var(--accent); }
-.dial-face .tick.at { stroke: var(--ink); stroke-width: 2.5; }
-.dial-face .group { font: 600 13px var(--font-ui); fill: var(--ink-3); letter-spacing: .01em; }
-.dial-face .end { font: 500 12px var(--font-ui); fill: var(--ink-4); text-transform: uppercase; letter-spacing: .06em; }
-.dial-face .needle { transition: transform var(--dur) var(--ease-out); }
-.dial-face .needle line { stroke: var(--accent); stroke-width: 2.5; stroke-linecap: round; }
-.dial-face .needle circle { fill: var(--accent); }
-.dial-face .hub { fill: var(--ink); stroke: var(--paper-2); stroke-width: 1.5; }
-.dial.default .needle line, .dial.custom .needle line { stroke: var(--ink-4); stroke-dasharray: 3 3; }
-.dial.default .needle circle, .dial.custom .needle circle { fill: var(--ink-4); }
-.dial-read { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.dial-line { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; }
-.dial-name { font-size: var(--text-md); font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dial-tag { font-size: var(--text-xs); color: var(--ink-3); border: 1px solid var(--line); border-radius: 8px; padding: 0 6px; line-height: 15px; }
-.dial-pace { margin: 0; font-size: var(--text-xs); color: var(--ink-3); line-height: 1.45; text-wrap: pretty; }
-.dial-actions { display: flex; gap: var(--space-3); margin-top: 2px; }
-.dial-actions .link, .dial.empty .link { font-size: var(--text-xs); color: var(--ink-2); text-decoration: underline; text-underline-offset: 2px; padding: 0; }
-.dial-actions .link:hover, .dial.empty .link:hover { color: var(--accent); }
-.dial.empty { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2) var(--space-3); padding: 0 var(--space-1); }
-.dial.empty .dial-name { font-weight: 500; font-size: var(--text-sm); color: var(--ink-2); }
-@media (prefers-reduced-motion: reduce) { .dial-face .needle { transition: none; } }
+/* Effort and model: a pill in the composer's bar; a popover above it with one slider across the CLI's effort
+   levels and the models as chips. The knob and the fill move by transform only; the level name re-enters when it
+   changes. Fast at the left, deep at the right. */
+.effort { position: relative; display: flex; }
+.effort-pill { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 8px 0 7px; border-radius: 13px; border: 1px solid transparent; font-size: var(--text-xs); font-weight: 500; color: var(--ink-2); max-width: 190px; transition: background-color var(--dur-fast), border-color var(--dur-fast), color var(--dur-fast); }
+.effort-pill:hover, .effort.open .effort-pill { background: var(--wash-hover); color: var(--ink); }
+.effort-pill.unset { color: var(--ink-3); }
+.effort-pill svg { width: 13px; height: 13px; flex: none; stroke-width: 2; }
+.effort-pill:not(.unset) > svg:first-child { color: var(--accent); fill: var(--accent); }
+.effort-pill .chev { width: 12px; height: 12px; color: var(--ink-4); transition: transform var(--dur-fast) var(--ease-out); }
+.effort.open .effort-pill .chev { transform: rotate(180deg); }
+.effort-pill-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.effort-pill.reading { color: var(--ink-4); font-weight: 400; }
+.effort-pill.reading .spin { animation: spin 1.2s linear infinite; }
+.effort-pop { position: absolute; right: 0; bottom: calc(100% + 8px); width: 264px; padding: var(--space-3); border-radius: var(--radius-lg); background: var(--raised); border: 1px solid var(--line); box-shadow: var(--shadow-popover); display: flex; flex-direction: column; gap: var(--space-3); z-index: 5; transform-origin: 90% 100%; animation: pop-up var(--dur) var(--ease-out); }
+.effort-pop.below { bottom: auto; top: calc(100% + 8px); transform-origin: 90% 0; animation-name: pop-down; }
+@keyframes pop-up { from { opacity: 0; transform: translateY(6px) scale(.97); } }
+@keyframes pop-down { from { opacity: 0; transform: translateY(-6px) scale(.97); } }
+.effort-head { display: grid; grid-template-columns: 20px minmax(0, 1fr) 24px; align-items: start; gap: var(--space-2); }
+.effort-bolt { display: grid; place-items: center; height: 20px; color: var(--ink-4); }
+.effort-bolt svg { width: 14px; height: 14px; stroke-width: 2; }
+.effort-read { display: flex; flex-direction: column; align-items: center; gap: 1px; min-width: 0; text-align: center; }
+.effort-level { font-size: var(--text-md); font-weight: 600; color: var(--accent); line-height: 20px; animation: level-in var(--dur-fast) var(--ease-out); }
+.effort-level.quiet { color: var(--ink-2); }
+@keyframes level-in { from { opacity: 0; transform: translateY(3px); } }
+.effort-model { font-size: var(--text-xs); color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.effort-reset { width: 24px; height: 24px; display: grid; place-items: center; border-radius: var(--radius-md); color: var(--ink-3); transition: background-color var(--dur-fast), color var(--dur-fast); }
+.effort-reset:hover:not(:disabled) { background: var(--wash-hover); color: var(--ink); }
+.effort-reset:disabled { opacity: .35; }
+.effort-reset svg { width: 14px; height: 14px; stroke-width: 2; }
+.effort-track { position: relative; height: 26px; border-radius: 13px; background: var(--paper-2); border: 1px solid var(--line); overflow: hidden; cursor: ew-resize; touch-action: none; user-select: none; }
+.effort-track:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.effort-fill { position: absolute; inset: 0; transform-origin: left center; background: var(--effort-fill); transition: transform var(--dur) var(--ease-out); }
+.effort-track.dragging .effort-fill, .effort-track.dragging .effort-knob { transition: none; }
+.effort-track.unset .effort-fill { opacity: 0; }
+.effort-dot { position: absolute; top: 50%; left: -2px; width: 4px; height: 4px; margin-top: -2px; border-radius: 50%; background: var(--ink-4); transition: background-color var(--dur-fast); }
+.effort-dot.on { background: var(--effort-knob); }
+.effort-track.unset .effort-dot.on { background: var(--ink-4); }
+.effort-knob { position: absolute; top: 50%; left: -10px; width: 20px; height: 20px; margin-top: -10px; border-radius: 50%; background: var(--effort-knob); box-shadow: 0 1px 2px rgba(29, 31, 36, .18), 0 3px 8px rgba(29, 31, 36, .16); transition: transform var(--dur) var(--ease-out); }
+.effort-track.unset .effort-knob { background: var(--paper-2); border: 1.5px dashed var(--ink-4); box-shadow: none; }
+.effort-pace { margin: -4px 0 0; font-size: var(--text-xs); color: var(--ink-3); line-height: 1.45; text-align: center; text-wrap: pretty; min-height: 17px; }
+.effort-models { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 2px; border-top: 1px solid var(--line); padding-top: var(--space-3); }
+.effort-chip { height: 24px; padding: 0 10px; border-radius: 12px; border: 1px solid var(--line-strong); font-size: var(--text-xs); font-weight: 500; color: var(--ink-2); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: background-color var(--dur-fast), color var(--dur-fast), border-color var(--dur-fast); }
+.effort-chip:hover { border-color: var(--ink-4); color: var(--ink); }
+.effort-chip.on { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+.effort-chip.typed { font-family: var(--font-mono); }
+.effort-chip.more { border-style: dashed; color: var(--ink-3); }
+@media (prefers-reduced-motion: reduce) {
+  .effort-pop, .effort-level { animation: none; }
+  .effort-fill, .effort-knob, .effort-pill .chev { transition: none; }
+}
 
 .composer { border: 1px solid var(--line-strong); border-radius: var(--radius-lg); background: var(--raised); box-shadow: var(--shadow-raised); display: flex; flex-direction: column; transition: border-color var(--dur-fast), box-shadow var(--dur-fast); }
 .composer:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--focus); }
 .composer textarea { resize: none; border: 0; outline: 0; background: transparent; padding: var(--space-3) var(--space-3) var(--space-2); font: 400 var(--text-md)/1.5 var(--font-ui); color: var(--ink); min-height: 72px; user-select: text; cursor: text; }
 .composer textarea::placeholder { color: var(--ink-4); }
-.composer .bar { display: flex; align-items: center; justify-content: space-between; padding: 0 var(--space-2) var(--space-2) var(--space-3); }
+.composer .bar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: 0 var(--space-2) var(--space-2) var(--space-3); }
+.composer .bar .bar-end { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .composer .bar .scope { font-size: var(--text-xs); color: var(--ink-3); display: flex; align-items: center; gap: 6px; }
 .composer .bar .scope svg { width: 13px; height: 13px; }
 .composer .bar .scope kbd { font-family: var(--font-ui); color: var(--ink-4); }
