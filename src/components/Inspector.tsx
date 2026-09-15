@@ -4,7 +4,7 @@ import {
   agentAccept, agentApply, agentCancel, agentDiff, agentProviders, agentPullRequest, agentReject, agentRun, agentSignedIn, memoryRead, memorySetup,
   onAgentEvent, provenanceRerun, agentModels, checkpointPatch, type Artefact, type Checkpoint, type Memory, type ModelOptions, type Pick, type Project, type Provider, type WorktreeDiff, type Focus } from "../lib/backend";
 import { Segmented } from "./Segmented";
-import { Scrubber } from "./Scrubber";
+import { Scrubber, stepKind } from "./Scrubber";
 import { EffortControl } from "./EffortControl";
 import { renderMarkdown } from "../lib/md";
 import { updateSettings, useSettings } from "../lib/settings";
@@ -181,12 +181,6 @@ function ReviewDiff({ patch, excluded, onToggle }: { patch: string; excluded: Se
   );
 }
 
-/** Who made a step, from its message: the author, an agent, or Dabir itself (restore, undo, discard). */
-function stepKind(message: string): "you" | "agent" | "system" {
-  if (/^You /.test(message)) return "you";
-  if (/^(Before |Restored |Undid|Autosave)/.test(message)) return "system";
-  return "agent";
-}
 function dayLabel(at: number): string {
   const d = new Date(at * 1000); const today = new Date();
   const same = (a: Date, b: Date) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
@@ -198,7 +192,7 @@ function dayLabel(at: number): string {
 const clock = (at: number) => new Date(at * 1000).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 
 /** The paper's history: every save and every accepted agent change, newest first, each readable and reversible. */
-function HistoryTab({ project, steps, busy, onRestore, onUndo, onOpenFile }: { project: Project | null; steps: Checkpoint[]; busy: boolean; onRestore: (id: string) => void; onUndo: (id: string) => void; onOpenFile: (path: string) => void }) {
+function HistoryTab({ project, steps, busy, onRestore, onUndo, onOpenFile, focus }: { project: Project | null; steps: Checkpoint[]; busy: boolean; onRestore: (id: string) => void; onUndo: (id: string) => void; onOpenFile: (path: string) => void; focus: { at: number; id: string | null } }) {
   const [open, setOpen] = useState<string | null>(null);
   const [patch, setPatch] = useState<{ id: string; text: string } | null>(null);
   const [limit, setLimit] = useState(30);
@@ -211,6 +205,8 @@ function HistoryTab({ project, steps, busy, onRestore, onUndo, onOpenFile }: { p
     if (i >= limit) setLimit(Math.ceil((i + 1) / 30) * 30);
     scrollTo.current = id; setOpen(id);
   };
+  // The sidebar's rail picked a step: open it here.
+  useEffect(() => { if (focus.id) pick(focus.id); }, [focus]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const id = scrollTo.current; if (!id) return;
     scrollTo.current = null;
@@ -317,7 +313,8 @@ interface Props {
   onRestoreStep: (id: string) => void;
   onUndoStep: (id: string) => void;
   /** Bumped by the sidebar's History link to open that tab. */
-  historyFocus: number;
+  /** The sidebar asked for the History tab; with an id, for that step opened and scrolled to. */
+  historyFocus: { at: number; id: string | null };
 }
 
 /** A finished run the document can show and act on. */
@@ -356,7 +353,7 @@ export function Inspector({ project, gitRepo, askFocus, prefill, tabRequest, onP
 
   useEffect(() => { agentProviders().then((ps) => { setProviders(ps); const first = ps.find((p) => p.installed); if (first && !ps.find((p) => p.id === provider)?.installed) setProvider(first.id); }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (askFocus) { setTab("agent"); textarea.current?.focus(); } }, [askFocus]);
-  useEffect(() => { if (historyFocus) setTab("history"); }, [historyFocus]);
+  useEffect(() => { if (historyFocus.at) setTab("history"); }, [historyFocus]);
   useEffect(() => { if (prefill) { setTab("agent"); setDraft(prefill.text); setTimeout(() => textarea.current?.focus(), 50); } }, [prefill]);
   useEffect(() => { if (tabRequest) setTab(tabRequest.tab); }, [tabRequest]);
   useEffect(() => { onProviderReady(!!providers.find((p) => p.id === provider)?.installed); }, [providers, provider, onProviderReady]);
@@ -531,7 +528,7 @@ export function Inspector({ project, gitRepo, askFocus, prefill, tabRequest, onP
           options={[{ value: "agent", label: "Agent" }, { value: "memory", label: "Memory" }, { value: "people", label: "People" }, { value: "history", label: "History" }]} />
       </div>
 
-      {tab === "history" && <HistoryTab project={project} steps={history} busy={historyBusy} onRestore={onRestoreStep} onUndo={onUndoStep} onOpenFile={(p) => { if (project) onOpenFile(`${project.root}/${p}`); }} />}
+      {tab === "history" && <HistoryTab project={project} steps={history} busy={historyBusy} onRestore={onRestoreStep} onUndo={onUndoStep} onOpenFile={(p) => { if (project) onOpenFile(`${project.root}/${p}`); }} focus={historyFocus} />}
 
       {tab === "agent" && (
         <div className="inspector-body">

@@ -25,6 +25,27 @@ function pace(f: number): string {
 /** Knob radius and the track's inner padding, in px. Kept in step with .effort-track in app.css. */
 const PAD = 12;
 
+/** The bolt as a gauge: an outline, and over it a filled copy clipped to the level, rising as the effort does. */
+function Bolt({ level }: { level: number | null }) {
+  const top = level == null ? 100 : Math.round((1 - level) * 100);
+  return (
+    <span className="bolt" aria-hidden>
+      <Zap className="bolt-line" />
+      <Zap className="bolt-fill" style={{ clipPath: `inset(${top}% 0 0 0)` }} />
+    </span>
+  );
+}
+
+/** Five segments, `on` of them lit, lighting up one after another from the left. */
+function Meter({ label, on, tone }: { label: string; on: number; tone: "up" | "down" }) {
+  return (
+    <span className={`meter ${tone}`}>
+      <span className="meter-label">{label}</span>
+      <span className="meter-segs">{[0, 1, 2, 3, 4].map((i) => <span key={i} className={`seg ${i < on ? "on" : ""}`} style={{ transitionDelay: `${(i < on ? i : 4 - i) * 35}ms` }} />)}</span>
+    </span>
+  );
+}
+
 interface Props {
   options: ModelOptions;
   model: string;
@@ -37,10 +58,11 @@ interface Props {
 }
 
 /**
- * The model and effort choice for the composer: a pill in the composer's bar that names the setting, and a
- * popover above it with one slider across the effort levels the CLI accepts (drag the knob, or click a dot;
- * on release it settles on the nearest level) and the models the CLI lists as chips, weakest to strongest.
- * The readout names the level in the accent and the model under it; Reset hands both back to the CLI.
+ * The model and effort choice for the composer: a pill in the composer's bar whose bolt fills to the level,
+ * and a popover above it with one slider across the effort levels the CLI accepts. Drag the knob or click a
+ * dot; the knob follows the pointer and settles on the nearest level, the fill runs with it, each dot it
+ * passes lights up, the bolt fills, the level's name rolls in and three meters (speed, depth, cost) answer.
+ * The models the CLI lists sit beneath as chips, weakest to strongest; Reset hands both back to the CLI.
  */
 export function EffortControl({ options, model, effort, cli, onChange, onCustom }: Props) {
   const [open, setOpen] = useState(false);
@@ -52,14 +74,16 @@ export function EffortControl({ options, model, effort, cli, onChange, onCustom 
     if (!open || !root.current) return;
     const pane = root.current.closest(".inspector-body")?.getBoundingClientRect();
     const r = root.current.getBoundingClientRect();
-    setBelow(!!pane && r.top - pane.top < 250);
+    setBelow(!!pane && r.top - pane.top < 280);
   }, [open]);
+
   const efforts = options.efforts;
   const n = efforts.length;
   const models = useMemo(() => options.models.map((m, i) => ({ ...m, t: tier(m.id, m.label), i })).sort((a, b) => a.t - b.t || a.i - b.i), [options.models]);
   const modelLabel = model ? (options.models.find((m) => m.id === model)?.label ?? model) : "";
   const isDefault = !model && !effort;
   const idx = efforts.indexOf(effort);
+  const level = idx >= 0 && n > 1 ? idx / (n - 1) : idx >= 0 ? 1 : null;
 
   // Close on a click elsewhere or Escape; the pill keeps focus so the keyboard user lands back where they were.
   useEffect(() => {
@@ -75,13 +99,17 @@ export function EffortControl({ options, model, effort, cli, onChange, onCustom 
   const [width, setWidth] = useState(0);
   const [drag, setDrag] = useState<number | null>(null); // knob x while the pointer holds it
   const [hover, setHover] = useState<number | null>(null);
+  // The knob charges up from the left when the popover opens: one frame at the start, then the transition
+  // carries it to its level. Skipped under reduced motion (the transition is off there anyway).
+  const [settled, setSettled] = useState(false);
   useLayoutEffect(() => {
     if (!open) return;
     const el = track.current; if (!el) return;
     const measure = () => setWidth(el.clientWidth);
     measure();
     const ro = new ResizeObserver(measure); ro.observe(el);
-    return () => ro.disconnect();
+    const raf = requestAnimationFrame(() => requestAnimationFrame(() => setSettled(true)));
+    return () => { ro.disconnect(); cancelAnimationFrame(raf); setSettled(false); };
   }, [open, n]);
   const inner = Math.max(0, width - 2 * PAD);
   const xOf = (i: number) => PAD + (n > 1 ? (i * inner) / (n - 1) : inner / 2);
@@ -117,13 +145,15 @@ export function EffortControl({ options, model, effort, cli, onChange, onCustom 
   };
 
   // Where the knob sits: under the pointer while dragging, on its level otherwise, at the middle when the
-  // CLI decides (drawn hollow so it reads as "not set").
+  // CLI decides (drawn hollow so it reads as "not set"); at the left edge for the first frame after opening.
   const restIdx = idx >= 0 ? idx : (n - 1) / 2;
-  const knobX = drag ?? xOf(restIdx);
+  const knobX = !settled ? PAD : drag ?? xOf(restIdx);
   const liveIdx = drag != null ? indexAtX(drag) : null;
   const shownIdx = liveIdx ?? hover ?? (idx >= 0 ? idx : null);
   const shownEffort = shownIdx != null ? efforts[shownIdx] : "";
-  const fillTo = drag ?? (idx >= 0 ? xOf(idx) : PAD);
+  const fillTo = !settled ? PAD : drag ?? (idx >= 0 ? xOf(idx) : PAD);
+  const f = shownIdx != null ? shownIdx / Math.max(1, n - 1) : null;
+  const shownLevel = f ?? level;
 
   const pillText = isDefault ? "Select effort" : [modelLabel, effort ? effortName(effort) : ""].filter(Boolean).join(" · ");
   const reset = () => onChange("", "");
@@ -132,14 +162,14 @@ export function EffortControl({ options, model, effort, cli, onChange, onCustom 
     <div ref={root} className={`effort ${open ? "open" : ""}`}>
       <button type="button" className={`effort-pill ${isDefault ? "unset" : ""}`} aria-haspopup="dialog" aria-expanded={open}
         title="Model and effort for this agent" onClick={() => setOpen((o) => !o)}>
-        <Zap aria-hidden />
-        <span className="effort-pill-text">{pillText}</span>
+        <Bolt level={level} />
+        <span key={pillText} className="effort-pill-text">{pillText}</span>
         <ChevronDown aria-hidden className="chev" />
       </button>
       {open && (
         <div className={`effort-pop ${below ? "below" : ""}`} role="dialog" aria-label="Model and effort">
           <div className="effort-head">
-            <span className="effort-bolt" aria-hidden><Zap /></span>
+            <Bolt level={shownLevel} />
             <div className="effort-read">
               <span key={shownEffort || "default"} className={`effort-level ${shownEffort ? "" : "quiet"}`}>
                 {shownEffort ? effortName(shownEffort) : n ? "Default effort" : modelLabel || "Default"}
@@ -151,14 +181,19 @@ export function EffortControl({ options, model, effort, cli, onChange, onCustom 
 
           {n > 0 && (
             <>
-              <div ref={track} className={`effort-track ${drag != null ? "dragging" : ""} ${idx < 0 ? "unset" : ""}`} role="slider" tabIndex={0}
+              <div ref={track} className={`effort-track ${drag != null ? "dragging" : ""} ${idx < 0 ? "unset" : ""} ${settled ? "settled" : ""}`} role="slider" tabIndex={0}
                 aria-valuemin={0} aria-valuemax={n - 1} aria-valuenow={idx >= 0 ? idx : Math.floor((n - 1) / 2)} aria-valuetext={effort ? effortName(effort) : "Default"}
                 onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onPointerLeave={() => setHover(null)} onKeyDown={onKeyDown}>
                 <div className="effort-fill" style={{ transform: `scaleX(${width ? fillTo / width : 0})` }} />
-                {efforts.map((e, i) => <span key={e} className={`effort-dot ${xOf(i) <= fillTo + 0.5 ? "on" : ""}`} style={{ transform: `translateX(${xOf(i)}px)` }} aria-hidden />)}
-                <div className="effort-knob" style={{ transform: `translateX(${knobX}px)` }} />
+                {efforts.map((e, i) => <span key={e} className={`effort-dot ${xOf(i) <= fillTo + 0.5 ? "on" : ""} ${i === hover && drag == null ? "hover" : ""}`} style={{ transform: `translateX(${xOf(i)}px)`, transitionDelay: settled && idx >= 0 ? `${i * 40}ms` : "0ms" }} aria-hidden />)}
+                <div className="effort-knob" style={{ transform: `translateX(${knobX}px) scale(${drag != null ? 1.15 : 1})` }} />
               </div>
-              <p className="effort-pace">{shownIdx != null ? pace(shownIdx / Math.max(1, n - 1)) : "Effort as the CLI is configured. Drag the knob to choose."}</p>
+              <div className="effort-meters" aria-hidden>
+                <Meter label="Speed" on={f == null ? 0 : 5 - Math.round(f * 4)} tone="down" />
+                <Meter label="Depth" on={f == null ? 0 : 1 + Math.round(f * 4)} tone="up" />
+                <Meter label="Cost" on={f == null ? 0 : 1 + Math.round(f * 4)} tone="up" />
+              </div>
+              <p className="effort-pace">{f != null ? pace(f) : "Effort as the CLI is configured. Drag the knob to choose."}</p>
             </>
           )}
 

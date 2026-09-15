@@ -206,7 +206,7 @@ button { background: none; border: 0; padding: 0; cursor: default; }
 .rail .dash.at { transform: scaleX(1); background: var(--ink); }
 .rail .dash.open { transform: scaleX(1); background: var(--accent); }
 .rail .dash.at.open { background: var(--accent-hover); }
-.rail .dash:first-child { animation: dash-in var(--dur-slow) var(--ease-out); }
+.rail .dash.newest { animation: dash-in var(--dur-slow) var(--ease-out); }
 @keyframes dash-in { from { transform: scaleX(0); } }
 .rail .stub { flex: none; width: 8px; height: 10px; margin-top: 2px; border-radius: 1px; background: repeating-linear-gradient(to right, var(--line-strong) 0 2px, transparent 2px 4px); }
 .rail-card { position: absolute; left: calc(100% + 8px); top: 2px; width: 236px; padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--raised); border: 1px solid var(--line); box-shadow: var(--shadow-popover); display: flex; flex-direction: column; gap: 3px; z-index: 6; pointer-events: none; transition: transform var(--dur-fast) var(--ease-out); animation: card-in var(--dur-fast) var(--ease-out); }
@@ -226,7 +226,23 @@ button { background: none; border: 0; padding: 0; cursor: default; }
 .rail-card .files .bin { color: var(--ink-4); margin-left: auto; }
 .rail-card .files .more { font-family: var(--font-ui); color: var(--ink-4); }
 .timeline .step.peek .step-row { background: var(--wash-hover); }
-@media (prefers-reduced-motion: reduce) { .rail .dash:first-child, .rail-card { animation: none; } .rail .dash, .rail-card { transition: none; } }
+/* Along the bottom of the sidebar: the same rail turned on its side, oldest at the left, newest at the right edge,
+   dashes standing up and scaled from their foot; the card opens above it and spans the sidebar's width. */
+.rail.horizontal { position: relative; display: block; width: auto; height: 26px; padding: 0 var(--space-2); margin: var(--space-2) 0 0; cursor: ew-resize; }
+.rail.horizontal .rail-col { position: absolute; right: var(--space-2); bottom: 5px; flex-direction: row; align-items: flex-end; gap: 5px; }
+.rail.horizontal .dash { width: 2px; height: 16px; transform: scaleY(.45); transform-origin: center bottom; }
+.rail.horizontal .dash.agent { transform: scaleY(.65); }
+.rail.horizontal .dash.system { transform: scaleY(.28); }
+.rail.horizontal .dash.far { transform: scaleY(.75); }
+.rail.horizontal .dash.near { transform: scaleY(.88); }
+.rail.horizontal .dash.at, .rail.horizontal .dash.open { transform: scaleY(1); }
+.rail.horizontal .dash.newest { animation-name: dash-up; }
+@keyframes dash-up { from { transform: scaleY(0); } }
+.rail.horizontal .stub { width: 10px; height: 2px; margin: 0 2px 0 0; align-self: center; background: repeating-linear-gradient(to right, var(--line-strong) 0 2px, transparent 2px 4px); }
+.rail.horizontal::before { content: ""; position: absolute; left: var(--space-2); right: var(--space-2); bottom: 3px; height: 1px; background: var(--line); }
+.rail.horizontal .rail-card { left: 0; right: 0; top: auto; bottom: calc(100% + 6px); width: auto; transition: none; animation-name: card-up; }
+@keyframes card-up { from { opacity: 0; transform: translateY(4px); } }
+@media (prefers-reduced-motion: reduce) { .rail .dash.newest, .rail-card { animation: none; } .rail .dash, .rail-card { transition: none; } }
 
 /* History: the paper's steps, newest first */
 .history .memory-note.small { font-size: var(--text-xs); margin: 0; }
@@ -579,23 +595,28 @@ button { background: none; border: 0; padding: 0; cursor: default; }
 .effort-pill:hover, .effort.open .effort-pill { background: var(--wash-hover); color: var(--ink); }
 .effort-pill.unset { color: var(--ink-3); }
 .effort-pill svg { width: 13px; height: 13px; flex: none; stroke-width: 2; }
-.effort-pill:not(.unset) > svg:first-child { color: var(--accent); fill: var(--accent); }
 .effort-pill .chev { width: 12px; height: 12px; color: var(--ink-4); transition: transform var(--dur-fast) var(--ease-out); }
 .effort.open .effort-pill .chev { transform: rotate(180deg); }
-.effort-pill-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.effort-pill-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; animation: level-in var(--dur) var(--ease-out); }
+/* The bolt as a gauge: an outline in the text colour and a filled copy in the accent clipped from the top down to the level. */
+.bolt { position: relative; display: inline-grid; place-items: center; width: 14px; height: 14px; flex: none; }
+.bolt svg { position: absolute; inset: 0; width: 14px; height: 14px; stroke-width: 2; }
+.bolt .bolt-line { color: var(--ink-3); }
+.bolt .bolt-fill { color: var(--accent); fill: var(--accent); transition: clip-path var(--dur-slow) var(--ease-out); }
+.effort-pill.unset .bolt .bolt-line { color: var(--ink-4); }
 .effort-pill.reading { color: var(--ink-4); font-weight: 400; }
 .effort-pill.reading .spin { animation: spin 1.2s linear infinite; }
 .effort-pop { position: absolute; right: 0; bottom: calc(100% + 8px); width: 264px; padding: var(--space-3); border-radius: var(--radius-lg); background: var(--raised); border: 1px solid var(--line); box-shadow: var(--shadow-popover); display: flex; flex-direction: column; gap: var(--space-3); z-index: 5; transform-origin: 90% 100%; animation: pop-up var(--dur) var(--ease-out); }
 .effort-pop.below { bottom: auto; top: calc(100% + 8px); transform-origin: 90% 0; animation-name: pop-down; }
 @keyframes pop-up { from { opacity: 0; transform: translateY(6px) scale(.97); } }
 @keyframes pop-down { from { opacity: 0; transform: translateY(-6px) scale(.97); } }
-.effort-head { display: grid; grid-template-columns: 20px minmax(0, 1fr) 24px; align-items: start; gap: var(--space-2); }
-.effort-bolt { display: grid; place-items: center; height: 20px; color: var(--ink-4); }
-.effort-bolt svg { width: 14px; height: 14px; stroke-width: 2; }
+.effort-head { display: grid; grid-template-columns: 24px minmax(0, 1fr) 24px; align-items: start; gap: var(--space-2); }
+.effort-head .bolt { width: 18px; height: 18px; margin: 1px 0 0 3px; }
+.effort-head .bolt svg { width: 18px; height: 18px; }
 .effort-read { display: flex; flex-direction: column; align-items: center; gap: 1px; min-width: 0; text-align: center; }
-.effort-level { font-size: var(--text-md); font-weight: 600; color: var(--accent); line-height: 20px; animation: level-in var(--dur-fast) var(--ease-out); }
+.effort-level { font-size: var(--text-md); font-weight: 600; color: var(--accent); line-height: 20px; animation: level-in var(--dur) var(--ease-out); }
 .effort-level.quiet { color: var(--ink-2); }
-@keyframes level-in { from { opacity: 0; transform: translateY(3px); } }
+@keyframes level-in { from { opacity: 0; transform: translateY(6px); } }
 .effort-model { font-size: var(--text-xs); color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 .effort-reset { width: 24px; height: 24px; display: grid; place-items: center; border-radius: var(--radius-md); color: var(--ink-3); transition: background-color var(--dur-fast), color var(--dur-fast); }
 .effort-reset:hover:not(:disabled) { background: var(--wash-hover); color: var(--ink); }
@@ -603,14 +624,31 @@ button { background: none; border: 0; padding: 0; cursor: default; }
 .effort-reset svg { width: 14px; height: 14px; stroke-width: 2; }
 .effort-track { position: relative; height: 26px; border-radius: 13px; background: var(--paper-2); border: 1px solid var(--line); overflow: hidden; cursor: ew-resize; touch-action: none; user-select: none; }
 .effort-track:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
-.effort-fill { position: absolute; inset: 0; transform-origin: left center; background: var(--effort-fill); transition: transform var(--dur) var(--ease-out); }
-.effort-track.dragging .effort-fill, .effort-track.dragging .effort-knob { transition: none; }
-.effort-track.unset .effort-fill { opacity: 0; }
+.effort-fill { position: absolute; inset: 0; transform-origin: left center; background: var(--effort-fill); transition: transform var(--dur-slow) var(--ease-out); }
+.effort-track.dragging .effort-fill { transition: none; }
+.effort-track.dragging .effort-knob { transition: box-shadow var(--dur-fast); }
+.effort-track:not(.settled) .effort-fill, .effort-track:not(.settled) .effort-knob { transition: none; }
+.effort-track.unset:not(.dragging) .effort-fill { opacity: 0; }
 .effort-dot { position: absolute; top: 50%; left: -2px; width: 4px; height: 4px; margin-top: -2px; border-radius: 50%; background: var(--ink-4); transition: background-color var(--dur-fast); }
+.effort-dot::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; background: var(--effort-knob); opacity: 0; transform: scale(.4); transition: opacity var(--dur-fast), transform var(--dur) var(--ease-out); }
 .effort-dot.on { background: var(--effort-knob); }
-.effort-track.unset .effort-dot.on { background: var(--ink-4); }
-.effort-knob { position: absolute; top: 50%; left: -10px; width: 20px; height: 20px; margin-top: -10px; border-radius: 50%; background: var(--effort-knob); box-shadow: 0 1px 2px rgba(29, 31, 36, .18), 0 3px 8px rgba(29, 31, 36, .16); transition: transform var(--dur) var(--ease-out); }
-.effort-track.unset .effort-knob { background: var(--paper-2); border: 1.5px dashed var(--ink-4); box-shadow: none; }
+.effort-dot.on::after { animation: dot-pop var(--dur-slow) var(--ease-out); }
+.effort-dot.hover:not(.on) { background: var(--ink-2); }
+.effort-dot.hover::after { opacity: .25; transform: scale(1); background: var(--ink); }
+@keyframes dot-pop { 0% { opacity: .6; transform: scale(.4); } 100% { opacity: 0; transform: scale(1.6); } }
+.effort-track.unset:not(.dragging) .effort-dot.on { background: var(--ink-4); }
+.effort-knob { position: absolute; top: 50%; left: -10px; width: 20px; height: 20px; margin-top: -10px; border-radius: 50%; background: var(--effort-knob); box-shadow: 0 1px 2px rgba(29, 31, 36, .18), 0 3px 8px rgba(29, 31, 36, .16); transition: transform var(--dur-slow) var(--ease-out), box-shadow var(--dur-fast); }
+.effort-track.dragging { cursor: grabbing; }
+.effort-track.dragging .effort-knob { box-shadow: 0 2px 4px rgba(29, 31, 36, .22), 0 6px 14px rgba(29, 31, 36, .2); }
+.effort-track.unset:not(.dragging) .effort-knob { background: var(--paper-2); border: 1.5px dashed var(--ink-4); box-shadow: none; }
+/* Three meters answer the level: speed falls as depth and cost rise; segments light one after another. */
+.effort-meters { display: flex; justify-content: space-between; gap: var(--space-2); padding: 0 2px; }
+.meter { display: flex; flex-direction: column; gap: 3px; align-items: center; }
+.meter-label { font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-4); }
+.meter-segs { display: flex; gap: 2px; }
+.meter .seg { width: 9px; height: 3px; border-radius: 1.5px; background: var(--line-strong); transition: background-color var(--dur) var(--ease-out); }
+.meter.up .seg.on { background: var(--accent); }
+.meter.down .seg.on { background: var(--ink-2); }
 .effort-pace { margin: -4px 0 0; font-size: var(--text-xs); color: var(--ink-3); line-height: 1.45; text-align: center; text-wrap: pretty; min-height: 17px; }
 .effort-models { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 2px; border-top: 1px solid var(--line); padding-top: var(--space-3); }
 .effort-chip { height: 24px; padding: 0 10px; border-radius: 12px; border: 1px solid var(--line-strong); font-size: var(--text-xs); font-weight: 500; color: var(--ink-2); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: background-color var(--dur-fast), color var(--dur-fast), border-color var(--dur-fast); }
@@ -619,8 +657,8 @@ button { background: none; border: 0; padding: 0; cursor: default; }
 .effort-chip.typed { font-family: var(--font-mono); }
 .effort-chip.more { border-style: dashed; color: var(--ink-3); }
 @media (prefers-reduced-motion: reduce) {
-  .effort-pop, .effort-level { animation: none; }
-  .effort-fill, .effort-knob, .effort-pill .chev { transition: none; }
+  .effort-pop, .effort-level, .effort-pill-text, .effort-dot.on::after { animation: none; }
+  .effort-fill, .effort-knob, .effort-pill .chev, .bolt .bolt-fill, .meter .seg, .effort-dot::after { transition: none; }
 }
 
 .composer { border: 1px solid var(--line-strong); border-radius: var(--radius-lg); background: var(--raised); box-shadow: var(--shadow-raised); display: flex; flex-direction: column; transition: border-color var(--dur-fast), box-shadow var(--dur-fast); }
