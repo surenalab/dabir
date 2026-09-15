@@ -4,6 +4,8 @@ import {
   agentAccept, agentApply, agentCancel, agentDiff, agentProviders, agentPullRequest, agentReject, agentRun, agentSignedIn, memoryRead, memorySetup,
   onAgentEvent, provenanceRerun, agentModels, checkpointPatch, type Artefact, type Checkpoint, type Memory, type ModelOptions, type Pick, type Project, type Provider, type WorktreeDiff, type Focus } from "../lib/backend";
 import { Segmented } from "./Segmented";
+import { Scrubber } from "./Scrubber";
+import { ModelDial } from "./ModelDial";
 import { renderMarkdown } from "../lib/md";
 import { updateSettings, useSettings } from "../lib/settings";
 import type { Comment, Peer } from "../lib/collab";
@@ -26,6 +28,8 @@ function toolFace(name: string | null | undefined, detail: string): { verb: stri
 }
 
 const EFFORT_LABEL: Record<string, string> = { low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max" };
+/** The starter skills that live on the code side; the preamble names them when a request is about the code. */
+const CODE_SKILLS = new Set(["run-and-test", "debug-failing-run", "refactor-safely", "notebook-to-script"]);
 
 function fmtElapsed(ms: number): string { const s = Math.max(0, Math.round(ms / 1000)); return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${s % 60} s`; }
 
@@ -196,6 +200,20 @@ function HistoryTab({ project, steps, busy, onRestore, onUndo, onOpenFile }: { p
   const [open, setOpen] = useState<string | null>(null);
   const [patch, setPatch] = useState<{ id: string; text: string } | null>(null);
   const [limit, setLimit] = useState(30);
+  const [peek, setPeek] = useState<string | null>(null);
+  const list = useRef<HTMLOListElement>(null);
+  const scrollTo = useRef<string | null>(null);
+  // The scrubber picks a step: open it, make sure the list reaches it, and bring it into view once rendered.
+  const pick = (id: string) => {
+    const i = steps.findIndex((s) => s.id === id); if (i < 0) return;
+    if (i >= limit) setLimit(Math.ceil((i + 1) / 30) * 30);
+    scrollTo.current = id; setOpen(id);
+  };
+  useEffect(() => {
+    const id = scrollTo.current; if (!id) return;
+    scrollTo.current = null;
+    list.current?.querySelector<HTMLElement>(`[data-id="${id}"]`)?.scrollIntoView({ block: "nearest", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  }, [open, limit]);
   useEffect(() => {
     if (!open || !project) return;
     let alive = true;
@@ -212,15 +230,16 @@ function HistoryTab({ project, steps, busy, onRestore, onUndo, onOpenFile }: { p
   let lastDay = "";
   return (
     <div className="inspector-body history">
+      <Scrubber steps={steps} kindOf={stepKind} openId={open} onPeek={setPeek} onPick={pick} />
       <p className="memory-note">Every save and every accepted agent change is a step. Open one to read its diff; take it out on its own, or put the paper back to how it was there. Nothing here is a commit.</p>
-      <ol className="timeline" aria-label="History">
+      <ol className="timeline" aria-label="History" ref={list}>
         {steps.slice(0, limit).map((s, i) => {
           const day = dayLabel(s.at); const showDay = day !== lastDay; lastDay = day;
           const kind = stepKind(s.message);
           const expanded = open === s.id;
           const shown = s.files.slice(0, 2);
           return (
-            <li key={s.id} className={`step ${kind} ${expanded ? "open" : ""}`}>
+            <li key={s.id} data-id={s.id} className={`step ${kind} ${expanded ? "open" : ""} ${peek === s.id ? "peek" : ""}`}>
               {showDay && <div className="day">{day}</div>}
               <button className="step-row" aria-expanded={expanded} onClick={() => setOpen(expanded ? null : s.id)} title={`${s.id} · ${new Date(s.at * 1000).toLocaleString()}`}>
                 <span className="who" aria-hidden>{kind === "you" ? <PenLine /> : kind === "agent" ? <Sparkles /> : <RotateCcw />}</span>
@@ -377,7 +396,6 @@ export function Inspector({ project, gitRepo, askFocus, prefill, tabRequest, onP
   const model = settings.agentModel[provider] ?? "";
   const effort = settings.agentEffort[provider] ?? "";
   const setModel = (m: string) => updateSettings({ agentModel: { ...settings.agentModel, [provider]: m } });
-  const setEffort = (e: string) => updateSettings({ agentEffort: { ...settings.agentEffort, [provider]: e } });
   // Signed-out is the failure that otherwise shows up as a cryptic CLI error after the first message, so it is
   // checked when the agent is chosen and shown before anything is sent. Rechecked when the window comes back
   // (a sign-in happens in the browser) and after a run that failed for that reason.
@@ -520,29 +538,11 @@ export function Inspector({ project, gitRepo, askFocus, prefill, tabRequest, onP
             <p className="composer-note warn" role="status"><TriangleAlert aria-hidden /><span>{current.label} is installed but not signed in; a message to it would fail. <button className="link" onClick={onSetup}>Sign in…</button></span></p>
           )}
           {current?.installed && (
-            <div className="steer">
-              <label htmlFor="agent-model">Model</label>
-              <select id="agent-model" value={modelOpts && (model === "" || modelOpts.models.some((m) => m.id === model)) ? model : "__custom"} disabled={!modelOpts}
-                onChange={(e) => {
-                  if (e.target.value === "__other") { const id = window.prompt(`Model id for ${current.label}:`, model)?.trim(); if (id != null) setModel(id); return; }
-                  if (e.target.value !== "__custom") setModel(e.target.value);
-                }}
-                title={model ? `Passed to the ${current.bin} CLI as its model` : "The CLI's own default model"}>
-                <option value="">{modelOpts?.defaultModel ? `Default (${modelOpts.defaultModel})` : "Default"}</option>
-                {modelOpts?.models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
-                {model && modelOpts && !modelOpts.models.some((m) => m.id === model) && <option value="__custom">{model}</option>}
-                {modelOpts?.custom && <option value="__other">Other…</option>}
-              </select>
-              {modelOpts && modelOpts.efforts.length > 0 && (
-                <>
-                  <label htmlFor="agent-effort">Effort</label>
-                  <select id="agent-effort" value={effort} onChange={(e) => setEffort(e.target.value)} title="How hard the model thinks; higher is slower and costs more">
-                    <option value="">Default</option>
-                    {modelOpts.efforts.map((e) => <option key={e} value={e}>{EFFORT_LABEL[e] ?? e}</option>)}
-                  </select>
-                </>
-              )}
-            </div>
+            modelOpts ? (
+              <ModelDial options={modelOpts} model={model} effort={effort} cli={current.bin}
+                onChange={(m, e) => updateSettings({ agentModel: { ...settings.agentModel, [provider]: m }, agentEffort: { ...settings.agentEffort, [provider]: e } })}
+                onCustom={modelOpts.custom ? () => { const id = window.prompt(`Model id for ${current.label}:`, model)?.trim(); if (id != null) setModel(id); } : undefined} />
+            ) : <p className="composer-note" role="status">Reading {current.label}'s models…</p>
           )}
 
           <div className="composer">
@@ -638,10 +638,18 @@ export function Inspector({ project, gitRepo, askFocus, prefill, tabRequest, onP
               </div>
               <div className="field">
                 <label>Skills</label>
-                <div className="skills">
-                  {memory.skills.map((sk) => <button key={sk.path} className="skill" onClick={() => onOpenFile(sk.path)} title={sk.description}>{sk.name.replace(/^dabir-/, "")}</button>)}
-                  {memory.skills.length === 0 && <span className="target">No skills yet. Set Up Memory adds six playbooks.</span>}
-                </div>
+                {(["paper", "code"] as const).map((side) => {
+                  const list = memory.skills.filter((sk) => (CODE_SKILLS.has(sk.name.replace(/^dabir-/, "")) ? "code" : "paper") === side);
+                  if (!list.length) return null;
+                  return (
+                    <div className="skills" key={side} aria-label={`${side} skills`}>
+                      <span className="side">{side}</span>
+                      {list.map((sk) => <button key={sk.path} className="skill" onClick={() => onOpenFile(sk.path)} title={sk.description}>{sk.name.replace(/^dabir-/, "")}</button>)}
+                    </div>
+                  );
+                })}
+                {memory.skills.length === 0 && <span className="target">No skills yet. Set Up Memory adds ten playbooks: six for the paper, four for the code.</span>}
+                {memory.skills.length > 0 && memory.skills.length < 10 && <span className="target">Newer playbooks are missing. <button className="link" onClick={setup}>Set Up Memory</button> again adds them; your edited ones are kept.</span>}
               </div>
               <div className="field">
                 <label>Provenance</label>

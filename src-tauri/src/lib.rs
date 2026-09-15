@@ -1750,6 +1750,118 @@ impl Focus {
 /// likely relevant lines, and what is on PATH. `cwd` is the paper's folder inside the run's worktree.
 /// `query` is the text retrieval ranks against: the author's new words alone, so a follow-up's
 /// boilerplate about the previous run does not drown them.
+/// What a request is about: the manuscript, the code behind it, or both (the default when the words
+/// point both ways or nowhere, as in "add a figure", which needs code and text).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum RequestMode {
+    Paper,
+    Code,
+    Both,
+}
+
+const CODE_EXT: &[&str] = &[
+    "py", "pyi", "ipynb", "jl", "r", "m", "js", "mjs", "cjs", "ts", "tsx", "jsx", "rs", "c", "cc",
+    "cpp", "cxx", "h", "hpp", "cu", "cuh", "f90", "f95", "lua", "sql", "sh", "bash", "zsh",
+];
+const CODE_WORDS: &[&str] = &[
+    "script",
+    "notebook",
+    ".ipynb",
+    ".py",
+    ".jl",
+    "function",
+    "class ",
+    "refactor",
+    "unit test",
+    "the tests",
+    "pytest",
+    "traceback",
+    "exception",
+    "stack trace",
+    "bug in",
+    "crash",
+    "segfault",
+    "import error",
+    "type error",
+    "rename the",
+    "dataloader",
+    "training loop",
+    "hyperparameter",
+    "rerun",
+    "re-run",
+    "seed",
+];
+const PAPER_WORDS: &[&str] = &[
+    "abstract",
+    "introduction",
+    "section",
+    "paragraph",
+    "sentence",
+    "wording",
+    "prose",
+    "caption",
+    "cite",
+    "citation",
+    "reference",
+    "bibliograph",
+    "equation",
+    "theorem",
+    "lemma",
+    "proof",
+    "notation",
+    "tighten",
+    "shorten",
+    "rewrite",
+    "rephrase",
+    "typo",
+    "grammar",
+    "reviewer",
+    "related work",
+    "conclusion",
+    "\\ref",
+    "\\label",
+    "latex",
+    "typst",
+    "compile",
+];
+
+/// Decide from the words of the request and where the author is. A code file under the cursor makes
+/// the request about code unless the words are plainly about the paper; the reverse for a manuscript
+/// file. "Add a figure" and "rerun the sweep and update Table 1" stay `Both`.
+pub fn request_mode(prompt: &str, focus: Option<&Focus>) -> RequestMode {
+    let l = prompt.to_lowercase();
+    let code_words = CODE_WORDS.iter().filter(|w| l.contains(*w)).count();
+    let paper_words = PAPER_WORDS.iter().filter(|w| l.contains(*w)).count();
+    let focus_code = focus.is_some_and(|f| {
+        let ext = f.file.rsplit('.').next().unwrap_or("").to_lowercase();
+        CODE_EXT.contains(&ext.as_str())
+    });
+    let focus_paper = focus.is_some_and(|f| {
+        let ext = f.file.rsplit('.').next().unwrap_or("").to_lowercase();
+        matches!(ext.as_str(), "tex" | "typ" | "bib" | "sty" | "cls" | "md")
+    });
+    // "rerun" alone means both sides: the artefact and the numbers quoted from it.
+    let rerun = l.contains("rerun") || l.contains("re-run") || l.contains("regenerate");
+    if rerun && (paper_words > 0 || l.contains("table") || l.contains("figure")) {
+        return RequestMode::Both;
+    }
+    if code_words > 0 && paper_words == 0 {
+        return RequestMode::Code;
+    }
+    if paper_words > 0 && code_words == 0 && !rerun {
+        return RequestMode::Paper;
+    }
+    if code_words == 0 && paper_words == 0 {
+        if focus_code {
+            return RequestMode::Code;
+        }
+        if focus_paper && !rerun && !l.contains("figure") && !l.contains("table") {
+            return RequestMode::Paper;
+        }
+    }
+    RequestMode::Both
+}
+
 fn agent_preamble(
     root: &Path,
     cwd: &Path,
@@ -1879,6 +1991,15 @@ fn agent_preamble(
     ));
     out.push_str("This folder is the whole task. Directories above it belong to other projects: do not read, search or edit anything outside it, and ignore instruction files (AGENTS.md, CLAUDE.md) found above it.\n\n");
 
+    // The request is either about the manuscript or about the code behind it. The agent gets told which,
+    // so it does not compile the paper after a code fix or rewrite a script to change a sentence.
+    let mode = request_mode(prompt, focus);
+    match mode {
+        RequestMode::Code => out.push_str("This request is about the code, not the manuscript. Work in the code files: run the script or its tests before and after the change (skills run-and-test, debug-failing-run, refactor-safely, notebook-to-script), and do not edit .tex, .typ or .bib files unless a figure, table or number the paper quotes changed because of your change; then update those from the new output and compile once.\n\n"),
+        RequestMode::Paper => out.push_str("This request is about the manuscript. Work in the .tex, .typ and .bib files; do not edit code, notebooks or generated artefacts unless the request asks for a rerun, in which case follow rerun-experiment and change the code that writes the artefact.\n\n"),
+        RequestMode::Both => {}
+    }
+
     out.push_str("How to work\n");
     out.push_str("1. This message already holds the project brief, the paper map (every section, label, figure, table, equation and macro with its file and line), the file list and the likely relevant lines. Do not list directories, search the tree, run git, or open AGENTS.md, CLAUDE.md, .dabir/PROJECT.md, .dabir/memory or .dabir/skills to orient yourself; go straight to the file and line the map gives and read only the lines around it.\n");
     out.push_str("2. Decide on one reading of the request and carry it out in one pass. If the request is short or ambiguous, choose the most useful reading given the paper as it stands and do not stop to ask. Prefer cheap paths: recorded commands, existing artefacts, TikZ or pgfplots for a schematic. No new experiments or long runs unless asked.\n");
@@ -1889,7 +2010,9 @@ fn agent_preamble(
     if let Some(r) = memory::remote(root) {
         out.push_str(&format!("   The code runs on the host `{h}` in `{d}`, not here: run every experiment or artefact command as `ssh {h} 'cd {d} && <command>'` and copy results back with `scp {h}:{d}/<path> <path>`. The repository there is a clone of this one; push or pull before running if the code changed.\n", h = r.host, d = r.dir));
     }
-    if is_typst {
+    if mode == RequestMode::Code {
+        out.push_str("4. Check the code by running it: the recorded command, the project's tests, or the script itself, with the env prefix if there is one. Compile the paper only if you changed a manuscript file. Do not install packages, inspect PDFs or explore build folders.\n");
+    } else if is_typst {
         out.push_str(&format!("4. If `typst` is on PATH, compile once at the end with `typst compile {main}` and fix what it reports. Do not install anything, inspect the PDF or explore the build folder: Dabir compiles and reviews the result.\n"));
     } else {
         out.push_str(&format!("4. Compile once at the end with `tectonic -X compile {main} --outdir .dabir/build` (tectonic is on PATH) and fix what it reports; skip this for wording-only changes. Do not install anything, inspect the PDF or explore the build folder: Dabir compiles and reviews the result.\n"));
@@ -2589,6 +2712,58 @@ mod tests {
     }
 
     #[test]
+    fn request_mode_tells_paper_from_code() {
+        let at = |file: &str| Focus {
+            file: file.into(),
+            line: 1,
+            end_line: None,
+            selection: None,
+        };
+        assert_eq!(
+            request_mode("Tighten the abstract to 150 words", None),
+            RequestMode::Paper
+        );
+        assert_eq!(
+            request_mode("Fix the traceback in the sweep script", None),
+            RequestMode::Code
+        );
+        assert_eq!(
+            request_mode("Refactor this function", Some(&at("code/sweep.py"))),
+            RequestMode::Code
+        );
+        // Bare words follow the cursor.
+        assert_eq!(
+            request_mode("make this clearer", Some(&at("code/sweep.py"))),
+            RequestMode::Code
+        );
+        assert_eq!(
+            request_mode("make this clearer", Some(&at("sections/method.tex"))),
+            RequestMode::Paper
+        );
+        // A rerun that lands in the paper, or a request naming both sides, keeps both open.
+        assert_eq!(
+            request_mode("Rerun the sweep with a finer grid and update Table 1", None),
+            RequestMode::Both
+        );
+        assert_eq!(request_mode("add a figure", None), RequestMode::Both);
+        assert_eq!(
+            request_mode(
+                "Rename the function and fix the caption that quotes it",
+                Some(&at("code/plot.py"))
+            ),
+            RequestMode::Both
+        );
+        // The paper words win over a code file under the cursor.
+        assert_eq!(
+            request_mode(
+                "Fix the typo in the introduction",
+                Some(&at("code/sweep.py"))
+            ),
+            RequestMode::Paper
+        );
+    }
+
+    #[test]
     fn snapshot_round_trip() {
         let dir = std::env::temp_dir().join(format!("dabir-snap-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(dir.join("figures")).unwrap();
@@ -2682,7 +2857,7 @@ mod tests {
         assert_eq!(m.provenance.len(), 1);
         assert!(m.provenance[0].missing);
         assert!(m.pointers.contains(&"AGENTS.md".to_string()));
-        assert_eq!(m.skills.len(), 6, "starter skills");
+        assert_eq!(m.skills.len(), 10, "starter skills");
         assert!(
             dir.join(".agents/skills/dabir-compile-and-fix/SKILL.md")
                 .exists(),

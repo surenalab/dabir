@@ -94,7 +94,7 @@ Citation keys complete inside `\cite{` with the title and authors shown; ⌘-cli
 
 ## 8. Ask an agent
 
-The **Agent** tab (⌘J) sends a request to the agent you choose: Claude Code, Codex, Cursor, Grok or OpenCode, whichever is installed. Pick the model and the effort in the two menus when the agent offers them.
+The **Agent** tab (⌘J) sends a request to the agent you choose: Claude Code, Codex, Cursor, Grok or OpenCode, whichever is installed. The **dial** under the agent chooser sets the model and the effort in one sweep: Fast at the left (the smallest model at low effort), Deep at the right (the largest at maximum). Drag the needle, click a tick, or focus it and use ← →; the readout names the position and what it costs in time and money. *Default* hands both choices back to the CLI's own configuration, *Type a model id…* takes an id the list does not know. Codex, which does not list models, offers its four effort levels; Cursor, whose model ids carry their effort, offers its models.
 
 What happens on a run:
 
@@ -149,7 +149,7 @@ Recorded provenance commands then run there over ssh and their artefacts are cop
 
 Dabir keeps three kinds of history, all in the repository:
 
-- **Steps**: every save is a step in the History tab; click one to restore the file as it was, or undo the restore.
+- **Steps**: every save is a step in the History tab; click one to restore the file as it was, or undo the restore. The row of dashes at the top is the same history at a glance, oldest at the left, newest at the right edge: taller accent dashes are agent changes, short grey ones are yours, a gap is a new day. Hover or drag across it to read each step and see it marked below; release to open it. New steps slide in from the right.
 - **Snapshots**: every accepted agent run is a snapshot with its report.
 - **Commits**: the sidebar's Changes section shows what changed since the last commit with a drafted message; **Commit** (⌥⌘C) commits under your name. Agents never commit as you; when they open a pull request the commit is theirs.
 
