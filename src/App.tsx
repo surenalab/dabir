@@ -957,7 +957,8 @@ export default function App() {
       if (isMac ? (e.ctrlKey && k === "s") : (e.altKey && (k === "s" || e.code === "KeyS"))) { e.preventDefault(); command("toggle-sidebar"); return; }
       if (e.altKey && (k === "i" || e.code === "KeyI")) { e.preventDefault(); command("toggle-inspector"); return; }
       if (e.altKey && (k === "f" || e.code === "KeyF")) { e.preventDefault(); command("focus-mode"); return; }
-      if (!e.altKey && !e.ctrlKey && !e.shiftKey && map[k]) { e.preventDefault(); command(map[k]); }
+      // Off the Mac the modifier is Ctrl itself, so only Alt and Shift rule a plain chord out.
+      if (!e.altKey && !e.shiftKey && (isMac ? !e.ctrlKey : true) && map[k]) { e.preventDefault(); command(map[k]); }
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
