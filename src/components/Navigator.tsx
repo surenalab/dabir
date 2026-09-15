@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronRight, FileText, BookMarked, Code2, Image, Database, File, Folder, GitCommitHorizontal, Undo2, History as HistoryIcon, X } from "lucide-react";
-import { searchPaper, type Entry, type GitStatus, type Project, type SearchHit } from "../lib/backend";
+import { searchPaper, type Checkpoint, type Entry, type GitStatus, type Project, type SearchHit } from "../lib/backend";
+import { Scrubber, stepKind } from "./Scrubber";
 import type { OutlineItem } from "../lib/latex";
 import { chord } from "../lib/keys";
 
@@ -93,14 +94,15 @@ interface Props {
   /** Put one uncommitted file back to its committed state; History keeps a step first. */
   onDiscard: (path: string) => void;
   /** Open the History tab in the inspector. */
-  onHistory: () => void;
-  historyCount: number;
+  /** Open the History tab; with an id, at that step. */
+  onHistory: (id?: string) => void;
+  history: Checkpoint[];
   /** Find in Paper is open; `stamp` bumps to refocus the field. */
   find: { open: boolean; stamp: number };
   onCloseFind: () => void;
 }
 
-export function Navigator({ project, current, outline, git, commitFocus, busy, onSelect, onJump, onInitGit, onCommit, draftMessage, onDiscard, onHistory, historyCount, find, onCloseFind }: Props) {
+export function Navigator({ project, current, outline, git, commitFocus, busy, onSelect, onJump, onInitGit, onCommit, draftMessage, onDiscard, onHistory, history, find, onCloseFind }: Props) {
   const ref = useRef<HTMLElement>(null);
   const commitInput = useRef<HTMLInputElement>(null);
   const [message, setMessage] = useState("");
@@ -192,9 +194,12 @@ export function Navigator({ project, current, outline, git, commitFocus, busy, o
           </div>
         )}
         {git?.isRepo && (
-          <button className="versions-toggle" onClick={onHistory} title="Every save and every accepted agent change, readable and reversible, without commits.">
-            <HistoryIcon aria-hidden /> History{historyCount > 0 && <span className="count">{historyCount}</span>}
-          </button>
+          <>
+            <button className="versions-toggle" onClick={() => onHistory()} title="Every save and every accepted agent change, readable and reversible, without commits.">
+              <HistoryIcon aria-hidden /> History{history.length > 0 && <span className="count">{history.length}</span>}
+            </button>
+            {history.length > 0 && <Scrubber axis="horizontal" steps={history} kindOf={stepKind} openId={null} onPick={(id) => onHistory(id)} />}
+          </>
         )}
       </section>
     </aside>
