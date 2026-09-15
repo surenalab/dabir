@@ -4,6 +4,11 @@ Newest first. Every merged pull request adds a line under Unreleased; a release 
 
 ## Unreleased
 
+- History scrubber: the History tab opens with a row of dashes, one per step, oldest at the left and the newest at the right edge; agent steps stand taller in the accent, a day boundary opens a gap. Hover or drag to read a step and see it marked in the list, release or click to open it; ← → Home End and Enter do the same from the keyboard. A new step slides the row left by one dash. Histories longer than the row fold their oldest steps into a stub. Off under reduced motion.
+- Model dial: the Model and Effort menus in the Agent tab are one gauge, Fast at the left and Deep at the right, the models the CLI lists as its major ticks and each one's effort levels as the minor ones. Drag the needle, click a tick or use the arrow keys; the readout names the position and what it costs in plain words. Default hands both choices back to the CLI, Type a model id… keeps the typed-id path. Codex, which lists no models, gets its four efforts; Cursor, which takes no effort flag, gets its models.
+- Paper and code are told apart: every run's preamble now opens with which one the request is about, decided from the words of the request and the file under the cursor, so a code fix no longer ends with a paper compile and a wording change never rewrites a script. Reruns and "add a figure" keep both sides open.
+- Four code-side starter skills join the six paper ones: run-and-test, debug-failing-run, refactor-safely, notebook-to-script. Set Up Memory adds them to a project that already has the six; the Memory tab groups skills by side.
+
 ## 0.1.2
 
 - Fixed: switching files then pressing Undo brought the previous file's text into the new one, and autosave wrote it to disk (the sample's `code/sweep.py` had become a copy of `main.tex`). The editor now drops the old undo history, completion state and diagnostics when a file is swapped in, swaps the text before any keystroke can reach the old one, and every write pairs the path and the text of the same moment.

@@ -660,6 +660,17 @@ const SKILLS: &[SkillDef] = &[
         )],
         previous: &[CHECK_REFERENCES_V1],
     },
+    // Code-side playbooks. A paper's repository holds the code that made its figures; these keep the
+    // agent in the code files when the request is about the code, with the manuscript touched only
+    // where a number it reports changed.
+    skill("run-and-test", "Run a script or its tests before and after changing it, so a code change is checked the way the author would check it.",
+"1. Find how the code runs: `.dabir/PROJECT.md` → How the code runs, `dabir.toml [env]` for the interpreter prefix, `dabir.toml [provenance]` for recorded commands, then `pyproject.toml`, `Project.toml`, `package.json`, `Makefile` or a `tests/` folder.\n2. Run the existing tests or the script once before editing, from the repo root, and keep the output; that is the baseline.\n3. Make the change. Run again. A test that passed before and fails now is your bug, not a flaky test; fix it or revert.\n4. Do not write a test that only restates the code. If none exists, run the script on its real input and compare the output with the baseline.\n5. If the code writes a figure, table or number the paper quotes, follow rerun-experiment for the manuscript side. Otherwise leave the manuscript alone.\n6. Report: what ran, what changed in the output, and anything you could not run and why."),
+    skill("debug-failing-run", "Find the cause of a failing script, notebook or experiment from its output, fix it at the source, and prove the fix by rerunning.",
+"1. Reproduce first: run the exact command that failed (the recorded command, or the one the author gave) and read the whole traceback, bottom up. Name the failing line and the value that was wrong.\n2. Read the code around that line, then follow the wrong value upstream until you find where it was created. Fix there, not where it crashed.\n3. Never fix by catching the exception, widening a type, adding a default, or deleting the assertion, unless the author asked for exactly that.\n4. Rerun the same command. It must pass. If the output feeds a figure or table, check the new numbers are plausible against the ones in the paper before regenerating anything.\n5. Write the cause as one fact in `.dabir/memory/` (name and description frontmatter) when it is something the code's users should know: an environment quirk, a data-format change, a dependency pin.\n6. Report the cause in one sentence, the fix in one, and the command that now passes."),
+    skill("refactor-safely", "Restructure code (rename, extract, move, simplify) without changing what it computes or writes.",
+"1. State what stays fixed: outputs, file names, command-line flags, the numbers in the paper. Read the recorded commands in `dabir.toml [provenance]`; their flags and paths must keep working.\n2. Run the tests or the script before touching anything, and keep the artefacts it wrote as the reference.\n3. Refactor in small steps that each leave the code runnable: rename, then extract, then move. Keep the public names other files import; grep for every use before renaming.\n4. Run again and compare: the same numbers, the same files, byte-identical where the code is deterministic. A seed that changed is a behaviour change, not a refactor.\n5. Use the project's formatter (ruff, black, prettier, rustfmt, clang-format, JuliaFormatter, styler) rather than hand-formatting.\n6. Do not touch the manuscript. Report what moved where and the command that shows the output unchanged."),
+    skill("notebook-to-script", "Turn the cells of a Jupyter notebook into a script the recorded commands can run, keeping its outputs reproducible.",
+"1. Read the notebook (`.ipynb` is JSON: `cells[].source` and `cells[].outputs`). Work out what it needs (imports, data paths, parameters set at the top) and what it produces (figures saved, tables printed, numbers quoted in the paper).\n2. Write one script beside it with the same name and a `main()` guarded by `if __name__ == \"__main__\":`; parameters become arguments with the notebook's values as defaults; `display()` and bare expressions become `print()` or saved files.\n3. Drop the exploration: dead cells, plots not used by the paper, `%magic` lines. Keep the order of the ones that matter.\n4. Run the script with the `[env]` prefix and compare its outputs with the outputs saved in the notebook, number by number for anything the paper quotes.\n5. Record it: add the script's command to `dabir.toml [provenance]` for each artefact it writes, and note in `.dabir/PROJECT.md` → How the code runs that the script supersedes the notebook. Leave the notebook in place unless the author asked to remove it.\n6. Report the mapping cell → function and any output that differed."),
     skill("compile-and-fix", "Compile the paper with Tectonic and fix errors at their source.",
 "1. Compile: `tectonic -X compile --keep-logs --synctex --outdir .dabir/build main.tex` (or the main file named in PROJECT.md).\n2. Read `.dabir/build/*.log` for `!` errors first, then warnings. Fix the first error, recompile, repeat.\n3. Undefined citations or references are usually a missing `\\label` or a typo in the key; do not silence them.\n4. Overfull boxes in the log point at line numbers; fix wording or table widths rather than adding `\\sloppy`.\n5. Finish with a clean compile and report the remaining warnings."),
 ];
@@ -1736,7 +1747,18 @@ mod tests {
             assert!(out.status.success(), "offline run exits 0");
         }
         let m = read(&dir).unwrap();
-        assert_eq!(m.skills.len(), 6);
+        assert_eq!(m.skills.len(), 10, "paper and code starter skills");
+        for name in [
+            "run-and-test",
+            "debug-failing-run",
+            "refactor-safely",
+            "notebook-to-script",
+        ] {
+            assert!(
+                m.skills.iter().any(|s| s.name == format!("dabir-{name}")),
+                "{name} is written"
+            );
+        }
         let _ = fs::remove_dir_all(&dir);
     }
 }

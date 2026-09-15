@@ -34,10 +34,12 @@ Three-pane macOS document window: navigator (232 px, 180–340), document, inspe
 - **Diff** is a bordered card with add/del washes and wrapped lines with a hanging indent; per-hunk accept comes in phase 2.
 - **Review** shows evidence first (figure card, table diff, text diff), then a commit message, then Accept and Commit, Reject, Open Pull Request…. Actions stay disabled until the run is terminal.
 - **Sample tag**: an amber outline chip marks any data that is not yet real.
+- **History scrubber** (`.scrub`): one 3 px dash per step on a 6 px pitch, oldest left, newest flush right, over a hairline. Your saves are ink-4 at half height, agent steps accent at three quarters, system steps line-strong and short, a day boundary is a 6 px gap. Hover or the open step grows a dash to full height by `transform: scaleY`, never `height`; the readout under the rail names the step and its time in ink-2 / ink-4. A new step animates the row left by one pitch (Web Animations, skipped under reduced motion). Keyboard: the rail is one `slider`.
+- **Model dial** (`.dial`): a 156° arc in line-strong with a needle in accent, the travelled arc in accent, major ticks at model boundaries in ink-2 and minor ticks for effort levels in ink-4; the group labels sit inside the arc in ink-3, FAST and DEEP in ink-4 small caps at the ends. Default and a typed id draw the needle dashed in ink-4 at the centre. The readout to the right: the position in 13 px 600, its cost in words in ink-3, then Default and Type a model id… as underlined links. The whole face is one `slider`; arrows, Home, End, Backspace for Default.
 - **Buttons:** `.btn` bordered on raised; `.btn.primary` filled accent; toolbar buttons are borderless per HIG.
 
 ## Motion
-Pane collapse, spinner on a running step or compile, smooth scroll on outline jump. Nothing else. `prefers-reduced-motion` disables all three and adds a text “(running)” marker so state is never colour- or motion-only.
+Pane collapse, spinner on a running step or compile, smooth scroll on outline jump, the needle turning to its notch, the history row sliding left as a step lands. Nothing else. `prefers-reduced-motion` disables all of them and adds a text “(running)” marker so state is never colour- or motion-only.
 
 ## Do not
 Side-tab borders, gradients, glass as decoration, emoji icons, section-number eyebrows, hero metrics, nested cards.

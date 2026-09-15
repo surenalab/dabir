@@ -187,6 +187,30 @@ button { background: none; border: 0; padding: 0; cursor: default; }
 .change .discard:hover { background: var(--paper); color: var(--ink); }
 .versions-toggle svg { width: 12px; height: 12px; }
 
+/* History scrubber: one dash per step, oldest left, newest at the right edge. Pitch 6px = 3px dash + 3px gap (Scrubber.tsx PITCH).
+   Every dash is 22px tall and scaled from its foot, so the hover growth is a transform, not a layout change. */
+.scrub { display: flex; flex-direction: column; gap: 2px; margin: 0 0 var(--space-2); }
+.scrub-rail { position: relative; height: 28px; padding: 0 var(--space-1); border-radius: var(--radius-sm); cursor: ew-resize; overflow: hidden; touch-action: none; user-select: none; }
+.scrub-rail:focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; }
+.scrub-rail::before { content: ""; position: absolute; left: var(--space-1); right: var(--space-1); bottom: 3px; height: 1px; background: var(--line); }
+.scrub-row { position: absolute; right: var(--space-1); bottom: 4px; display: flex; align-items: flex-end; gap: 3px; height: 22px; }
+.scrub .dash { flex: none; width: 3px; height: 22px; border-radius: 1.5px; background: var(--ink-4); transform: scaleY(.5); transform-origin: bottom; transition: transform var(--dur-fast) var(--ease-out), background-color var(--dur-fast); }
+.scrub .dash.agent { transform: scaleY(.73); background: var(--accent); }
+.scrub .dash.system { transform: scaleY(.32); background: var(--line-strong); }
+.scrub .dash.day { margin-left: 6px; }
+.scrub .dash:last-child { animation: dash-in var(--dur-slow) var(--ease-out); }
+@keyframes dash-in { from { opacity: 0; translate: 0 8px; } to { opacity: 1; translate: 0 0; } }
+.scrub .dash.at { transform: scaleY(1); background: var(--ink); }
+.scrub .dash.open { transform: scaleY(1); background: var(--accent); }
+.scrub .dash.at.open { background: var(--accent-hover); }
+.scrub .stub { flex: none; width: 3px; height: 11px; margin-right: 6px; border-radius: 1.5px; background: repeating-linear-gradient(to top, var(--line-strong) 0 2px, transparent 2px 4px); }
+.scrub-read { display: flex; justify-content: space-between; gap: var(--space-2); font-size: var(--text-xs); color: var(--ink-2); padding: 0 var(--space-1); min-height: 16px; }
+.scrub-read .msg { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.scrub-read .msg.quiet { color: var(--ink-3); }
+.scrub-read .when { color: var(--ink-4); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.timeline .step.peek .step-row { background: var(--wash-hover); }
+@media (prefers-reduced-motion: reduce) { .scrub .dash:last-child { animation: none; } .scrub .dash { transition: none; } }
+
 /* History: the paper's steps, newest first */
 .history .memory-note.small { font-size: var(--text-xs); margin: 0; }
 .timeline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
@@ -529,6 +553,36 @@ button { background: none; border: 0; padding: 0; cursor: default; }
 }
 .steer select:disabled { color: var(--ink-4); }
 .run .prompt .steer-tag { font-weight: 400; color: var(--ink-3); }
+
+/* Model dial: one needle over the provider's models and effort levels, Fast at the left, Deep at the right */
+.dial { display: grid; grid-template-columns: 132px minmax(0, 1fr); gap: 0 var(--space-3); align-items: center; padding: 2px var(--space-1) 0; }
+.dial-face { width: 132px; height: 73px; display: block; cursor: ew-resize; touch-action: none; border-radius: var(--radius-md); overflow: visible; }
+.dial-face:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.dial-face .track { fill: none; stroke: var(--line-strong); stroke-width: 1.5; stroke-linecap: round; }
+.dial-face .travel { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-linecap: round; }
+.dial-face .tick { stroke: var(--ink-4); stroke-width: 1.5; stroke-linecap: round; }
+.dial-face .tick.major { stroke: var(--ink-2); stroke-width: 2; }
+.dial-face .tick.past { stroke: var(--accent); }
+.dial-face .tick.at { stroke: var(--ink); stroke-width: 2.5; }
+.dial-face .group { font: 600 13px var(--font-ui); fill: var(--ink-3); letter-spacing: .01em; }
+.dial-face .end { font: 500 12px var(--font-ui); fill: var(--ink-4); text-transform: uppercase; letter-spacing: .06em; }
+.dial-face .needle { transition: transform var(--dur) var(--ease-out); }
+.dial-face .needle line { stroke: var(--accent); stroke-width: 2.5; stroke-linecap: round; }
+.dial-face .needle circle { fill: var(--accent); }
+.dial-face .hub { fill: var(--ink); stroke: var(--paper-2); stroke-width: 1.5; }
+.dial.default .needle line, .dial.custom .needle line { stroke: var(--ink-4); stroke-dasharray: 3 3; }
+.dial.default .needle circle, .dial.custom .needle circle { fill: var(--ink-4); }
+.dial-read { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.dial-line { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; }
+.dial-name { font-size: var(--text-md); font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dial-tag { font-size: var(--text-xs); color: var(--ink-3); border: 1px solid var(--line); border-radius: 8px; padding: 0 6px; line-height: 15px; }
+.dial-pace { margin: 0; font-size: var(--text-xs); color: var(--ink-3); line-height: 1.45; text-wrap: pretty; }
+.dial-actions { display: flex; gap: var(--space-3); margin-top: 2px; }
+.dial-actions .link, .dial.empty .link { font-size: var(--text-xs); color: var(--ink-2); text-decoration: underline; text-underline-offset: 2px; padding: 0; }
+.dial-actions .link:hover, .dial.empty .link:hover { color: var(--accent); }
+.dial.empty { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2) var(--space-3); padding: 0 var(--space-1); }
+.dial.empty .dial-name { font-weight: 500; font-size: var(--text-sm); color: var(--ink-2); }
+@media (prefers-reduced-motion: reduce) { .dial-face .needle { transition: none; } }
 
 .composer { border: 1px solid var(--line-strong); border-radius: var(--radius-lg); background: var(--raised); box-shadow: var(--shadow-raised); display: flex; flex-direction: column; transition: border-color var(--dur-fast), box-shadow var(--dur-fast); }
 .composer:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--focus); }
