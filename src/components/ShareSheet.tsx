@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
-import { FileDown, Copy, Radio, Square, Upload, Download, Link2, BookMarked } from "lucide-react";
-import { parseShareLink, shareLink, userName, setUserName, type Transport } from "../lib/collab";
+import { useEffect, useRef, useState } from "react";
+import { FileDown, Copy, Radio, Square, Upload, Download, Link2, BookMarked, Mail, MessageCircle, Send } from "lucide-react";
+import { parseShareLink, shareLink, inviteMessage, userName, setUserName, type Transport } from "../lib/collab";
+import { isMac, openExternal } from "../lib/backend";
 
 export type LiveState = { url: string; lanUrl: string; room: string; host: boolean; transport: Transport; password?: string } | null;
 
@@ -20,15 +21,28 @@ interface Props {
   onPush: () => Promise<void>;
   onReferences: () => void;
   onExport: () => void;
+  /** A dabir://join link that arrived from Mail or a chat, filled into Join; App joins it by itself when the name is known. */
+  pendingLink?: string | null;
 }
+
+/** Where a link can go with one click. Each opens the user's own app with the message filled in; nothing is sent by Dabir. */
+const VIA: { id: string; label: string; icon: typeof Mail; url: (m: { subject: string; body: string }) => string; when?: () => boolean }[] = [
+  { id: "mail", label: "Email", icon: Mail, url: (m) => `mailto:?subject=${encodeURIComponent(m.subject)}&body=${encodeURIComponent(m.body)}` },
+  { id: "messages", label: "Messages", icon: MessageCircle, url: (m) => `sms:&body=${encodeURIComponent(m.body)}`, when: () => isMac },
+  { id: "whatsapp", label: "WhatsApp", icon: Send, url: (m) => `https://wa.me/?text=${encodeURIComponent(m.body)}` },
+  { id: "telegram", label: "Telegram", icon: Send, url: (m) => `https://t.me/share/url?url=${encodeURIComponent(m.body.match(/dabir:\/\/\S+/)?.[0] ?? "")}&text=${encodeURIComponent(m.body)}` },
+];
 
 export function ShareSheet(p: Props) {
   const [name, setName] = useState(userName());
-  const [link, setLink] = useState("");
+  const [link, setLink] = useState(p.pendingLink ?? "");
   const [overleaf, setOverleaf] = useState(p.overleafUrl ?? "");
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [transport, setTransport] = useState<Transport>("direct");
+  const [transport, setTransport] = useState<Transport>(() => { const t = p.pendingLink ? parseShareLink(p.pendingLink)?.transport : null; return t && t !== "direct" ? t : "p2p"; });
+  const nameInput = useRef<HTMLInputElement>(null);
+  // A link from outside with no name yet: the sheet opens on it and asks for the name first.
+  useEffect(() => { if (p.pendingLink && !userName()) nameInput.current?.focus(); }, [p.pendingLink]);
   const [invite, setInvite] = useState("");
   const [answerIn, setAnswerIn] = useState("");
   const [guestInvite, setGuestInvite] = useState("");
@@ -49,6 +63,10 @@ export function ShareSheet(p: Props) {
   };
   const copy = async (text: string) => { try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { setError("Could not copy. Select the link and copy it by hand."); } };
   const wrap = (f: () => Promise<void>) => async () => { try { setError(null); await f(); } catch (e) { setError(String(e)); } };
+  const liveLink = p.live && p.live.transport !== "direct" ? shareLink(p.live.host && p.live.transport === "relay" ? p.live.lanUrl : p.live.url, p.live.room, p.live.transport, p.live.password) : "";
+  const via = async (make: (m: { subject: string; body: string }) => string) => {
+    try { await openExternal(make(inviteMessage(name, p.projectName, liveLink))); } catch (e) { setError(String(e)); }
+  };
 
   return (
     <div className="sheet-backdrop" onClick={p.onClose}>
@@ -59,14 +77,14 @@ export function ShareSheet(p: Props) {
           <h3><Radio aria-hidden /> Live session</h3>
           {!p.live ? (
             <>
-              <p className="memory-note">Edit together in real time. The host's checkout stays the source of truth; nothing is stored anywhere else, and no server of yours is needed.</p>
-              <label className="share-label">Your name<input className="sheet-input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Shown next to your cursor" /></label>
+              <p className="memory-note">Edit together in real time, from anywhere. Your checkout stays the source of truth; the text travels between the machines, encrypted with the key in the link, and is stored nowhere else.</p>
+              <label className="share-label">Your name<input ref={nameInput} className="sheet-input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Shown next to your cursor" /></label>
               <div className="share-radio" role="radiogroup" aria-label="How to connect">
-                <label><input type="radio" name="transport" checked={transport === "direct"} onChange={() => setTransport("direct")} /> Direct, no server</label>
+                <label><input type="radio" name="transport" checked={transport === "p2p"} onChange={() => setTransport("p2p")} /> Anywhere</label>
                 <label><input type="radio" name="transport" checked={transport === "relay"} onChange={() => setTransport("relay")} /> Same network</label>
-                <label><input type="radio" name="transport" checked={transport === "p2p"} onChange={() => setTransport("p2p")} disabled={!p.signalingUrl} title={p.signalingUrl ? "" : "Set a signalling server in Settings first"} /> Signalling server</label>
+                <label><input type="radio" name="transport" checked={transport === "direct"} onChange={() => setTransport("direct")} /> Direct, no server</label>
               </div>
-              <p className="target">{transport === "direct" ? "Machines connect straight to each other over WebRTC. You swap two short codes with each coauthor once; after that the text goes directly between you, encrypted. Nothing is hosted anywhere." : transport === "relay" ? "Dabir hosts a small relay on this machine; coauthors on the same Wi-Fi or VPN (Tailscale is free and stretches this across the internet) paste the link." : "Peers meet through the signalling server in Settings; the text goes peer to peer. relay/signaling-worker.js deploys one to Cloudflare's free tier."}</p>
+              <p className="target">{transport === "p2p" ? `One link for everyone. Machines meet through ${p.signalingUrl ? "your signalling server" : "Dabir's meeting point (a small server that only introduces peers and never sees the paper)"} and then talk to each other directly; a relay steps in, still encrypted, on networks that block that.` : transport === "relay" ? "Dabir hosts a small relay on this machine; coauthors on the same Wi-Fi or VPN (Tailscale is free and stretches this across the internet) paste the link." : "Machines connect straight to each other with no server at all. You swap two short codes with each coauthor once; after that the text goes directly between you, encrypted."}</p>
               <div className="actions">
                 <button className="btn primary" onClick={start} disabled={!!p.busy}>{p.busy === "start" ? "Starting…" : "Start a Session"}</button>
               </div>
@@ -90,7 +108,7 @@ export function ShareSheet(p: Props) {
             </>
           ) : (
             <>
-              <p className="memory-note">{p.live.host ? "You are hosting" : "You joined"} {p.live.transport === "direct" ? "a direct session" : p.live.transport === "p2p" ? "a peer-to-peer session" : "a session on this network"}{p.live.transport === "direct" && p.direct ? <>, {p.direct.peers} connected</> : null}.</p>
+              <p className="memory-note">{p.live.host ? "You are hosting" : "You joined"} {p.live.transport === "direct" ? "a direct session" : p.live.transport === "p2p" ? "an Anywhere session" : "a session on this network"}{p.live.transport === "direct" && p.direct ? <>, {p.direct.peers} connected</> : null}.</p>
               {p.live.transport === "direct" && p.live.host && p.direct && (
                 <>
                   <div className="actions"><button className="btn primary" onClick={wrap(async () => setInvite(await p.direct!.invite()))} disabled={!!p.busy}>New Invite Code</button></div>
@@ -111,10 +129,18 @@ export function ShareSheet(p: Props) {
                 </>
               )}
               {p.live.transport !== "direct" && <div className="share-link">
-                <code>{shareLink(p.live.host && p.live.transport === "relay" ? p.live.lanUrl : p.live.url, p.live.room, p.live.transport, p.live.password)}</code>
-                <button className="btn" onClick={() => copy(shareLink(p.live!.host && p.live!.transport === "relay" ? p.live!.lanUrl : p.live!.url, p.live!.room, p.live!.transport, p.live!.password))}><Copy /> {copied ? "Copied" : "Copy Link"}</button>
+                <code>{liveLink}</code>
+                <button className="btn" onClick={() => copy(liveLink)}><Copy /> {copied ? "Copied" : "Copy Link"}</button>
               </div>}
-              {p.live.transport !== "direct" && <p className="target">{p.live.transport === "p2p" ? "Send the link to coauthors; it contains the room key. Anyone with the link can join while the session is open." : "Coauthors on the same network paste the link into File › Share. For people elsewhere, use Tailscale or the direct mode, or run the standalone relay on a server you control (node relay/dist/relay.cjs)."}</p>}
+              {p.live.transport !== "direct" && p.live.host && (
+                <div className="share-via" role="group" aria-label="Send the invitation with">
+                  <span className="share-via-label">Send via</span>
+                  {VIA.filter((v) => !v.when || v.when()).map((v) => (
+                    <button key={v.id} type="button" className="btn" onClick={() => via(v.url)} title={`Open ${v.label} with the invitation written`}><v.icon aria-hidden /> {v.label}</button>
+                  ))}
+                </div>
+              )}
+              {p.live.transport !== "direct" && <p className="target">{p.live.transport === "p2p" ? "The message names the paper, carries the link and its key, and says where to get Dabir. Anyone with the link can join while the session is open; end it to close the door." : "Coauthors on the same network paste the link into File › Share. For people elsewhere, start an Anywhere session instead."}</p>}
               <div className="actions"><button className="btn danger" onClick={wrap(p.onStop)} disabled={!!p.busy}><Square /> {p.live.host ? "End Session" : "Leave Session"}</button></div>
             </>
           )}

@@ -1,7 +1,7 @@
 // Direct WebRTC sessions with no server: the host makes an invite code, the guest answers with a
-// code, and from then on the document travels straight between the two machines. Only public STUN
-// is used to discover addresses; nothing is relayed. Works for most home and office networks;
-// networks that block peer traffic entirely need the relay or Tailscale instead.
+// code, and from then on the document travels straight between the two machines. Public STUN finds
+// the addresses; TURN, when the caller passes it, carries the encrypted packets for networks that
+// block peer traffic. Nothing here is hosted.
 
 import * as Y from "yjs";
 import * as syncProtocol from "y-protocols/sync";
@@ -10,7 +10,7 @@ import * as encoding from "lib0/encoding";
 import * as decoding from "lib0/decoding";
 
 const MSG_SYNC = 0, MSG_AWARENESS = 1;
-const STUN = [{ urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302", "stun:stun.cloudflare.com:3478"] }];
+const STUN: RTCIceServer[] = [{ urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302", "stun:stun.cloudflare.com:3478"] }];
 
 type Handler = () => void;
 
@@ -41,9 +41,10 @@ function gathered(pc: RTCPeerConnection): Promise<void> {
 }
 
 class Link {
-  pc = new RTCPeerConnection({ iceServers: STUN });
+  pc: RTCPeerConnection;
   channel: RTCDataChannel | null = null;
   constructor(readonly owner: ManualProvider) {
+    this.pc = new RTCPeerConnection({ iceServers: owner.ice });
     this.pc.addEventListener("datachannel", (e) => this.attach(e.channel));
     this.pc.addEventListener("connectionstatechange", () => { if (["failed", "closed"].includes(this.pc.connectionState)) this.owner.drop(this); });
   }
@@ -63,7 +64,8 @@ export class ManualProvider {
   private handlers: Record<string, Handler[]> = {};
   private syncedOnce = false;
 
-  constructor(readonly doc: Y.Doc) {
+  /** `ice`: STUN by default; with TURN from the signalling server when the caller fetched it. */
+  constructor(readonly doc: Y.Doc, readonly ice: RTCIceServer[] = STUN) {
     this.awareness = new awarenessProtocol.Awareness(doc);
     doc.on("update", (update: Uint8Array, origin: unknown) => {
       const enc = encoding.createEncoder();

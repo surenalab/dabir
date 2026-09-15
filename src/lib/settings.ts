@@ -19,7 +19,7 @@ export interface Settings {
   keymap: "standard" | "vim";   // source view key bindings
   formatOnSave: boolean;        // code files: run the project's formatter (ruff, prettier, rustfmt, clang-format…) on ⌘S
   focusMode: boolean;           // dim every paragraph but the current one, keep the typed line centred, hide the panels
-  signalingUrl: string;         // for the "signalling server" live mode; empty means none configured
+  signalingUrl: string;         // meeting point for Anywhere sessions; empty means Dabir's own (collab.ts DEFAULT_SIGNAL)
   agentProvider: string;                // the agent the composer and the continuation key use
   agentModel: Record<string, string>;   // per provider: model id, "" for the CLI's default
   agentEffort: Record<string, string>;  // per provider: reasoning effort level, "" for the CLI's default

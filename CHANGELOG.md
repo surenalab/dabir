@@ -4,6 +4,12 @@ Newest first. Every merged pull request adds a line under Unreleased; a release 
 
 ## Unreleased
 
+## 0.1.5
+
+- Live sessions from anywhere: *Anywhere* is the first choice in Share and needs no setup. Machines meet through Dabir's meeting point (the signalling worker on Cloudflare's free tier, now also serving `/ice` with STUN and, when a TURN key is configured, Cloudflare TURN credentials so university and corporate networks that block peer traffic still connect) and the paper travels peer to peer, encrypted with the key in the link. Settings › Meeting point overrides it for a lab's own; the link leaves the address out when it is Dabir's.
+- Send via: the host's Share sheet opens Email, Messages (Mac), WhatsApp or Telegram with the invitation written (who, which paper, the link and its key, where to get Dabir). Nothing is sent by Dabir.
+- `dabir://` links open Dabir on every platform: registered by the Windows installer, the .deb and .rpm, and by the app itself for the AppImage; a second launch hands the link to the running app. Clicking a session link joins at once when your name is on record, or opens Share on it and asks for the name.
+- Direct sessions use the same ICE servers, so they too cross strict networks when TURN is available.
 ## 0.1.4
 
 - Effort and model moved into the composer: a pill in the composer's bar names the setting (⚡ Sonnet · High, or Select effort) and opens a popover with one slider across the effort levels the CLI accepts, dots for each level, the travelled part in the accent, a knob that follows the pointer and settles on the nearest level; the level's name in the accent above with the model under it, a reset to the CLI's own choice, and the models as chips beneath, weakest to strongest. Replaces the dial. Arrow keys, Home, End and Backspace on the slider; the popover opens downward when the composer sits near the top of the pane.

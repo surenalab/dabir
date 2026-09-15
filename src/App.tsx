@@ -22,13 +22,13 @@ import { paperSymbols, paperOutline, flattenFiles, type AssistSources } from "./
 import { stopLanguageServers } from "./lib/lsp";
 import type { PdfPin, PdfZoom } from "./components/PdfView";
 import type { ManualProvider } from "./lib/manual";
-import { addComment as yAddComment, connect as yConnect, decodeRange, disconnect as yDisconnect, encodeRange, peers as yPeers, randomRoom, removeComment as yRemoveComment, resolveComment as yResolveComment, setCurrentFile, textFor, whenSynced, type Comment, type Peer, type Session, type Transport, replyComment as yReplyComment, userName, colorFor, markHost, hostPresent, publishProject, republishChanged, awaitSnapshot, sharedTexts, persist, setFileChanges } from "./lib/collab";
+import { addComment as yAddComment, connect as yConnect, decodeRange, disconnect as yDisconnect, encodeRange, peers as yPeers, randomRoom, removeComment as yRemoveComment, resolveComment as yResolveComment, setCurrentFile, textFor, whenSynced, signalUrl, iceServers, parseShareLink, type Comment, type Peer, type Session, type Transport, replyComment as yReplyComment, userName, colorFor, markHost, hostPresent, publishProject, republishChanged, awaitSnapshot, sharedTexts, persist, setFileChanges } from "./lib/collab";
 import type { CommentRange } from "./components/SourceEditor";
 import { safeColor, type Change, type ChangeRange } from "./lib/changes";
 import { proseWords } from "./lib/spell";
 import {
   agentComplete, checkForUpdates, projectSnapshot, sessionMaterialize, checkpoint, checkpoints, checkpointRestore, checkpointUndo, gitDiscard, type Checkpoint, newPaper, compile as runCompile, compileCancel, gitClone, gitPull, gitPush, gitRemoteAdd, gitRemoteUrl, isMac, onCompileProgress, relayStart, relayStop, gitCommit, gitInit, gitStatus, importOverleaf, native, onMenu, onWindowFocus,
-  openProject, pickFolder, pickNewPaperPath, readText, setWindowTitle, synctexForward, synctexInverse, writeText, openSample, openGuide,
+  openProject, pickFolder, pickNewPaperPath, readText, setWindowTitle, synctexForward, synctexInverse, writeText, openSample, openGuide, onDeepLink,
   type CompileResult, type GitStatus, type PdfPos, type Project, type Focus, paperMap, type PaperMap, gitHeadText } from "./lib/backend";
 import { runRecipe, replCommand, formattersFor, formatText } from "./lib/code-tools";
 import { serversFor } from "./lib/lsp";
@@ -101,6 +101,8 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [sheet, setSheet] = useState<"shortcuts" | "clone" | "share" | "new" | "settings" | "export" | "refs" | "setup" | null>(null);
+  // A dabir://join link, clicked in Mail or a chat: the Share sheet opens on it and joins when the name is known.
+  const [pendingLink, setPendingLink] = useState<string | null>(null);
   // Setup opens by itself on the first launch (skippable), and from Help › Set Up Dabir, Settings, or the place
   // that misses a tool (a Typst compile without Typst, the agent tab with no agent installed).
   const [setupFocus, setSetupFocus] = useState<string | null>(null);
@@ -480,9 +482,10 @@ export default function App() {
     try {
       const room = randomRoom(project.name);
       const password = transport === "p2p" ? Math.random().toString(36).slice(2, 12) : undefined;
-      if (transport === "p2p" && !settings.signalingUrl) throw new Error("Set a signalling server in Settings first, or use the direct mode.");
-      const info = transport === "relay" ? await relayStart(1234) : { url: transport === "p2p" ? settings.signalingUrl : "", lanUrl: "" };
-      const sess = yConnect(info.url, room, name, true, transport, password);
+      const signal = signalUrl(settings.signalingUrl);
+      const info = transport === "relay" ? await relayStart(1234) : { url: transport === "p2p" ? signal : "", lanUrl: "" };
+      const ice = transport === "relay" ? undefined : await iceServers(signal);
+      const sess = yConnect(info.url, room, name, true, transport, password, ice);
       // The host seeds the shared text with the open file once the relay confirms an empty doc.
       const seed = () => {
         if (file && source != null) { const t = textFor(sess, rel(file)!); if (t.length === 0 && source.length > 0) t.insert(0, source); }
@@ -496,7 +499,7 @@ export default function App() {
       // Every joiner rebuilds this working tree locally, so figures, tables and the .bib match.
       const snap = await projectSnapshot(project.root);
       await publishProject(sess, snap.files, snap.skipped);
-      setNote(transport === "direct" ? "Direct session ready. Make an invite code for each coauthor." : "Live session started. Share the link from the Share sheet." + (snap.skipped.length ? ` ${snap.skipped.length} large file${snap.skipped.length > 1 ? "s" : ""} stay on this machine.` : ""));
+      setNote(transport === "direct" ? "Direct session ready. Make an invite code for each coauthor." : "Live session started. Send the link from the Share sheet." + (snap.skipped.length ? ` ${snap.skipped.length} large file${snap.skipped.length > 1 ? "s" : ""} stay on this machine.` : ""));
     } finally { setLiveBusy(null); }
   }, [project, file, source, rel, attachSession, settings.signalingUrl]);
 
@@ -510,7 +513,7 @@ export default function App() {
   }, [openFolder, rel]);
 
   const answerDirect = useCallback(async (name: string, invite: string): Promise<string> => {
-    const sess = session?.transport === "direct" ? session : yConnect("", "direct", name, false, "direct");
+    const sess = session?.transport === "direct" ? session : yConnect("", "direct", name, false, "direct", undefined, await iceServers(signalUrl(settings.signalingUrl)));
     const prov = sess.provider as ManualProvider;
     const code = await prov.answerInvite(invite);
     if (sess !== session) {
@@ -520,7 +523,7 @@ export default function App() {
       setLive({ url: "", lanUrl: "", room: "direct", host: false, transport: "direct" });
     }
     return code;
-  }, [session, attachSession, mirrorFromHost]);
+  }, [session, attachSession, mirrorFromHost, settings.signalingUrl]);
   const directApi = session?.transport === "direct" ? {
     invite: () => (session.provider as ManualProvider).createInvite(),
     accept: (answer: string) => (session.provider as ManualProvider).acceptAnswer(answer),
@@ -528,17 +531,34 @@ export default function App() {
     peers: directPeers,
   } : { invite: async () => { throw new Error("Start a direct session first."); }, accept: async () => {}, answer: answerDirect, peers: 0 };
 
+  const joinRef = useRef<((name: string, url: string, room: string, transport: Transport, password?: string) => Promise<void>) | null>(null);
   const joinSession = useCallback(async (name: string, url: string, room: string, transport: Transport, password?: string) => {
     setLiveBusy("join");
     try {
-      const sess = yConnect(url, room, name, false, transport, password);
-      try { await whenSynced(sess, transport === "p2p" ? 20000 : 8000); } catch (e) { yDisconnect(sess); throw e; }
+      const ice = transport === "p2p" ? await iceServers(url) : undefined;
+      const sess = yConnect(url, room, name, false, transport, password, ice);
+      try { await whenSynced(sess, transport === "p2p" ? 25000 : 8000); } catch (e) { yDisconnect(sess); throw e; }
       attachSession(sess);
       setLive({ url, lanUrl: url, room, host: false, transport, password });
       setNote("Joined. Receiving the host's paper…");
       await mirrorFromHost(sess, room);
     } finally { setLiveBusy(null); }
   }, [attachSession, mirrorFromHost]);
+  useEffect(() => { joinRef.current = joinSession; }, [joinSession]);
+
+  // A dabir://join link from Mail or a chat, at launch or while Dabir runs.
+  useEffect(() => {
+    let off: (() => void) | undefined;
+    onDeepLink((urls) => {
+      const link = urls.find((u) => parseShareLink(u));
+      if (!link) return;
+      setPendingLink(link); setSheet("share");
+      // With a name on record the join starts at once; the sheet shows its progress. Without one it asks first.
+      const parsed = parseShareLink(link)!; const name = userName();
+      if (name) joinRef.current?.(name, parsed.url, parsed.room, parsed.transport, parsed.password).catch((e) => setError(String(e)));
+    }).then((u) => { off = u; });
+    return () => off?.();
+  }, []);
 
   const stopSession = useCallback(async () => {
     const names = peers.filter((p) => !p.me).map((p) => p.name);
@@ -1155,7 +1175,7 @@ export default function App() {
       {sheet === "shortcuts" && <ShortcutSheet onClose={() => setSheet(null)} />}
       {sheet === "clone" && <CloneSheet onClose={() => setSheet(null)} onClone={cloneRepo} />}
       {sheet === "share" && (
-        <ShareSheet projectName={project?.name ?? "Dabir"} live={live} overleafUrl={overleafUrl} busy={liveBusy} onClose={() => setSheet(null)}
+        <ShareSheet key={pendingLink ?? ""} projectName={project?.name ?? "Dabir"} live={live} overleafUrl={overleafUrl} busy={liveBusy} onClose={() => { setSheet(null); setPendingLink(null); }} pendingLink={pendingLink}
           onStart={startSession} onJoin={joinSession} onStop={stopSession} onSetOverleaf={setOverleaf} onPull={pullOverleaf} onPush={pushOverleaf}
           onReferences={() => setSheet("refs")} onExport={() => setSheet("export")} signalingUrl={settings.signalingUrl} direct={directApi} />
       )}

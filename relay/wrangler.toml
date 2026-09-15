@@ -1,0 +1,18 @@
+# Cloudflare Worker config for Dabir's signalling and ICE endpoint. See signaling-worker.js.
+#   npx wrangler deploy --config relay/wrangler.toml
+name = "dabir-signal"
+main = "signaling-worker.js"
+compatibility_date = "2026-09-01"
+# Reached at signal.surenalab.com only; the workers.dev address (named after the account) stays off.
+workers_dev = false
+routes = [{ pattern = "signal.surenalab.com", custom_domain = true }]
+
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "Rooms"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Rooms"]
+
+# Secrets, set with `wrangler secret put`: TURN_KEY_ID, TURN_API_TOKEN (optional; STUN only without them).

@@ -47,3 +47,4 @@ bench/results/
 .claude/
 .impeccable/
 skills-lock.json
+.wrangler/

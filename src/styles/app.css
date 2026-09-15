@@ -1042,6 +1042,9 @@ input[type="range"] { accent-color: var(--accent); width: 140px; }
 .grammar-card .gc-fix:hover { background: var(--accent); color: var(--accent-ink); }
 .grammar-card .gc-rule { margin-top: 6px; font-family: var(--font-mono); font-size: 10px; color: var(--ink-4); }
 .share-radio { display: flex; gap: var(--space-2); margin: var(--space-2) 0; }
+.share-via { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: var(--space-2) 0; }
+.share-via-label { font-size: var(--text-xs); font-weight: 600; color: var(--ink-3); margin-right: 2px; }
+.share-via .btn svg { width: 13px; height: 13px; }
 .share-radio label { display: flex; align-items: center; gap: 6px; font-size: var(--text-sm); color: var(--ink); }
 .share-radio input { accent-color: var(--accent); }
 /* PDF comment pins */

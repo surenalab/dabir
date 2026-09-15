@@ -217,6 +217,19 @@ export async function openGuide(): Promise<void> {
   const { openUrl } = await import("@tauri-apps/plugin-opener");
   await openUrl(url);
 }
+/** Open a URL in the user's own app for it: mailto: in Mail, sms: in Messages, https: in the browser. */
+export async function openExternal(url: string): Promise<void> {
+  if (!native) { window.open(url, "_blank"); return; }
+  const { openUrl } = await import("@tauri-apps/plugin-opener");
+  await openUrl(url);
+}
+/** dabir:// links: the one the app was launched with, then every one opened while it runs. */
+export async function onDeepLink(handler: (urls: string[]) => void): Promise<() => void> {
+  if (!native) return () => {};
+  const { getCurrent, onOpenUrl } = await import("@tauri-apps/plugin-deep-link");
+  try { const first = await getCurrent(); if (first?.length) handler(first); } catch { /* not launched by a link */ }
+  return onOpenUrl(handler);
+}
 export async function templatesList(): Promise<TemplateListing> {
   if (!native) return SAMPLE_TEMPLATES;
   return invoke<TemplateListing>("templates_list");
