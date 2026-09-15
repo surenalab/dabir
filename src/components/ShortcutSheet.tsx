@@ -1,4 +1,6 @@
 import { useEffect } from "react";
+import { chord } from "../lib/keys";
+import { isMac } from "../lib/backend";
 
 const ROWS: [string, string[]][] = [
   ["New Paper…", ["⌘", "N"]],
@@ -11,7 +13,7 @@ const ROWS: [string, string[]][] = [
   ["Compile", ["⌘", "B"]],
   ["Show Compile Log", ["⇧", "⌘", "L"]],
   ["Show or Hide Terminal", ["⌃", "`"]],
-  ["Run File in Terminal", ["⌃", "↩"]],
+  ["Run File in Terminal", isMac ? ["⌃", "↩"] : ["⌥", "⌘", "↩"]],
   ["Code: Run Selection or Line in Terminal", ["⇧", "↩"]],
   ["Next · Previous Open File", ["⇧⌘", "] ["]],
   ["Focus Mode", ["⌥", "⌘", "F"]],
@@ -22,7 +24,7 @@ const ROWS: [string, string[]][] = [
   ["Bold · Italic · Emphasis", ["⇧⌘", "B I E"]],
   ["Inline math · Citation · Cross-ref", ["⇧⌘", "M C R"]],
   ["Zoom in · out · fit", ["⌘", "= − 0"]],
-  ["Show or Hide Sidebar", ["⌃", "⌘", "S"]],
+  ["Show or Hide Sidebar", isMac ? ["⌃", "⌘", "S"] : ["⌥", "⌘", "S"]],
   ["Show or Hide Inspector", ["⌥", "⌘", "I"]],
   ["Ask the Agent", ["⌘", "J"]],
   ["Link", ["⌘", "K"]],
@@ -50,7 +52,7 @@ export function ShortcutSheet({ onClose }: { onClose: () => void }) {
           {ROWS.map(([what, keys]) => (
             <div key={what} style={{ display: "contents" }}>
               <dt>{what}</dt>
-              <dd>{keys.map((k) => <kbd key={k}>{k}</kbd>)}</dd>
+              <dd>{keys.map((k) => <kbd key={k}>{chord(k)}</kbd>)}</dd>
             </div>
           ))}
         </dl>

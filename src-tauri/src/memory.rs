@@ -13,7 +13,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::SystemTime;
 
 #[derive(Serialize, Clone, Debug)]
@@ -317,7 +316,7 @@ pub fn read(root: &Path) -> Result<Memory, String> {
 }
 
 fn head_short(root: &Path) -> Option<String> {
-    let o = Command::new("git")
+    let o = crate::spawn::tool("git")
         .current_dir(root)
         .args(["rev-parse", "--short", "HEAD"])
         .output()
@@ -1063,12 +1062,12 @@ pub fn rerun(root: &Path, artefact: &str) -> Result<RunOutput, String> {
     let started = std::time::Instant::now();
     let remote = remote(root);
     let out = match &remote {
-        Some(r) => Command::new("ssh")
+        Some(r) => crate::spawn::tool("ssh")
             .args(remote_command(r, &cmd))
             .current_dir(root)
             .output()
             .map_err(|e| format!("ssh: {e}"))?,
-        None => Command::new("sh")
+        None => crate::spawn::tool("sh")
             .arg("-lc")
             .arg(&cmd)
             .current_dir(root)
@@ -1087,7 +1086,7 @@ pub fn rerun(root: &Path, artefact: &str) -> Result<RunOutput, String> {
                     let _ = fs::create_dir_all(parent);
                 }
                 let from = format!("{}:{}/{}", r.host, r.dir.trim_end_matches('/'), artefact);
-                let scp = Command::new("scp")
+                let scp = crate::spawn::tool("scp")
                     .args(["-q", "-o", "BatchMode=yes", "-r", &from])
                     .arg(&local)
                     .output()
@@ -1732,7 +1731,7 @@ mod tests {
             "@article{a, title={T}, year={2020}}\n",
         )
         .unwrap();
-        if let Ok(out) = std::process::Command::new("python3")
+        if let Ok(out) = crate::spawn::tool("python3")
             .arg(&script)
             .arg("--offline")
             .arg(dir.join("refs.bib"))

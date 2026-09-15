@@ -34,6 +34,7 @@ import { runRecipe, replCommand, formattersFor, formatText } from "./lib/code-to
 import { serversFor } from "./lib/lsp";
 import { fileKind } from "./lib/languages";
 import { parseBib, type BibEntry, type OutlineItem } from "./lib/latex";
+import { chord, RUN_FILE } from "./lib/keys";
 
 export type CompileState =
   | { status: "idle" }
@@ -42,6 +43,13 @@ export type CompileState =
 
 const NAV_W = 232, INSP_W = 380;
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+
+/** A text field or the editor has the keyboard: Ctrl+Enter there means send or a newline, not Run File. */
+function isEditable(t: EventTarget | null): boolean {
+  const el = t as HTMLElement | null;
+  if (!el || !el.tagName) return false;
+  return el.tagName === "TEXTAREA" || el.tagName === "INPUT" || el.isContentEditable;
+}
 
 export default function App() {
   const [project, setProject] = useState<Project | null>(null);
@@ -378,7 +386,7 @@ export default function App() {
 
   const showInPdf = useCallback(async () => {
     if (!project?.mainTex || !file) return;
-    if (compileState.status !== "done" || !compileState.result.pdf) { setNote("Compile first (⌘B), then Show Line in PDF."); return; }
+    if (compileState.status !== "done" || !compileState.result.pdf) { setNote(chord("Compile first (⌘B), then Show Line in PDF.")); return; }
     try {
       const pos = await synctexForward(project.mainTex, file, cursorLine);
       if (!pos) { setNote(`No PDF position recorded for line ${cursorLine}.`); return; }
@@ -421,7 +429,7 @@ export default function App() {
 
   const initGit = useCallback(async () => {
     if (!project) return;
-    try { await gitInit(project.root); await reloadProject(); setNote("Initialised an empty Git repository. Make a first commit so agents can branch from it."); }
+    try { await gitInit(project.root); await reloadProject(); setNote("Initialised a Git repository with an empty first commit; agents can branch from it, and your files stay uncommitted until you commit."); }
     catch (e) { setError(String(e)); }
   }, [project, reloadProject]);
 
@@ -716,7 +724,7 @@ export default function App() {
   // Grammar: check the selection, or the paragraph around the cursor, through LanguageTool.
   const runGrammar = useCallback(async () => {
     if (source == null) return;
-    if (settings.grammar === "off") { setNote("Grammar checking is off. Turn it on in Settings (⌘,) and choose a LanguageTool server."); return; }
+    if (settings.grammar === "off") { setNote(chord("Grammar checking is off. Turn it on in Settings (⌘,) and choose a LanguageTool server.")); return; }
     let { from, to } = selection;
     if (to === from) {
       const before = source.lastIndexOf("\n\n", from); const after = source.indexOf("\n\n", from);
@@ -829,7 +837,7 @@ export default function App() {
         body: <><p>Agents remember through files in <code>.dabir/</code>: the project brief, decisions taken, a log of runs, and skills (recipes such as <i>address a reviewer</i> or <i>check the references</i>). They are plain Markdown in your repository, so you can read and edit them, and any agent can too.</p></> },
       { id: "code", target: ".codebar", title: "Code lives here too", enter: () => { setMode("source"); void selectFile(`${root}/code/sweep.py`); },
         body: <><p>Code files open with their grammar, a language server when one is installed, and Git marks in the gutter. The bar runs the file or the selection in the terminal, opens a REPL, and formats. <code>dabir.toml</code> records which command made each figure and table, so agents rerun the script instead of editing the numbers.</p></>,
-        keys: [{ keys: "⌃⏎", does: "run file" }, { keys: "⇧⏎", does: "run selection" }, { keys: "⇧⌥F", does: "format" }] },
+        keys: [{ keys: RUN_FILE, does: "run file" }, { keys: "⇧⏎", does: "run selection" }, { keys: "⇧⌥F", does: "format" }] },
       { id: "terminal", target: ".terminal", title: "The terminal", enter: () => { setTerminal((t) => (t.open ? t : { ...t, open: true, focusStamp: Date.now() })); },
         body: <><p>A real shell in the paper's folder, with tabs, and the same one agents can use. With <code>[remote]</code> in <code>dabir.toml</code>, a tab opens over SSH on the machine that runs the experiments. Drag the top edge to resize.</p></>,
         keys: [{ keys: "⌃`", does: "show or hide" }] },
@@ -838,11 +846,17 @@ export default function App() {
       { id: "together", target: '.titlebar .tb-btn[aria-label="Share"]', title: "Working together", enter: () => { setInspectorOpen(true); setTabRequest({ tab: "people", stamp: Date.now() }); },
         body: <><p>Start a live session and send the invite code: coauthors edit the same paper peer to peer, with comments and suggested changes in the People tab. Overleaf projects pull and push as Git remotes, and Export makes an arXiv-ready bundle.</p></> },
       { id: "done", target: null, title: "That is the tour",
-        body: <><p>Open your own paper's folder, or start one from a venue template. <kbd>⌘/</kbd> lists every shortcut, <kbd>⌘,</kbd> opens Settings (autosave, format on save, language servers, the agent's memory rules). The written guide covers each step in more depth.</p><p><button className="link" onClick={() => openGuide().catch(() => {})}>Open the user guide</button></p></> },
+        body: <><p>Open your own paper's folder, or start one from a venue template. <kbd>{chord("⌘/")}</kbd> lists every shortcut, <kbd>{chord("⌘,")}</kbd> opens Settings (autosave, format on save, language servers, the agent's memory rules). The written guide covers each step in more depth.</p><p><button className="link" onClick={() => openGuide().catch(() => {})}>Open the user guide</button></p></> },
     ];
   }, [project, selectFile]);
 
+  // A chord the native menu does deliver reaches command() twice within a few milliseconds off the Mac
+  // (the menu event and the keyboard fallback below); the second is dropped.
+  const lastCommand = useRef<{ id: string; at: number }>({ id: "", at: 0 });
   const command = useCallback((id: string) => {
+    const now = performance.now();
+    if (lastCommand.current.id === id && now - lastCommand.current.at < 150) return;
+    lastCommand.current = { id, at: now };
     switch (id) {
       case "open": open(); break;
       case "close-paper": if (project) closePaper(); break;
@@ -913,17 +927,23 @@ export default function App() {
   useEffect(() => onWindowFocus((f) => { setFocused(f); if (f) refreshGit(); }), [refreshGit]);
   useEffect(() => { if (!note) return; const t = setTimeout(() => setNote(null), 6000); return () => clearTimeout(t); }, [note]);
 
-  // Keyboard fallback for the browser preview only; the native app owns accelerators through its menu.
+  // Keyboard fallback. On the Mac the native menu owns every accelerator, so this runs only in the browser
+  // preview there. On Windows and Linux the menu's accelerators did not reach the app while the web view had
+  // the keyboard (the 0.1.2 test on Windows: none of Ctrl+/, Ctrl+N, Ctrl+, or Ctrl+Shift+W fired), so the same
+  // table runs here with Ctrl in place of ⌘; a chord the menu does deliver is deduplicated in command().
   useEffect(() => {
-    if (native) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.ctrlKey && !e.metaKey && e.key === "`") { e.preventDefault(); command("show-terminal"); return; }
-      if (e.ctrlKey && !e.metaKey && e.key === "Enter") { e.preventDefault(); command("run-file"); return; }
+    if (native && isMac) return;
+    const onKey = (raw: KeyboardEvent) => {
+      // Handled chords stop here, ahead of the editor (Ctrl+/ is CodeMirror's comment toggle) and text fields.
+      const e = new Proxy(raw, { get: (t, k) => k === "preventDefault" ? () => { t.preventDefault(); t.stopPropagation(); } : Reflect.get(t, k) }) as KeyboardEvent;
+      const mod = isMac ? e.metaKey : e.ctrlKey;
+      if (e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === "`") { e.preventDefault(); command("show-terminal"); return; }
+      if ((isMac ? e.ctrlKey && !e.metaKey && !e.altKey : e.ctrlKey && e.altKey) && !e.shiftKey && e.key === "Enter" && !isEditable(e.target)) { e.preventDefault(); command("run-file"); return; }
       if (e.shiftKey && e.altKey && !e.metaKey && !e.ctrlKey && (e.code === "KeyF") && !e.defaultPrevented) { e.preventDefault(); command("format-doc"); return; }
-      if (!e.metaKey) return;
+      if (!mod) return;
       const k = e.key.toLowerCase();
       const map: Record<string, string> = { o: "open", n: "new", s: "save", b: "compile", "1": "view-visual", "2": "view-source", "3": "view-pdf", "4": "view-split", j: "ask-agent", f: "find", "/": "shortcuts", ",": "settings", k: "fmt-link" };
-      const shifted: Record<string, string> = { g: "check-grammar", b: "fmt-bold", i: "fmt-italic", e: "fmt-emph", m: "fmt-math", c: "fmt-cite", r: "fmt-ref", l: "show-log", j: "sync-pdf", s: "share", o: "clone", f: "find-paper" };
+      const shifted: Record<string, string> = { g: "check-grammar", b: "fmt-bold", i: "fmt-italic", e: "fmt-emph", m: "fmt-math", c: "fmt-cite", r: "fmt-ref", l: "show-log", j: "sync-pdf", s: "share", o: "clone", f: "find-paper", w: "close-paper" };
       if (e.shiftKey && !e.altKey && shifted[k]) { e.preventDefault(); command(shifted[k]); return; }
       if (e.shiftKey && (e.key === "]" || e.key === "}" || e.code === "BracketRight")) { e.preventDefault(); command("next-file"); return; }
       if (e.shiftKey && (e.key === "[" || e.key === "{" || e.code === "BracketLeft")) { e.preventDefault(); command("prev-file"); return; }
@@ -933,13 +953,15 @@ export default function App() {
       if (k === "=" || k === "+") { e.preventDefault(); command("zoom-in"); return; }
       if (k === "-") { e.preventDefault(); command("zoom-out"); return; }
       if (k === "0") { e.preventDefault(); command("zoom-fit"); return; }
-      if (e.ctrlKey && k === "s") { e.preventDefault(); command("toggle-sidebar"); return; }
+      // ⌃⌘S on the Mac; Ctrl+Alt+S elsewhere, where Ctrl+Shift+S is Share.
+      if (isMac ? (e.ctrlKey && k === "s") : (e.altKey && (k === "s" || e.code === "KeyS"))) { e.preventDefault(); command("toggle-sidebar"); return; }
       if (e.altKey && (k === "i" || e.code === "KeyI")) { e.preventDefault(); command("toggle-inspector"); return; }
       if (e.altKey && (k === "f" || e.code === "KeyF")) { e.preventDefault(); command("focus-mode"); return; }
-      if (!e.altKey && !e.ctrlKey && !e.shiftKey && map[k]) { e.preventDefault(); command(map[k]); }
+      // Off the Mac the modifier is Ctrl itself, so only Alt and Shift rule a plain chord out.
+      if (!e.altKey && !e.shiftKey && (isMac ? !e.ctrlKey : true) && map[k]) { e.preventDefault(); command(map[k]); }
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   }, [command]);
 
   useEffect(() => {

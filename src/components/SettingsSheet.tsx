@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { DEFAULTS, resetSettings, updateSettings, useSettings } from "../lib/settings";
 import { dictionaries, type Dictionary } from "../lib/spell";
 import { availableServers, serversFor } from "../lib/lsp";
+import { chord } from "../lib/keys";
 
 const CODE_KINDS: [string, string][] = [["Python", "x.py"], ["Typst", "x.typ"], ["Julia", "x.jl"], ["R", "x.r"], ["JavaScript / TypeScript", "x.ts"], ["C / C++ / CUDA", "x.cpp"], ["Rust", "x.rs"], ["Lua", "x.lua"], ["Shell", "x.sh"], ["YAML", "x.yml"]];
 
@@ -53,7 +54,7 @@ export function SettingsSheet({ onClose, onSetup }: { onClose: () => void; onSet
               </select>
             </Row>
           )}
-          <Row label="Grammar" hint="Checks the selection or current paragraph on demand (⇧⌘G) through a LanguageTool server. Text is sent to that server, so this is off until you choose one.">
+          <Row label="Grammar" hint={chord("Checks the selection or current paragraph on demand (⇧⌘G) through a LanguageTool server. Text is sent to that server, so this is off until you choose one.")}>
             <select className="sheet-input compact" value={s.grammar} onChange={(e) => updateSettings({ grammar: e.target.value as "off" | "languagetool" })} aria-label="Grammar">
               <option value="off">Off</option>
               <option value="languagetool">LanguageTool</option>
@@ -88,14 +89,14 @@ export function SettingsSheet({ onClose, onSetup }: { onClose: () => void; onSet
           <Row label="Citations, labels and files" hint="Keys from your .bib inside \cite, labels inside \ref, and project files inside \input and \includegraphics.">
             <Toggle on={s.citeComplete} onChange={(v) => updateSettings({ citeComplete: v })} label="Project completion" />
           </Row>
-          <Row label="Predictive text" hint="Grey text after the cursor finishes the word or phrase from this paper's own wording. Tab accepts all of it, ⌘→ one word, Escape dismisses. Nothing leaves the machine. For a whole sentence from the chosen agent, press ⇧⌘Space at any point; that one request goes to the agent's CLI.">
+          <Row label="Predictive text" hint={chord("Grey text after the cursor finishes the word or phrase from this paper's own wording. Tab accepts all of it, ⌘→ one word, Escape dismisses. Nothing leaves the machine. For a whole sentence from the chosen agent, press ⇧⌘Space at any point; that one request goes to the agent's CLI.")}>
             <Toggle on={s.prediction} onChange={(v) => updateSettings({ prediction: v })} label="Predictive text" />
           </Row>
         </section>
 
         <section className="share-section">
           <h3>Code files</h3>
-          <Row label="Language servers" hint="Python, Julia, R, MATLAB, JavaScript and TypeScript, C, C++ and CUDA, Rust, Fortran, Lua, SQL, shell, YAML, JSON, TOML, CMake and Dockerfiles open with their own grammar. When a language server is installed, its completion, errors, hover and go-to-definition (F12, ⇧F12 references, F2 rename) appear too. Servers are found on the same PATH the agents use.">
+          <Row label="Language servers" hint={chord("Python, Julia, R, MATLAB, JavaScript and TypeScript, C, C++ and CUDA, Rust, Fortran, Lua, SQL, shell, YAML, JSON, TOML, CMake and Dockerfiles open with their own grammar. When a language server is installed, its completion, errors, hover and go-to-definition (F12, ⇧F12 references, F2 rename) appear too. Servers are found on the same PATH the agents use.")}>
             <ul className="server-list" aria-label="Language servers">
               {CODE_KINDS.map(([name, sample]) => {
                 const specs = serversFor(sample);
@@ -120,7 +121,7 @@ export function SettingsSheet({ onClose, onSetup }: { onClose: () => void; onSet
               <option value="vim">Vim</option>
             </select>
           </Row>
-          <Row label="Focus mode" hint="Only the paragraph you are in is fully inked, the line you type stays near the middle of the window, and the sidebar and inspector step aside. ⌥⌘F toggles it.">
+          <Row label="Focus mode" hint={chord("Only the paragraph you are in is fully inked, the line you type stays near the middle of the window, and the sidebar and inspector step aside. ⌥⌘F toggles it.")}>
             <Toggle on={s.focusMode} onChange={(v) => updateSettings({ focusMode: v })} label="Focus mode" />
           </Row>
           <Row label="Wrap long lines">
@@ -132,7 +133,7 @@ export function SettingsSheet({ onClose, onSetup }: { onClose: () => void; onSet
           <Row label="Autosave" hint="Writes the file about a second after you stop typing, like Word. A snapshot of the whole paper is taken every five minutes and after each accepted agent change; Versions in the sidebar restores any of them. Your Git history is untouched until you commit.">
             <Toggle on={s.autosave} onChange={(v) => updateSettings({ autosave: v })} label="Autosave" />
           </Row>
-          <Row label="Format code on save" hint="On ⌘S, a code file is reformatted by the project's formatter when one is installed: ruff or black for Python, prettier for JavaScript, TypeScript, CSS, JSON and Markdown, rustfmt, clang-format, JuliaFormatter, styler, shfmt, stylua, taplo. Edit › Format Document (⇧⌥F) does it once. Autosave never reformats.">
+          <Row label="Format code on save" hint={chord("On ⌘S, a code file is reformatted by the project's formatter when one is installed: ruff or black for Python, prettier for JavaScript, TypeScript, CSS, JSON and Markdown, rustfmt, clang-format, JuliaFormatter, styler, shfmt, stylua, taplo. Edit › Format Document (⇧⌥F) does it once. Autosave never reformats.")}>
             <Toggle on={s.formatOnSave} onChange={(v) => updateSettings({ formatOnSave: v })} label="Format code on save" />
           </Row>
           <Row label={s.autosave ? "Compile after changes settle" : "Compile on save"}>

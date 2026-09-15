@@ -248,12 +248,11 @@ pub fn source_zip(root: &Path, dest: &Path) -> Result<Report, String> {
 /// pandoc, if the user has it; looked up on the same PATH the agents get.
 pub fn pandoc() -> Option<PathBuf> {
     std::env::split_paths(&crate::agents::agent_path())
-        .map(|d| d.join("pandoc"))
-        .find(|p| p.is_file())
+        .find_map(|d| crate::spawn::bin_in(&d, "pandoc"))
 }
 
 pub fn pandoc_version() -> Option<String> {
-    let out = std::process::Command::new(pandoc()?)
+    let out = crate::spawn::tool(pandoc()?)
         .arg("--version")
         .output()
         .ok()?;
@@ -281,7 +280,7 @@ pub fn via_pandoc(root: &Path, main: &Path, dest: &Path, format: &str) -> Result
     if let Some(parent) = dest.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    let mut cmd = std::process::Command::new(pandoc);
+    let mut cmd = crate::spawn::tool(pandoc);
     cmd.current_dir(root)
         .arg(main)
         .args(["--from", from, "--to", to, "--standalone", "--citeproc"])
