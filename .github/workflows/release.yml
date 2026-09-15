@@ -115,6 +115,23 @@ jobs:
             echo "APPLE_PASSWORD=${{ secrets.APPLE_PASSWORD }}"
             echo "APPLE_TEAM_ID=${{ secrets.APPLE_TEAM_ID }}"
           } >> "$GITHUB_ENV"
+      # Authenticode: only when WINDOWS_CERTIFICATE (base64 PKCS#12) and WINDOWS_CERTIFICATE_PASSWORD
+      # are set. That is what stops SmartScreen's "Windows protected your PC" after the publisher has
+      # a reputation; without a bought code-signing certificate the installer stays unsigned.
+      - name: Windows Authenticode certificate
+        if: matrix.platform == 'windows-latest' && env.HAVE_WIN_CERT == 'true'
+        env:
+          HAVE_WIN_CERT: ${{ secrets.WINDOWS_CERTIFICATE != '' }}
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path cert | Out-Null
+          [IO.File]::WriteAllBytes("$pwd/cert/dabir.pfx", [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+          $secure = ConvertTo-SecureString -String $env:WINDOWS_CERTIFICATE_PASSWORD -Force -AsPlainText
+          $imported = Import-PfxCertificate -FilePath cert/dabir.pfx -CertStoreLocation Cert:\CurrentUser\My -Password $secure
+          $env:THUMB = $imported.Thumbprint
+          node -e "const fs=require('fs'); const p='src-tauri/tauri.conf.json'; const c=JSON.parse(fs.readFileSync(p,'utf8')); c.bundle.windows.certificateThumbprint=process.env.THUMB; fs.writeFileSync(p, JSON.stringify(c,null,2)+'\n');"
       - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -4,6 +4,12 @@ Newest first. Every merged pull request adds a line under Unreleased; a release 
 
 ## Unreleased
 
+## 0.1.8
+
+- Live sessions: Windows joiners now share the same live buffer as the host. Relative paths were built with a forward slash (`root + "/"`), which does not match `C:\…\main.tex`, so each side edited a different Y.Text and neither saw the other's keystrokes or caret.
+- Source view shows coauthors' carets and selections. y-codemirror.next uses `.cm-ySelectionCaret` / `.cm-ySelectionInfo`; the stylesheet still styled the old y-codemirror v5 class names, so the widgets were in the DOM with no visible caret. The name chip uses the peer colour.
+- Windows installer: Surena Lab as publisher, Dabir icon and wordmark on the installer and uninstaller (header and sidebar bitmaps from `python3 scripts/nsis-brand.py`), per-user install (no admin prompt), silent WebView2 bootstrap if the machine does not have it. SmartScreen's "Windows protected your PC" still appears until the installer is Authenticode-signed; CI signs when `WINDOWS_CERTIFICATE` and `WINDOWS_CERTIFICATE_PASSWORD` secrets are set. A bought code-signing certificate is required; signing alone also needs a few days of installs before SmartScreen drops the warning.
+
 ## 0.1.7
 
 - Live sessions: a joiner no longer sees filenames with a blank editor. 0.1.6 bound y-codemirror to the live text before the host had seeded it, so an empty Y.Text replaced the snapshot already on disk. The guest now keeps that snapshot on screen and binds once the seed arrives; the host puts every text file into the live document when the session starts, not only the file they have open.

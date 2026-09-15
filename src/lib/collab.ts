@@ -8,6 +8,7 @@ import { WebrtcProvider } from "y-webrtc";
 import { ManualProvider } from "./manual";
 import type { Awareness } from "y-protocols/awareness";
 import type { Change } from "./changes";
+import { slash } from "./path";
 
 export interface Peer { clientId: number; name: string; color: string; file?: string; me: boolean }
 export interface Reply { author: string; color: string; text: string; at: number }
@@ -72,7 +73,7 @@ export function connect(url: string, room: string, name: string, host: boolean, 
     : transport === "p2p" ? new WebrtcProvider(room, doc, { signaling: [url], password: password || undefined, maxConns: 12, peerOpts: { config: { iceServers: ice } } })
     : new WebsocketProvider(url, room, doc, { connect: true });
   const awareness = provider.awareness;
-  awareness.setLocalStateField("user", { name, color: colorFor(name) });
+  awareness.setLocalStateField("user", { name, color: colorFor(name), colorLight: `${colorFor(name)}55` });
   return { url, room, host, transport, doc, provider, awareness, texts: new Map(), comments: doc.getArray<Comment>("comments"), changes: doc.getArray<Change>("changes") };
 }
 
@@ -92,10 +93,11 @@ export function disconnect(s: Session) {
   s.doc.destroy();
 }
 
-/** The shared text for a file, keyed by its path relative to the project root. */
+/** The shared text for a file, keyed by its path relative to the project root (posix, even on Windows). */
 export function textFor(s: Session, relPath: string): Y.Text {
-  let t = s.texts.get(relPath);
-  if (!t) { t = s.doc.getText(`file:${relPath}`); s.texts.set(relPath, t); }
+  const key = slash(relPath);
+  let t = s.texts.get(key);
+  if (!t) { t = s.doc.getText(`file:${key}`); s.texts.set(key, t); }
   return t;
 }
 

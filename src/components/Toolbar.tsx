@@ -3,6 +3,7 @@ import type { Project } from "../lib/backend";
 import { Segmented } from "./Segmented";
 import { chord, RUN_FILE } from "../lib/keys";
 import { isMac } from "../lib/backend";
+import { relTo } from "../lib/path";
 
 export type ViewMode = "visual" | "source" | "pdf" | "split";
 
@@ -31,7 +32,7 @@ interface Props {
 }
 
 export function Toolbar({ project, file, dirty, saveLabel, mode, navOpen, inspectorOpen, compiling, onMode, onToggleNav, onToggleInspector, onCompile, onCancelCompile, onShare, live, terminalOpen, onToggleTerminal, run, onRun }: Props) {
-  const rel = file && project ? file.replace(project.root + "/", "") : null;
+  const rel = file && project ? relTo(project.root, file) : null;
   const canCompile = !!project?.mainTex && !compiling;
   return (
     <header className="titlebar" data-tauri-drag-region>

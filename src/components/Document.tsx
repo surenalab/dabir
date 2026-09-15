@@ -3,6 +3,7 @@ import { AlertCircle, CheckCircle2, FolderOpen, FilePlus, GitBranch, Loader2, Ci
 import { parseDocument, type BibEntry } from "../lib/latex";
 import { setVisualContext } from "../lib/visual";
 import { readBinary, type Diagnostic, type PdfPos, type Project } from "../lib/backend";
+import { relTo } from "../lib/path";
 import type { ViewMode } from "./Toolbar";
 import type { CompileState } from "../App";
 import { SourceEditor, type CommentRange, type EditorApi } from "./SourceEditor";
@@ -204,13 +205,13 @@ export function Document(p: Props) {
   const openFile = file;
   const paperTotal = useMemo(() => {
     if (!paperWords || !project) return null;
-    const rel = openFile && openFile.startsWith(project.root + "/") ? openFile.slice(project.root.length + 1) : openFile;
+    const rel = openFile ? relTo(project.root, openFile) : openFile;
     const total = Object.values(paperWords).reduce((a, b) => a + b, 0);
     return rel && rel in paperWords ? total - paperWords[rel] + wordCount : null;
   }, [paperWords, project, openFile, wordCount]);
 
   const result = compileState.status === "done" ? compileState.result : null;
-  const currentRelForLint = p.file && project ? p.file.replace(project.root + "/", "") : null;
+  const currentRelForLint = p.file && project ? relTo(project.root, p.file) : null;
   // The language server's findings for the open code file sit beside the compile's, under the "code" category.
   const codeDiagnostics: Diagnostic[] = fileKind(p.file) === "code" && currentRelForLint
     ? p.code.lint.items.map((i) => ({ severity: i.severity, category: "code", file: currentRelForLint, line: i.line, message: i.message, context: null }))
@@ -219,8 +220,8 @@ export function Document(p: Props) {
   const grouped = groupProblems(diagnostics);
   const errors = grouped.filter((d) => d.severity === "error").length;
   const warnings = grouped.filter((d) => d.severity === "warning").length;
-  const mainRel = project?.mainTex ? project.mainTex.replace(project.root + "/", "") : "main.tex";
-  const currentRel = p.file && project ? p.file.replace(project.root + "/", "") : null;
+  const mainRel = project?.mainTex ? relTo(project.root, project.mainTex) : "main.tex";
+  const currentRel = p.file && project ? relTo(project.root, p.file) : null;
   // Code diagnostics already live in the editor through the language server; only compile marks are added.
   const editorMarks = grouped.filter((d) => d.category !== "code" && d.line != null && (d.file ?? mainRel) === currentRel).map((d) => ({ line: d.line!, severity: d.severity, message: d.message }));
 
@@ -325,7 +326,7 @@ export function Document(p: Props) {
         </div>
       )}
       {project && <FileTabs root={project.root} files={openFiles} active={file} dirty={fileDirty} onSelect={onSelectFile} onClose={onCloseFile} />}
-      {showEditor && !isProse && !previewing && file && project && fileKind(file) !== "notebook" && <CodeBar rel={file.replace(project.root + "/", "")} state={code} onRun={code.onRun} onRunSelection={() => code.onRunSelection()} onRepl={code.onRepl} onFormat={code.onFormat} onNextProblem={() => p.editorRef.current?.nextDiagnostic()} />}
+      {showEditor && !isProse && !previewing && file && project && fileKind(file) !== "notebook" && <CodeBar rel={relTo(project.root, file)} state={code} onRun={code.onRun} onRunSelection={() => code.onRunSelection()} onRepl={code.onRepl} onFormat={code.onFormat} onNextProblem={() => p.editorRef.current?.nextDiagnostic()} />}
       {showEditor && isProse && !previewing && <FormatBar api={p.editorRef.current} lang={markupLang} onFind={p.onFind} onComment={p.onCommentSelection} canComment={p.hasSelection} suggesting={p.settings.suggesting} onToggleSuggesting={p.onToggleSuggesting} pending={p.changes.length} />}
       <div className={`panes ${mode === "split" ? "split" : ""}`} ref={splitRef} style={mode === "split" ? { "--split": `${Math.round(p.splitRatio * 100)}%` } as React.CSSProperties : undefined}>
         <div className="scroll" hidden={!showEditor}>{editor}</div>
