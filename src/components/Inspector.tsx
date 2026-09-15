@@ -420,7 +420,11 @@ export function Inspector({ project, gitRepo, askFocus, prefill, tabRequest, onP
       setDraft("");
       // The run set the repository up first: say so, and let the sidebar drop its "no git" badge.
       if (started.repoNote) { onNote(started.repoNote); onChanged(); }
-    } catch (e) { onNote(String(e)); }
+    } catch (e) {
+      // A run that failed to start may still have initialised the repository first (a signed-out agent, say):
+      // the sidebar should show the state the folder is in now.
+      onNote(String(e)); onChanged();
+    }
   };
 
   // Preview-only: start a run automatically so screenshots can show the transcript.
