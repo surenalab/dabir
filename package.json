@@ -15,7 +15,8 @@
     "check": "sh scripts/check.sh",
     "test:rust": "cd src-tauri && CARGO_TARGET_DIR=target/test cargo test",
     "review": "node scripts/review.mjs",
-    "test:review": "node --test scripts/review.test.mjs"
+    "test:review": "node --test scripts/review.test.mjs",
+    "capture": "node scripts/capture.mjs"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",
