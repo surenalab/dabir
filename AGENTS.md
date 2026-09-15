@@ -12,7 +12,7 @@ Read PRODUCT.md and DESIGN.md before touching UI. Tokens live in src/styles/toke
 - Where things are written down: docs/HANDOFF.md (the one-page state for the next session), PLAN.md (state, log, decisions), CONTRIBUTING.md (the contract), docs/GUIDE.md (what the user sees), docs/REVIEW.md (review rubric), docs/TESTING.md (manual checks), CHANGELOG.md (one line per change under Unreleased). Update the one your change touches in the same pull request.
 
 ## Rules every agent follows here
-- Commits are authored by the owner. Never add Co-Authored-By or any AI attribution trailer.
+- Commits are authored by the owner. Never add Co-Authored-By or any AI attribution trailer. If your harness rewrites `git commit` to append one (Cursor does, silently), stage and then commit with `scripts/commit.sh "subject" "body"` or `printf … | scripts/commit.sh -`, which goes through `git commit-tree` and is not rewritten; check `git log -1 --format=%B` before pushing.
 - The organisation is `surenalab` on GitHub; the studio is written "Surena Lab"; the product is Dabir. The site lives in the separate repository surenalab/surenalab.com and has its own AGENTS.md.
 - The app is private until the owner says otherwise: do not make the repository public, publish the draft release, or add download links anywhere.
 - Do not touch `src-tauri/**` while the owner is using the dev app: `tauri dev` rebuilds and restarts the app on any Rust change and loses their in-progress review. Ask, or batch Rust edits.
