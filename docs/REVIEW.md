@@ -72,7 +72,7 @@ Work through every section. Skipping one silently is the most common review fail
 - Bundle: a new dependency justified in the pull request; the production build size compared before and after when a library is added.
 
 **6. Documentation and state**
-- README for user-visible behaviour; PLAN.md state and next steps; AGENTS.md for harness changes; TESTING.md for manual steps; CHANGELOG.md line.
+- README for user-visible behaviour; docs/GUIDE.md for what the user does; AGENTS.md for harness changes; manual steps in the pull request; CHANGELOG.md line.
 - Comments explain why, at the top of a module or a non-obvious block, in full sentences.
 
 **7. Process**

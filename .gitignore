@@ -40,3 +40,10 @@ relay/dist/
 
 # Agent benchmark outputs
 bench/results/
+
+# Private working notes and agent tooling: never in the repository
+.notes/
+.agents/
+.claude/
+.impeccable/
+skills-lock.json

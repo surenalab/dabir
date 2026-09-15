@@ -7,7 +7,7 @@ These rules apply to everyone who changes this repository: the owner, human cont
 - Read [docs/GUIDE.md](docs/GUIDE.md) once as a user, and take the in-app tour; most good changes start from a step in it that felt wrong.
 - Issues labelled **good first issue** are scoped to one file or one behaviour and name the test that should pass. **help wanted** issues are larger and open to anyone; comment before starting so two people do not build the same thing.
 - Bugs and features go through the [issue templates](.github/ISSUE_TEMPLATE); questions and ideas through Discussions; vulnerabilities through [SECURITY.md](SECURITY.md), never a public issue.
-- [PLAN.md](PLAN.md) is the roadmap and the state of every phase. A change that is not on it is welcome, but say in the pull request why it belongs.
+- The roadmap is the open issues and the milestones. A change that is not on it is welcome, but say in the pull request why it belongs.
 
 ## Licensing of contributions
 
@@ -66,7 +66,7 @@ Adding a dependency needs the same care in reverse: the pull request names the p
 
 ## Agent-specific rules
 
-- Read AGENTS.md, PRODUCT.md, DESIGN.md and the top of PLAN.md before the first edit. Do not re-derive them.
+- Read AGENTS.md, PRODUCT.md and DESIGN.md before the first edit. Do not re-derive them.
 - Stay inside the task. If you find a second problem, note it in the pull request under "Also noticed" and leave it.
 - Do not edit `src-tauri/**` while the owner has the dev app open unless the task requires it; say so in the pull request.
 - Never run `git push --force`, rewrite `main`, change repository visibility, publish a release, add secrets, or delete branches you did not create.
@@ -78,7 +78,7 @@ Adding a dependency needs the same care in reverse: the pull request names the p
 
 - The gate is green locally and in CI.
 - Tests cover the new behaviour; a bug fix includes the test that failed before.
-- Docs are updated: README if a user sees it, docs/GUIDE.md if it changes what the user does, PLAN.md if it changes the state or next steps, docs/HANDOFF.md at the end of a working session, AGENTS.md if it changes how agents work, docs/TESTING.md if there is a manual step.
+- Docs are updated: README if a user sees it, docs/GUIDE.md if it changes what the user does, AGENTS.md if it changes how agents work, and the manual steps to check it written in the pull request.
 - CHANGELOG.md has a line under Unreleased.
 - Screenshots or a capture for any visible change, attached to the pull request.
 - Reviews complete, comments resolved or answered.
