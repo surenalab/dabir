@@ -2424,7 +2424,12 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
         )
         .item(
             &MenuItemBuilder::with_id("run-file", "Run File in Terminal")
-                .accelerator("Ctrl+Enter")
+                .accelerator(if cfg!(target_os = "macos") {
+                    "Ctrl+Enter"
+                } else {
+                    // Ctrl+Enter sends to the agent there; GTK would hand it to this menu item first.
+                    "CmdOrCtrl+Alt+Enter"
+                })
                 .build(app)?,
         )
         .item(&MenuItemBuilder::with_id("run-selection", "Run Selection in Terminal").build(app)?)

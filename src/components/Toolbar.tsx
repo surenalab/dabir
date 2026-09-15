@@ -1,7 +1,7 @@
 import { PanelLeft, PanelRight, Play, Share2, Square, SquareTerminal, CirclePlay } from "lucide-react";
 import type { Project } from "../lib/backend";
 import { Segmented } from "./Segmented";
-import { chord } from "../lib/keys";
+import { chord, RUN_FILE } from "../lib/keys";
 import { isMac } from "../lib/backend";
 
 export type ViewMode = "visual" | "source" | "pdf" | "split";
@@ -63,7 +63,7 @@ export function Toolbar({ project, file, dirty, saveLabel, mode, navOpen, inspec
         ) : (
           <button className="tb-btn" onClick={onCompile} disabled={!canCompile} title={project?.mainTex ? chord("Compile (⌘B)") : "Compile needs a .tex file with \\documentclass"}><Play /> Compile</button>
         )}
-        {run && <button className="tb-btn" onClick={onRun} title={chord(`${run.label} in the terminal (⌃⏎)\n${run.command}`)}><CirclePlay /> Run</button>}
+        {run && <button className="tb-btn" onClick={onRun} title={chord(`${run.label} in the terminal (${RUN_FILE})\n${run.command}`)}><CirclePlay /> Run</button>}
         <span className="spacer" />
         <button className="tb-btn icon" onClick={onToggleTerminal} aria-pressed={terminalOpen} aria-label={terminalOpen ? "Hide Terminal" : "Show Terminal"} title={chord(`${terminalOpen ? "Hide" : "Show"} Terminal (⌃\`)`)} disabled={!project}>
           <SquareTerminal />

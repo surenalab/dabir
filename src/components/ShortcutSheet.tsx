@@ -13,7 +13,7 @@ const ROWS: [string, string[]][] = [
   ["Compile", ["⌘", "B"]],
   ["Show Compile Log", ["⇧", "⌘", "L"]],
   ["Show or Hide Terminal", ["⌃", "`"]],
-  ["Run File in Terminal", ["⌃", "↩"]],
+  ["Run File in Terminal", isMac ? ["⌃", "↩"] : ["⌥", "⌘", "↩"]],
   ["Code: Run Selection or Line in Terminal", ["⇧", "↩"]],
   ["Next · Previous Open File", ["⇧⌘", "] ["]],
   ["Focus Mode", ["⌥", "⌘", "F"]],
