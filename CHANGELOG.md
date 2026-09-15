@@ -4,6 +4,9 @@ Newest first. Every merged pull request adds a line under Unreleased; a release 
 
 ## Unreleased
 
+- Effort and model moved into the composer: a pill in the composer's bar names the setting (⚡ Sonnet · High, or Select effort) and opens a popover with one slider across the effort levels the CLI accepts, dots for each level, the travelled part in the accent, a knob that follows the pointer and settles on the nearest level; the level's name in the accent above with the model under it, a reset to the CLI's own choice, and the models as chips beneath, weakest to strongest. Replaces the dial. Arrow keys, Home, End and Backspace on the slider; the popover opens downward when the composer sits near the top of the pane.
+- History as a rail: the History tab's dashes now run down the left edge of the pane, newest at the top, one per step, sticky while the list scrolls. The dash under the pointer stretches to full width and its neighbours lean toward it; a card beside it names the step, its time and its files, and the list marks the row; click, release after a drag, or Enter opens the step, which stays long in the accent. A new step slides the column down by one dash and draws itself in. ↑ ↓ Home End from the keyboard; off under reduced motion.
+
 ## 0.1.3
 
 - History scrubber: the History tab opens with a row of dashes, one per step, oldest at the left and the newest at the right edge; agent steps stand taller in the accent, a day boundary opens a gap. Hover or drag to read a step and see it marked in the list, release or click to open it; ← → Home End and Enter do the same from the keyboard. A new step slides the row left by one dash. Histories longer than the row fold their oldest steps into a stub. Off under reduced motion.

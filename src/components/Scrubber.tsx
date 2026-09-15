@@ -1,8 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import { PenLine, RotateCcw, Sparkles } from "lucide-react";
 import type { Checkpoint } from "../lib/backend";
 
-/** Dash width plus gap, in px. Kept in step with .scrub in app.css. */
-const PITCH = 6;
+/** Dash height plus gap, in px. Kept in step with .rail in app.css. */
+const PITCH = 7;
 
 export type StepKind = "you" | "agent" | "system";
 
@@ -18,83 +19,81 @@ interface Props {
   onPick: (id: string) => void;
 }
 
-function dayOf(at: number): string { return new Date(at * 1000).toDateString(); }
 function when(at: number): string {
   const d = new Date(at * 1000); const now = new Date();
   const time = d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-  if (d.toDateString() === now.toDateString()) return time;
+  if (d.toDateString() === now.toDateString()) return `Today · ${time}`;
   return `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })} · ${time}`;
 }
 
 /**
- * The paper's history as a row of dashes, oldest on the left, newest at the right edge. Each save or
- * accepted agent change is one dash; agent steps stand taller and take the accent, system steps (restores, autosaves) sit low, a day boundary opens
- * a gap. Hover or drag across the row to read a step and see it marked in the list below; release or
- * click to open it. When a new step lands, the row slides left by one dash to make room for it.
+ * The paper's history as a column of dashes down the left edge of the History pane, newest at the top, one per
+ * save or accepted agent change. Your saves are short, agent steps longer in the accent, restores and autosaves
+ * shortest. The dash under the pointer stretches to full width and its neighbours lean toward it; a card beside
+ * it names the step, its time and its files, and the list marks the row. Click, release after a drag, or press
+ * Enter to open the step; the open step stays long in the accent. A new step slides the column down by one
+ * dash and draws itself in from the left. Keyboard: the column is one slider, ↑ newer, ↓ older.
  */
 export function Scrubber({ steps, kindOf, openId, onPeek, onPick }: Props) {
   const rail = useRef<HTMLDivElement>(null);
-  const [fit, setFit] = useState(60);
-  const [hover, setHover] = useState<number | null>(null); // index into `shown`
+  const col = useRef<HTMLDivElement>(null);
+  const [fit, setFit] = useState(40);
+  const [hover, setHover] = useState<number | null>(null);
   const dragging = useRef(false);
-  const row = useRef<HTMLDivElement>(null);
   const known = useRef<Set<string> | null>(null);
 
-  // How many dashes the rail can hold, from its width; the rest fold into a stub at the left.
+  // The rail is as tall as the visible pane; how many dashes that holds decides where the older steps fold.
   useLayoutEffect(() => {
     const el = rail.current; if (!el) return;
-    const measure = () => setFit(Math.max(8, Math.floor((el.clientWidth - 24) / PITCH)));
+    const pane = el.closest<HTMLElement>(".inspector-body") ?? el.parentElement!;
+    const measure = () => {
+      const h = pane.clientHeight - 2 * 12; // the pane's padding
+      el.style.height = `${Math.max(60, h)}px`;
+      setFit(Math.max(6, Math.floor((h - 20) / PITCH)));
+    };
     measure();
-    const ro = new ResizeObserver(measure); ro.observe(el);
+    const ro = new ResizeObserver(measure); ro.observe(pane);
     return () => ro.disconnect();
   }, []);
 
-  // Oldest → newest, cut to what fits.
-  const shown = useMemo(() => {
-    const oldestFirst = steps.slice().reverse();
-    return oldestFirst.slice(Math.max(0, oldestFirst.length - fit));
-  }, [steps, fit]);
+  const shown = useMemo(() => steps.slice(0, fit), [steps, fit]);
   const hidden = steps.length - shown.length;
 
-  // New steps arrive at the right edge; the whole row slides left by their width so the eye follows the
-  // older dashes making room. Driven from here rather than from state so a re-render never replays it.
+  // New steps land at the top; the column slides down by their height so the eye sees the older dashes make
+  // room. Driven from here rather than from state so a re-render never replays it.
   useEffect(() => {
     const ids = new Set(steps.map((s) => s.id));
-    if (known.current && row.current && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    if (known.current && col.current && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       let fresh = 0; for (const s of steps) { if (!known.current.has(s.id)) fresh++; else break; }
-      if (fresh > 0) row.current.animate([{ transform: `translateX(${fresh * PITCH}px)` }, { transform: "translateX(0)" }], { duration: 380, easing: "cubic-bezier(0.16, 1, 0.3, 1)" });
+      if (fresh > 0) col.current.animate([{ transform: `translateY(${-fresh * PITCH}px)` }, { transform: "translateY(0)" }], { duration: 380, easing: "cubic-bezier(0.16, 1, 0.3, 1)" });
     }
     known.current = ids;
   }, [steps]);
 
-  const indexAt = (clientX: number): number | null => {
-    const el = rail.current; if (!el) return null;
-    const dashes = el.querySelectorAll<HTMLElement>(".dash");
-    let best: number | null = null, bestD = Infinity;
-    dashes.forEach((d) => {
-      const r = d.getBoundingClientRect(); const cx = r.left + r.width / 2; const dist = Math.abs(clientX - cx);
-      if (dist < bestD) { bestD = dist; best = Number(d.dataset.i); }
-    });
-    return best;
+  const indexAt = (clientY: number): number | null => {
+    const el = col.current; if (!el || !shown.length) return null;
+    const r = el.getBoundingClientRect();
+    const i = Math.floor((clientY - r.top) / PITCH);
+    return Math.max(0, Math.min(shown.length - 1, i));
   };
   const peek = (i: number | null) => { setHover(i); onPeek(i == null ? null : shown[i].id); };
-
-  const onPointerMove = (e: PointerEvent<HTMLDivElement>) => { peek(indexAt(e.clientX)); };
-  const onPointerDown = (e: PointerEvent<HTMLDivElement>) => { dragging.current = true; try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* synthetic or already released pointer */ } peek(indexAt(e.clientX)); };
+  const onPointerMove = (e: PointerEvent<HTMLDivElement>) => { peek(indexAt(e.clientY)); };
+  const onPointerDown = (e: PointerEvent<HTMLDivElement>) => { dragging.current = true; try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* synthetic pointer */ } peek(indexAt(e.clientY)); };
   const onPointerUp = (e: PointerEvent<HTMLDivElement>) => {
     if (!dragging.current) return; dragging.current = false;
-    const i = indexAt(e.clientX); if (i != null) onPick(shown[i].id);
+    const i = indexAt(e.clientY); if (i != null) onPick(shown[i].id);
   };
   const onPointerLeave = () => { if (!dragging.current) peek(null); };
 
   const openIndex = openId ? shown.findIndex((s) => s.id === openId) : -1;
-  const current = hover ?? (openIndex >= 0 ? openIndex : null);
+  const [focused, setFocused] = useState(false);
+  const current = hover ?? (focused && openIndex >= 0 ? openIndex : null);
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     const n = shown.length; if (!n) return;
-    const at = current ?? n - 1;
+    const at = current ?? (openIndex >= 0 ? openIndex : 0);
     let next: number | null = null;
-    if (e.key === "ArrowLeft") next = Math.max(0, at - 1);
-    else if (e.key === "ArrowRight") next = Math.min(n - 1, at + 1);
+    if (e.key === "ArrowUp") next = Math.max(0, at - 1);
+    else if (e.key === "ArrowDown") next = Math.min(n - 1, at + 1);
     else if (e.key === "Home") next = 0;
     else if (e.key === "End") next = n - 1;
     else if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(shown[at].id); return; }
@@ -102,29 +101,36 @@ export function Scrubber({ steps, kindOf, openId, onPeek, onPick }: Props) {
   };
 
   const read = current != null ? shown[current] : null;
-  const first = shown[0];
+  const readKind = read ? kindOf(read.message) : null;
   return (
-    <div className="scrub" aria-label="History scrubber">
-      <div ref={rail} className="scrub-rail" role="slider" tabIndex={0}
-        aria-valuemin={0} aria-valuemax={Math.max(0, shown.length - 1)} aria-valuenow={current ?? Math.max(0, shown.length - 1)}
-        aria-valuetext={read ? `${read.message}, ${when(read.at)}` : `${steps.length} steps`}
-        onPointerMove={onPointerMove} onPointerDown={onPointerDown} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onPointerLeave={onPointerLeave} onKeyDown={onKeyDown} onBlur={() => peek(null)}>
-        <div ref={row} className="scrub-row">
-          {hidden > 0 && <span className="stub" title={`${hidden} earlier step${hidden === 1 ? "" : "s"}`} aria-hidden />}
-          {shown.map((s, i) => {
-            const newDay = i > 0 && dayOf(s.at) !== dayOf(shown[i - 1].at);
-            const cls = ["dash", kindOf(s.message), i === current ? "at" : "", s.id === openId ? "open" : "", newDay ? "day" : ""].filter(Boolean).join(" ");
-            return <span key={s.id} className={cls} data-i={i} aria-hidden />;
-          })}
+    <div ref={rail} className="rail" role="slider" tabIndex={0} aria-label="History"
+      aria-valuemin={0} aria-valuemax={Math.max(0, shown.length - 1)} aria-valuenow={current ?? Math.max(0, openIndex)}
+      aria-valuetext={read ? `${read.message}, ${when(read.at)}` : `${steps.length} steps`}
+      onPointerMove={onPointerMove} onPointerDown={onPointerDown} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onPointerLeave={onPointerLeave}
+      onKeyDown={onKeyDown} onFocus={() => setFocused(true)} onBlur={() => { setFocused(false); peek(null); }}>
+      <div ref={col} className="rail-col">
+        {shown.map((s, i) => {
+          const d = current == null ? 9 : Math.abs(i - current);
+          const cls = ["dash", kindOf(s.message), d === 0 ? "at" : d === 1 ? "near" : d === 2 ? "far" : "", s.id === openId ? "open" : ""].filter(Boolean).join(" ");
+          return <span key={s.id} className={cls} aria-hidden />;
+        })}
+        {hidden > 0 && <span className="stub" title={`${hidden} earlier step${hidden === 1 ? "" : "s"}`} aria-hidden />}
+      </div>
+      {read && current != null && (
+        <div className="rail-card" style={{ transform: `translateY(${current * PITCH}px)` }} aria-hidden>
+          <div className="rail-card-head">
+            <span className={`who ${readKind}`}>{readKind === "you" ? <PenLine /> : readKind === "agent" ? <Sparkles /> : <RotateCcw />}</span>
+            <span className="msg">{read.message}</span>
+          </div>
+          <span className="when">{when(read.at)}</span>
+          <div className="files">
+            {read.files.slice(0, 3).map((f) => (
+              <span key={f.path} className="f"><span className="name">{f.path}</span>{f.binary ? <span className="bin">binary</span> : <><span className="add">+{f.add}</span><span className="del">−{f.del}</span></>}</span>
+            ))}
+            {read.files.length > 3 && <span className="more">and {read.files.length - 3} more</span>}
+          </div>
         </div>
-      </div>
-      <div className="scrub-read" aria-live="polite">
-        {read ? (
-          <><span className="msg">{read.message}</span><span className="when">{when(read.at)}</span></>
-        ) : (
-          <><span className="msg quiet">{steps.length} step{steps.length === 1 ? "" : "s"}{first ? ` since ${new Date(first.at * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" })}` : ""}</span><span className="when">now</span></>
-        )}
-      </div>
+      )}
     </div>
   );
 }
