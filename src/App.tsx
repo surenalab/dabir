@@ -34,6 +34,7 @@ import { runRecipe, replCommand, formattersFor, formatText } from "./lib/code-to
 import { serversFor } from "./lib/lsp";
 import { fileKind } from "./lib/languages";
 import { parseBib, type BibEntry, type OutlineItem } from "./lib/latex";
+import { relTo } from "./lib/path";
 import { chord, RUN_FILE } from "./lib/keys";
 
 export type CompileState =
@@ -215,7 +216,7 @@ export default function App() {
     const walk = (es: Project["tree"]) => es.forEach((e) => (e.kind === "dir" ? walk(e.children) : e.kind === "bib" && bibs.push(e.path)));
     walk(p.tree);
     const merged: Record<string, BibEntry> = {};
-    for (const b of bibs) { try { Object.assign(merged, parseBib(await readText(b), b.replace(p.root + "/", ""))); } catch { /* unreadable bib is not fatal */ } }
+    for (const b of bibs) { try { Object.assign(merged, parseBib(await readText(b), relTo(p.root, b))); } catch { /* unreadable bib is not fatal */ } }
     setBib(merged);
   }, []);
   // The paper's structure across its files (sections, labels, floats, macros): what \ref completion,
@@ -341,7 +342,7 @@ export default function App() {
   const versionsRef = useRef<(root: string) => void>(() => {});
   const recordStep = useCallback((path: string) => {
     if (!project) return;
-    const rel = path.startsWith(project.root + "/") ? path.slice(project.root.length + 1) : path;
+    const rel = relTo(project.root, path);
     checkpoint(project.root, `You edited ${rel}`, true).then((id) => { if (id) versionsRef.current(project.root); }).catch(() => {});
     loadMap(project.root);
     if (/\.bib$/.test(rel)) loadBib(project);
@@ -443,7 +444,7 @@ export default function App() {
   }, [project, dirty, save, refreshGit]);
 
   // ---- live sessions
-  const rel = useCallback((path: string | null) => (path && project ? path.replace(project.root + "/", "") : null), [project]);
+  const rel = useCallback((path: string | null) => (path && project ? relTo(project.root, path) : null), [project]);
   // The editor position that rides along with every agent request, so "this paragraph" has a referent.
   const agentFocus = useMemo<Focus | null>(() => {
     const f = rel(file);
@@ -1102,7 +1103,7 @@ export default function App() {
     if (!agentReady) { setNote("No agent is signed in. Choose one in the Agent tab."); return null; }
     const provider = settings.agentProvider;
     try {
-      return await agentComplete(project.root, provider, file.replace(project.root + "/", ""), before, settings.agentModel[provider] ?? "", settings.agentEffort[provider] ?? "");
+      return await agentComplete(project.root, provider, relTo(project.root, file), before, settings.agentModel[provider] ?? "", settings.agentEffort[provider] ?? "");
     } catch (e) { setNote(String(e)); return null; }
   }, [project, file, agentReady, settings]);
 
