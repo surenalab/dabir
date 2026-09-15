@@ -3572,8 +3572,15 @@ mod tests {
             eprintln!("node not found; skipping");
             return;
         }
-        relay::start(1240).unwrap();
         let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+        // The client is a Node script over the yjs package from the web side's node_modules; CI's Rust
+        // job checks out the repository without `npm ci`, so the round trip is skipped there rather than
+        // failing on a missing package (the Web job installs and the local gate always has it).
+        if !repo.join("node_modules").join("yjs").is_dir() {
+            eprintln!("node_modules/yjs not installed; skipping");
+            return;
+        }
+        relay::start(1240).unwrap();
         let out = crate::spawn::tool("node")
             .current_dir(&repo)
             .args(["relay/test-client.mjs", "ws://127.0.0.1:1240", "test-room"])
