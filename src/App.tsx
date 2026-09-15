@@ -957,7 +957,10 @@ export default function App() {
       if (isMac ? (e.ctrlKey && k === "s") : (e.altKey && (k === "s" || e.code === "KeyS"))) { e.preventDefault(); command("toggle-sidebar"); return; }
       if (e.altKey && (k === "i" || e.code === "KeyI")) { e.preventDefault(); command("toggle-inspector"); return; }
       if (e.altKey && (k === "f" || e.code === "KeyF")) { e.preventDefault(); command("focus-mode"); return; }
-      // Off the Mac the modifier is Ctrl itself, so only Alt and Shift rule a plain chord out.
+      // Off the Mac the modifier is Ctrl itself, so only Alt and Shift rule a plain chord out; and in the
+      // terminal a plain Ctrl chord is the shell's (Ctrl+B is the tmux prefix, Ctrl+F and Ctrl+S readline,
+      // Ctrl+K kill-line), so it passes through there. The Shift and Alt chords above still work from it.
+      if (!isMac && (raw.target as Element | null)?.closest?.(".terminal")) return;
       if (!e.altKey && !e.shiftKey && (isMac ? !e.ctrlKey : true) && map[k]) { e.preventDefault(); command(map[k]); }
     };
     window.addEventListener("keydown", onKey, true);
