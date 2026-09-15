@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { chord } from "../lib/keys";
+import { isMac } from "../lib/backend";
 
 const ROWS: [string, string[]][] = [
   ["New Paper…", ["⌘", "N"]],
@@ -23,7 +24,7 @@ const ROWS: [string, string[]][] = [
   ["Bold · Italic · Emphasis", ["⇧⌘", "B I E"]],
   ["Inline math · Citation · Cross-ref", ["⇧⌘", "M C R"]],
   ["Zoom in · out · fit", ["⌘", "= − 0"]],
-  ["Show or Hide Sidebar", ["⌃", "⌘", "S"]],
+  ["Show or Hide Sidebar", isMac ? ["⌃", "⌘", "S"] : ["⌥", "⌘", "S"]],
   ["Show or Hide Inspector", ["⌥", "⌘", "I"]],
   ["Ask the Agent", ["⌘", "J"]],
   ["Link", ["⌘", "K"]],
