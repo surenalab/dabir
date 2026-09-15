@@ -2606,7 +2606,22 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+    // A second launch (a dabir:// link clicked on Windows or Linux while Dabir runs) hands its arguments to the
+    // running instance, which the deep-link plugin turns into an open-url event, and exits. macOS delivers
+    // the URL to the running app itself.
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            use tauri::Manager;
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.show();
+                let _ = w.set_focus();
+            }
+        }));
+    }
+    builder
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
@@ -2622,6 +2637,13 @@ pub fn run() {
         })
         .setup(|app| {
             build_menu(app.handle())?;
+            // The .deb, .rpm and the Windows installer register dabir:// at install time; the AppImage, and a
+            // build run from the source tree, have nobody to do it, so the app registers itself at start.
+            #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                let _ = app.deep_link().register_all();
+            }
             if let Some(dir) = find_tectonic().and_then(|p| p.parent().map(Path::to_path_buf)) {
                 agents::register_tool_dir(dir);
             }

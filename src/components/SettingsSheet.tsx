@@ -3,6 +3,7 @@ import { DEFAULTS, resetSettings, updateSettings, useSettings } from "../lib/set
 import { dictionaries, type Dictionary } from "../lib/spell";
 import { availableServers, serversFor } from "../lib/lsp";
 import { chord } from "../lib/keys";
+import { DEFAULT_SIGNAL } from "../lib/collab";
 
 const CODE_KINDS: [string, string][] = [["Python", "x.py"], ["Typst", "x.typ"], ["Julia", "x.jl"], ["R", "x.r"], ["JavaScript / TypeScript", "x.ts"], ["C / C++ / CUDA", "x.cpp"], ["Rust", "x.rs"], ["Lua", "x.lua"], ["Shell", "x.sh"], ["YAML", "x.yml"]];
 
@@ -76,8 +77,8 @@ export function SettingsSheet({ onClose, onSetup }: { onClose: () => void; onSet
 
         <section className="share-section">
           <h3>Live sessions</h3>
-          <Row label="Signalling server" hint="Optional. Only for the “signalling server” mode in Share; the direct and same-network modes need nothing. relay/signaling-worker.js deploys one to Cloudflare's free tier.">
-            <input className="sheet-input compact" value={s.signalingUrl} onChange={(e) => updateSettings({ signalingUrl: e.target.value.trim() })} placeholder="wss://dabir-signal.you.workers.dev" aria-label="Signalling server URL" />
+          <Row label="Meeting point" hint="Where Anywhere sessions find each other. Empty uses Dabir's own, which only introduces machines and never sees the paper. A lab can run its own: relay/signaling-worker.js deploys to Cloudflare's free tier in one command.">
+            <input className="sheet-input compact" value={s.signalingUrl} onChange={(e) => updateSettings({ signalingUrl: e.target.value.trim() })} placeholder={DEFAULT_SIGNAL} aria-label="Signalling server URL" />
           </Row>
         </section>
 

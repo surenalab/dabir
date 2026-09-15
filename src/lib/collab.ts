@@ -1,5 +1,6 @@
-// Live sessions: one Yjs document per open file, synced over a y-websocket relay.
-// The relay only carries updates; the paper's truth stays in the host's Git checkout.
+// Live sessions: one Yjs document per open file, shared peer to peer (WebRTC, the room key in the
+// link encrypts it), over a relay on the host's machine for one network, or straight between two
+// machines with swapped codes. The paper's truth stays in the host's Git checkout.
 
 import * as Y from "yjs";
 import { WebsocketProvider } from "y-websocket";
@@ -27,6 +28,26 @@ export interface Session {
   changes: Y.Array<Change>;
 }
 
+/** Dabir's meeting point (relay/signaling-worker.js on Cloudflare's free tier). It introduces peers and hands out
+ *  ICE servers; the text never passes through it. Settings › Signalling server overrides it for a lab's own. */
+export const DEFAULT_SIGNAL = "wss://signal.surenalab.com";
+/** The address peers meet at: the one in Settings when set, Dabir's otherwise. */
+export function signalUrl(fromSettings: string): string { return fromSettings.trim() || DEFAULT_SIGNAL; }
+
+const STUN = [{ urls: ["stun:stun.cloudflare.com:3478", "stun:stun.l.google.com:19302"] }];
+/** ICE servers for a WebRTC session: STUN, plus TURN credentials from the signalling server when it has them, so peers
+ *  behind firewalls that block direct traffic still connect. Falls back to STUN alone if the server does not answer. */
+export async function iceServers(signal: string): Promise<RTCIceServer[]> {
+  try {
+    const http = signal.replace(/^ws/, "http").replace(/\/+$/, "") + "/ice";
+    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 4000);
+    const r = await fetch(http, { signal: ctl.signal }); clearTimeout(t);
+    if (!r.ok) return STUN;
+    const body = await r.json() as { iceServers?: RTCIceServer[] };
+    return Array.isArray(body.iceServers) && body.iceServers.length ? body.iceServers : STUN;
+  } catch { return STUN; }
+}
+
 const COLORS = ["#a8322d", "#2f6b3a", "#1f5fa8", "#8a6414", "#6b3fa0", "#0e7c7b"];
 
 export function userName(): string {
@@ -45,10 +66,10 @@ export function randomRoom(prefix: string): string {
   return `${prefix.replace(/[^a-z0-9-]/gi, "-").toLowerCase()}-${s}`;
 }
 
-export function connect(url: string, room: string, name: string, host: boolean, transport: Transport = "relay", password?: string): Session {
+export function connect(url: string, room: string, name: string, host: boolean, transport: Transport = "relay", password?: string, ice: RTCIceServer[] = STUN): Session {
   const doc = new Y.Doc();
-  const provider = transport === "direct" ? new ManualProvider(doc)
-    : transport === "p2p" ? new WebrtcProvider(room, doc, { signaling: [url], password: password || undefined, maxConns: 12 })
+  const provider = transport === "direct" ? new ManualProvider(doc, ice)
+    : transport === "p2p" ? new WebrtcProvider(room, doc, { signaling: [url], password: password || undefined, maxConns: 12, peerOpts: { config: { iceServers: ice } } })
     : new WebsocketProvider(url, room, doc, { connect: true });
   const awareness = provider.awareness;
   awareness.setLocalStateField("user", { name, color: colorFor(name) });
@@ -154,11 +175,25 @@ export function decodeRange(doc: Y.Doc, c: { anchor: string; head: string }): { 
   } catch { return null; }
 }
 
-/** A share link that Dabir understands and that also reads fine in a chat message. */
+/** A share link that Dabir understands and that also reads fine in a chat message. The signalling address is
+ *  left out when it is Dabir's own, so the usual link is short. */
 export function shareLink(url: string, room: string, transport: Transport = "relay", password?: string): string {
   if (transport === "direct") return "";
-  const q = transport === "p2p" ? `p2p=1&room=${encodeURIComponent(room)}${password ? `&key=${encodeURIComponent(password)}` : ""}${url ? `&signal=${encodeURIComponent(url)}` : ""}` : `relay=${encodeURIComponent(url)}&room=${encodeURIComponent(room)}`;
+  const signal = url && url !== DEFAULT_SIGNAL ? `&signal=${encodeURIComponent(url)}` : "";
+  const q = transport === "p2p" ? `p2p=1&room=${encodeURIComponent(room)}${password ? `&key=${encodeURIComponent(password)}` : ""}${signal}` : `relay=${encodeURIComponent(url)}&room=${encodeURIComponent(room)}`;
   return `dabir://join?${q}`;
+}
+
+export const DOWNLOAD_URL = "https://github.com/surenalab/dabir/releases/latest";
+
+/** The invitation as a message: who, which paper, the link, and where to get Dabir. Plain text, so it reads the same
+ *  in Mail, Messages, WhatsApp or Slack. */
+export function inviteMessage(from: string, paper: string, link: string): { subject: string; body: string } {
+  const who = from.trim() ? from.trim() : "A coauthor";
+  return {
+    subject: `Join me on "${paper}" in Dabir`,
+    body: `${who} is editing "${paper}" live in Dabir and invites you to work on it together.\n\nOpen this link with Dabir running:\n${link}\n\nIf you do not have Dabir yet (free, macOS, Windows, Linux): ${DOWNLOAD_URL}\nThen paste the link into File › Share › Join.\n\nThe paper travels straight between our machines, encrypted with the key in the link; nothing is stored on a server.`,
+  };
 }
 export function parseShareLink(s: string): { url: string; room: string; transport: Transport; password?: string } | null {
   try {
@@ -166,7 +201,7 @@ export function parseShareLink(s: string): { url: string; room: string; transpor
     if (u.protocol === "dabir:") {
       const room = u.searchParams.get("room");
       if (!room) return null;
-      if (u.searchParams.get("p2p")) return { url: u.searchParams.get("signal") ?? "", room, transport: "p2p", password: u.searchParams.get("key") ?? undefined };
+      if (u.searchParams.get("p2p")) return { url: u.searchParams.get("signal") || DEFAULT_SIGNAL, room, transport: "p2p", password: u.searchParams.get("key") ?? undefined };
       const relay = u.searchParams.get("relay");
       return relay ? { url: relay, room, transport: "relay" } : null;
     }

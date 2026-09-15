@@ -7,10 +7,28 @@
   ],
   "permissions": [
     "core:default",
-    "opener:default",
     "dialog:default",
     "shell:default",
     "updater:default",
-    "process:default"
+    "process:default",
+    "deep-link:default",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        {
+          "url": "mailto:*"
+        },
+        {
+          "url": "sms:*"
+        },
+        {
+          "url": "https://*"
+        },
+        {
+          "url": "http://*"
+        }
+      ]
+    },
+    "opener:allow-reveal-item-in-dir"
   ]
 }

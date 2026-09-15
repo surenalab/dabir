@@ -1,6 +1,6 @@
 [package]
 name = "dabir"
-version = "0.1.4"
+version = "0.1.5"
 description = "Dabir: a local-first workspace for scientific writing"
 authors = ["Sadegh Salehi"]
 license = "AGPL-3.0-only"
@@ -40,6 +40,8 @@ yrs-axum = "0.8"
 futures-util = "0.3"
 yrs = "0.18"
 ureq = "3"
+tauri-plugin-deep-link = "2"
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
