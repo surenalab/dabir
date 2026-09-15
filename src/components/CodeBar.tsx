@@ -3,7 +3,7 @@
 // a shortcut; the bar is where a newcomer finds them.
 
 import { ChevronRight, CirclePlay, ListEnd, Terminal, WandSparkles, CircleX, TriangleAlert, CircleCheck } from "lucide-react";
-import { chord } from "../lib/keys";
+import { chord, RUN_FILE } from "../lib/keys";
 
 /** What the language server (or the file's own linter) says about the open code file, for the bar and the Problems list. */
 export interface LintItem { line: number; severity: "error" | "warning" | "info"; message: string }
@@ -44,7 +44,7 @@ export function CodeBar({ rel, state, onRun, onRunSelection, onRepl, onFormat, o
         <span className="file">{name}</span>
       </span>
       <span className="sep" />
-      {state.run && <button className="cb-btn" onClick={onRun} title={chord(`${state.run.label} in the terminal (⌃⏎)\n${state.run.command}`)}><CirclePlay aria-hidden /> Run</button>}
+      {state.run && <button className="cb-btn" onClick={onRun} title={chord(`${state.run.label} in the terminal (${RUN_FILE})\n${state.run.command}`)}><CirclePlay aria-hidden /> Run</button>}
       <button className="cb-btn" onClick={onRunSelection} title={chord("Send the selection, or the current line, to the terminal (⇧⏎). With a REPL open there, it runs.")}><ListEnd aria-hidden /> Run Selection</button>
       {state.repl && <button className="cb-btn" onClick={onRepl} title={`Open a ${state.repl.label} session in the terminal\n${state.repl.command}`}><Terminal aria-hidden /> {state.repl.label} REPL</button>}
       {state.canFormat && <button className="cb-btn" onClick={onFormat} title={chord("Format Document with the project's formatter (⇧⌥F)")}><WandSparkles aria-hidden /> Format</button>}

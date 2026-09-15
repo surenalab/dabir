@@ -21,3 +21,7 @@ export function chord(text: string): string {
     return parts.join("+");
   });
 }
+
+/** Run File in Terminal: ⌃⏎ on the Mac; Ctrl+Alt+Enter elsewhere, where Ctrl+Enter is Send to Agent and GTK's menu
+ *  accelerator would otherwise take the chord before the composer sees it. */
+export const RUN_FILE = isMac ? "⌃⏎" : "⌥⌘⏎";

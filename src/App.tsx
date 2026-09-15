@@ -34,7 +34,7 @@ import { runRecipe, replCommand, formattersFor, formatText } from "./lib/code-to
 import { serversFor } from "./lib/lsp";
 import { fileKind } from "./lib/languages";
 import { parseBib, type BibEntry, type OutlineItem } from "./lib/latex";
-import { chord } from "./lib/keys";
+import { chord, RUN_FILE } from "./lib/keys";
 
 export type CompileState =
   | { status: "idle" }
@@ -837,7 +837,7 @@ export default function App() {
         body: <><p>Agents remember through files in <code>.dabir/</code>: the project brief, decisions taken, a log of runs, and skills (recipes such as <i>address a reviewer</i> or <i>check the references</i>). They are plain Markdown in your repository, so you can read and edit them, and any agent can too.</p></> },
       { id: "code", target: ".codebar", title: "Code lives here too", enter: () => { setMode("source"); void selectFile(`${root}/code/sweep.py`); },
         body: <><p>Code files open with their grammar, a language server when one is installed, and Git marks in the gutter. The bar runs the file or the selection in the terminal, opens a REPL, and formats. <code>dabir.toml</code> records which command made each figure and table, so agents rerun the script instead of editing the numbers.</p></>,
-        keys: [{ keys: "⌃⏎", does: "run file" }, { keys: "⇧⏎", does: "run selection" }, { keys: "⇧⌥F", does: "format" }] },
+        keys: [{ keys: RUN_FILE, does: "run file" }, { keys: "⇧⏎", does: "run selection" }, { keys: "⇧⌥F", does: "format" }] },
       { id: "terminal", target: ".terminal", title: "The terminal", enter: () => { setTerminal((t) => (t.open ? t : { ...t, open: true, focusStamp: Date.now() })); },
         body: <><p>A real shell in the paper's folder, with tabs, and the same one agents can use. With <code>[remote]</code> in <code>dabir.toml</code>, a tab opens over SSH on the machine that runs the experiments. Drag the top edge to resize.</p></>,
         keys: [{ keys: "⌃`", does: "show or hide" }] },
@@ -938,7 +938,7 @@ export default function App() {
       const e = new Proxy(raw, { get: (t, k) => k === "preventDefault" ? () => { t.preventDefault(); t.stopPropagation(); } : Reflect.get(t, k) }) as KeyboardEvent;
       const mod = isMac ? e.metaKey : e.ctrlKey;
       if (e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === "`") { e.preventDefault(); command("show-terminal"); return; }
-      if (e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === "Enter" && !isEditable(e.target)) { e.preventDefault(); command("run-file"); return; }
+      if ((isMac ? e.ctrlKey && !e.metaKey && !e.altKey : e.ctrlKey && e.altKey) && !e.shiftKey && e.key === "Enter" && !isEditable(e.target)) { e.preventDefault(); command("run-file"); return; }
       if (e.shiftKey && e.altKey && !e.metaKey && !e.ctrlKey && (e.code === "KeyF") && !e.defaultPrevented) { e.preventDefault(); command("format-doc"); return; }
       if (!mod) return;
       const k = e.key.toLowerCase();
