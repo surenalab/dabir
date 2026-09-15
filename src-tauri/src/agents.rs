@@ -7,7 +7,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Stdio};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter};
 
@@ -60,7 +60,7 @@ fn login_shell_path() -> Option<String> {
             let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
             let (tx, rx) = std::sync::mpsc::channel();
             std::thread::spawn(move || {
-                let out = Command::new(shell)
+                let out = crate::spawn::tool(shell)
                     .args(["-lc", "printf %s \"$PATH\""])
                     .stdin(Stdio::null())
                     .output();
@@ -95,15 +95,15 @@ pub fn agent_path() -> std::ffi::OsString {
 }
 
 fn candidates() -> Vec<PathBuf> {
-    let home = std::env::var("HOME").unwrap_or_default();
+    let home = crate::spawn::home_dir().unwrap_or_default();
     let mut dirs: Vec<PathBuf> = vec![
-        format!("{}/.local/bin", home).into(),
-        format!("{}/.claude/local", home).into(),
-        format!("{}/.claude/local/bin", home).into(),
-        format!("{}/.cursor/bin", home).into(),
-        format!("{}/.grok/bin", home).into(),
-        format!("{}/.opencode/bin", home).into(),
-        format!("{}/.npm-global/bin", home).into(),
+        home.join(".local").join("bin"),
+        home.join(".claude").join("local"),
+        home.join(".claude").join("local").join("bin"),
+        home.join(".cursor").join("bin"),
+        home.join(".grok").join("bin"),
+        home.join(".opencode").join("bin"),
+        home.join(".npm-global").join("bin"),
         "/opt/homebrew/bin".into(),
         "/usr/local/bin".into(),
     ];
@@ -115,20 +115,16 @@ fn candidates() -> Vec<PathBuf> {
 
 fn find_bin(bin: &str) -> Option<PathBuf> {
     if let Some(p) = candidates()
-        .into_iter()
-        .map(|d| d.join(bin))
-        .find(|p| p.is_file())
+        .iter()
+        .find_map(|d| crate::spawn::bin_in(d, bin))
     {
         return Some(p);
     }
-    let home = std::env::var("HOME").unwrap_or_default();
+    let home = crate::spawn::home_dir().unwrap_or_default();
     match bin {
         // Claude Code ships inside the VS Code / desktop agent host when the standalone CLI is not installed.
         "claude" => {
-            let base = PathBuf::from(format!(
-                "{}/Library/Application Support/Code/agent-host/sdk-cache/claude",
-                home
-            ));
+            let base = home.join("Library/Application Support/Code/agent-host/sdk-cache/claude");
             let mut versions: Vec<PathBuf> = std::fs::read_dir(&base)
                 .ok()?
                 .flatten()
@@ -291,7 +287,7 @@ fn cli_lines(bin: &str, args: &[&str]) -> Vec<String> {
     let Some(path) = find_bin(bin) else {
         return vec![];
     };
-    let mut cmd = Command::new(path);
+    let mut cmd = crate::spawn::tool(path);
     cmd.args(args).stdin(Stdio::null());
     for k in SCRUB_ENV {
         cmd.env_remove(k);
@@ -323,9 +319,9 @@ pub fn models(id: &str) -> ModelOptions {
         },
         "codex" => {
             // Codex has no model listing; the default comes from its own config.
-            let home = std::env::var("HOME").unwrap_or_default();
-            let cfg =
-                std::fs::read_to_string(format!("{}/.codex/config.toml", home)).unwrap_or_default();
+            let home = crate::spawn::home_dir().unwrap_or_default();
+            let cfg = std::fs::read_to_string(home.join(".codex").join("config.toml"))
+                .unwrap_or_default();
             let default_model = cfg.lines().find_map(|l| {
                 let l = l.trim();
                 let rest = l.strip_prefix("model")?.trim_start().strip_prefix('=')?;
@@ -763,7 +759,7 @@ fn probe(bin: &Path, args: &[&str], secs: u64) -> Option<(bool, String)> {
     let args: Vec<String> = args.iter().map(|a| a.to_string()).collect();
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
-        let mut cmd = Command::new(&bin);
+        let mut cmd = crate::spawn::tool(&bin);
         cmd.args(&args)
             .stdin(Stdio::null())
             .env("PATH", agent_path())
@@ -835,8 +831,7 @@ pub fn signed_in(id: &str) -> Option<bool> {
                 return Some(true);
             }
             // `grok login` writes ~/.grok/auth.json; there is no status command.
-            let home = std::env::var("HOME").ok()?;
-            let auth = PathBuf::from(home).join(".grok/auth.json");
+            let auth = crate::spawn::home_dir()?.join(".grok").join("auth.json");
             Some(
                 std::fs::metadata(&auth)
                     .map(|m| m.len() > 2)
@@ -865,11 +860,7 @@ pub fn signed_in(id: &str) -> Option<bool> {
             let data = std::env::var("XDG_DATA_HOME")
                 .map(PathBuf::from)
                 .ok()
-                .or_else(|| {
-                    std::env::var("HOME")
-                        .ok()
-                        .map(|h| PathBuf::from(h).join(".local/share"))
-                });
+                .or_else(|| crate::spawn::home_dir().map(|h| h.join(".local/share")));
             if let Some(auth) = data.map(|d| d.join("opencode/auth.json")) {
                 if let Ok(m) = std::fs::metadata(&auth) {
                     return Some(m.len() > 2);
@@ -1060,7 +1051,7 @@ where
         ));
     };
     let args = args_for(&provider, &prompt, &cwd, &steer);
-    let mut cmd = Command::new(&bin);
+    let mut cmd = crate::spawn::tool(&bin);
     cmd.args(&args)
         .current_dir(&cwd)
         .env("DABIR", "1")
@@ -1176,7 +1167,7 @@ pub fn cancel(run_id: &str) -> bool {
         .and_then(|g| g.as_ref().and_then(|m| m.get(run_id).copied()));
     match pid {
         Some(pid) => {
-            let _ = Command::new("kill").arg(pid.to_string()).output();
+            let _ = crate::spawn::tool("kill").arg(pid.to_string()).output();
             true
         }
         None => false,

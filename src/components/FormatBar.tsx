@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Bold, Italic, Code2, List, ListOrdered, Sigma, Image, Table2, Quote, Link2, MessageSquare, Undo2, Redo2, Search, Hash, Heading1, Heading2, Heading3, Pilcrow, MoreHorizontal, Type, AlignLeft, PenLine } from "lucide-react";
 import type { EditorApi } from "./SourceEditor";
+import { chord } from "../lib/keys";
 
 interface Item { id: string; label: string; icon: ReactNode; run: () => void; key?: string; disabled?: boolean; on?: boolean }
 interface Group { id: string; drop: number; items: Item[] } // higher `drop` leaves the bar first when space runs out
@@ -81,7 +82,7 @@ export function FormatBar({ api, lang, onFind, onComment, canComment, suggesting
   }, [open]);
 
   const button = (it: Item) => (
-    <button key={it.id} className={`fb ${it.on ? "on" : ""}`} onClick={it.run} disabled={off || it.disabled} title={it.key ? `${it.label} (${it.key})` : it.label} aria-label={it.label} aria-pressed={it.on == null ? undefined : it.on}>{it.icon}</button>
+    <button key={it.id} className={`fb ${it.on ? "on" : ""}`} onClick={it.run} disabled={off || it.disabled} title={it.key ? `${it.label} (${chord(it.key)})` : it.label} aria-label={it.label} aria-pressed={it.on == null ? undefined : it.on}>{it.icon}</button>
   );
   const visible = groups.filter((g) => !hidden.includes(g.id));
   const overflow = groups.filter((g) => hidden.includes(g.id));
@@ -108,7 +109,7 @@ export function FormatBar({ api, lang, onFind, onComment, canComment, suggesting
                   {i > 0 && <div className="fb-menu-sep" />}
                   {g.items.map((it) => (
                     <button key={it.id} role="menuitem" className="fb-menu-item" disabled={off || it.disabled} onClick={() => { setOpen(false); it.run(); }}>
-                      <span className="fb-menu-icon">{it.icon}</span><span>{it.label}</span>{it.key && <kbd>{it.key}</kbd>}
+                      <span className="fb-menu-icon">{it.icon}</span><span>{it.label}</span>{it.key && <kbd>{chord(it.key)}</kbd>}
                     </button>
                   ))}
                 </div>

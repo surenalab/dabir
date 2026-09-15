@@ -50,7 +50,9 @@ button { background: none; border: 0; padding: 0; cursor: default; }
   --inspector-w-live: var(--inspector-w);
   display: grid;
   grid-template-rows: var(--titlebar-h) 1fr;
-  grid-template-columns: var(--nav-w-live) 1fr var(--inspector-w-live);
+  /* minmax(0, 1fr), not 1fr: a flexible track's floor is its content's minimum width, and one wide
+     line in the title bar or the document pushed the inspector off the right edge of the window. */
+  grid-template-columns: var(--nav-w-live) minmax(0, 1fr) var(--inspector-w-live);
   grid-template-areas:
     "title title title"
     "nav doc inspector";
@@ -88,10 +90,10 @@ button { background: none; border: 0; padding: 0; cursor: default; }
 .app.native .titlebar { background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; }
 .titlebar button, .titlebar .seg, .titlebar select { -webkit-app-region: no-drag; }
 
-.titlebar .leading { display: flex; align-items: center; gap: var(--space-1); padding-left: var(--space-3); }
+.titlebar .leading { display: flex; align-items: center; gap: var(--space-1); padding-left: var(--space-3); min-width: 0; }
 .app.mac .titlebar .leading { padding-left: 84px; }
 .titlebar .center { display: flex; align-items: center; justify-content: center; min-width: 0; }
-.titlebar .trailing { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); }
+.titlebar .trailing { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); min-width: 0; }
 .titlebar .spacer { width: 16px; }
 
 .doc-title { display: flex; flex-direction: column; align-items: center; line-height: 1.2; min-width: 0; }
@@ -355,7 +357,7 @@ button { background: none; border: 0; padding: 0; cursor: default; }
 
 .doc-empty { height: 100%; display: grid; place-items: center; text-align: center; padding: var(--space-6); }
 .doc-empty .card { max-width: 46ch; }
-.doc-empty h1 { font-family: var(--font-doc); font-weight: 600; font-size: 28px; margin: 0 0 var(--space-2); text-wrap: balance; }
+.doc-empty h1 { font-family: var(--font-doc); font-weight: 600; font-size: 28px; line-height: 1.15; margin: 0 0 var(--space-2); text-wrap: balance; overflow-wrap: anywhere; }
 .doc-empty p { color: var(--ink-2); margin: 0 0 var(--space-5); line-height: 1.5; }
 .doc-empty .actions { display: flex; gap: var(--space-2); justify-content: center; flex-wrap: wrap; }
 .btn {

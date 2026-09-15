@@ -9,6 +9,7 @@ import "@xterm/xterm/css/xterm.css";
 import { X, Plus, ChevronDown } from "lucide-react";
 import { termOpen, termWrite, termResize, termClose, onTerminalData, onTerminalExit, type Remote } from "../lib/backend";
 import { describe, logUi } from "../lib/diag";
+import { chord } from "../lib/keys";
 
 interface Props {
   cwd: string;
@@ -145,7 +146,7 @@ export function TerminalPane({ cwd, remote, onClose, focusStamp, run }: Props) {
         </div>
         <span className="grow" />
         <span className="where" title={cwd}>{folder}</span>
-        <button className="btn icon" onClick={onClose} title="Hide terminal (⌃`)" aria-label="Hide terminal"><X aria-hidden /></button>
+        <button className="btn icon" onClick={onClose} title={chord("Hide terminal (⌃`)")} aria-label="Hide terminal"><X aria-hidden /></button>
       </header>
       <div className="shells">
         {shells.map((t) => (

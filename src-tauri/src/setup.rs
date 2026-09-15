@@ -9,7 +9,7 @@ use serde::Serialize;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::OnceLock;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -53,6 +53,9 @@ pub struct Status {
     pub latex: Engine,
     /// The package cache has a built format, so a compile no longer waits on downloads.
     pub latex_ready: bool,
+    /// The bundled engine does not start on this machine: the loader's or the process's first line
+    /// (a glibc too old for the binary, a missing library). Ready is never claimed while this is set.
+    pub latex_error: Option<String>,
     pub latex_cache_mb: u64,
     pub typst: Engine,
     pub typst_size_mb: u64,
@@ -62,6 +65,11 @@ pub struct Status {
     /// package manager to call and the installer at pandoc.org is the way.
     pub pandoc_install: Option<String>,
     pub gh: Option<String>,
+    /// The `git` command. Commits, history and snapshots use the built-in engine, but an agent run's
+    /// worktree and its diff go through `git`, so a machine without it cannot run agents.
+    pub git: Option<String>,
+    /// The one-line install for git on this machine, or None when git-scm.com is the way.
+    pub git_install: Option<String>,
     pub home: String,
     pub platform: &'static str,
 }
@@ -114,8 +122,29 @@ fn finish(report: Report, task: &str, ok: bool, message: impl Into<String>) {
     });
 }
 
+/// `bin --version` runs and exits cleanly, or the first line of what went wrong: the loader's message
+/// when a shared library or glibc symbol is missing lands on stderr with a non-zero status, and a
+/// binary that cannot be executed at all fails at spawn.
+fn starts(bin: &Path) -> Result<(), String> {
+    let out = crate::spawn::tool(bin)
+        .arg("--version")
+        .stdin(Stdio::null())
+        .output()
+        .map_err(|e| format!("{}: {e}", bin.display()))?;
+    if out.status.success() {
+        return Ok(());
+    }
+    let err = String::from_utf8_lossy(&out.stderr);
+    let line = err
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .unwrap_or("exited without a message");
+    Err(format!("{line} (exit {})", out.status.code().unwrap_or(-1)))
+}
+
 fn version_of(bin: &Path) -> Option<String> {
-    let out = Command::new(bin)
+    let out = crate::spawn::tool(bin)
         .arg("--version")
         .stdin(Stdio::null())
         .output()
@@ -140,7 +169,7 @@ fn tectonic_cache_dir() -> Option<PathBuf> {
     if let Ok(p) = std::env::var("TECTONIC_CACHE_DIR") {
         return Some(PathBuf::from(p));
     }
-    let home = std::env::var("HOME").ok().map(PathBuf::from);
+    let home = crate::spawn::home_dir();
     let mut c: Vec<PathBuf> = Vec::new();
     if let Some(h) = &home {
         c.push(h.join("Library/Caches/Tectonic"));
@@ -182,6 +211,24 @@ fn latex_ready(cache: Option<&Path>) -> bool {
 
 /// How pandoc is installed here: Homebrew on macOS, the distribution's package manager on Linux, winget on
 /// Windows. None when none of them is present; the Setup sheet then points at pandoc.org.
+fn git_install() -> Option<String> {
+    match std::env::consts::OS {
+        // Apple's command line tools carry git; the prompt that follows installs them.
+        "macos" => Some("xcode-select --install".to_string()),
+        "windows" => which("winget").map(|_| "winget install --id Git.Git -e".to_string()),
+        _ => [
+            ("apt-get", "sudo apt-get install -y git"),
+            ("dnf", "sudo dnf install -y git"),
+            ("pacman", "sudo pacman -S --noconfirm git"),
+            ("zypper", "sudo zypper install -y git"),
+            ("brew", "brew install git"),
+        ]
+        .iter()
+        .find(|(bin, _)| which(bin).is_some())
+        .map(|(_, cmd)| cmd.to_string()),
+    }
+}
+
 fn pandoc_install() -> Option<String> {
     match std::env::consts::OS {
         "macos" => which("brew").map(|_| "brew install pandoc".to_string()),
@@ -203,9 +250,7 @@ fn pandoc_install() -> Option<String> {
 
 fn which(bin: &str) -> Option<PathBuf> {
     let path = agents::agent_path();
-    std::env::split_paths(&path)
-        .map(|d| d.join(bin))
-        .find(|p| p.is_file())
+    std::env::split_paths(&path).find_map(|d| crate::spawn::bin_in(&d, bin))
 }
 
 /// Every installed CLI is asked at once whether it is signed in; the slowest answers in about a second.
@@ -238,13 +283,18 @@ fn agents_with_sign_in() -> Vec<AgentStatus> {
 pub fn status(tectonic: Option<PathBuf>, typst: Option<PathBuf>) -> Status {
     let cache = tectonic_cache_dir();
     let managed = managed_typst();
+    let latex_error = match tectonic.as_deref() {
+        Some(bin) => starts(bin).err(),
+        None => Some("No LaTeX engine is bundled with this build.".into()),
+    };
     Status {
         latex: Engine {
             version: tectonic.as_deref().and_then(version_of),
             path: tectonic.map(|p| p.to_string_lossy().to_string()),
             managed: true,
         },
-        latex_ready: latex_ready(cache.as_deref()),
+        latex_ready: latex_error.is_none() && latex_ready(cache.as_deref()),
+        latex_error,
         latex_cache_mb: cache.as_deref().map(dir_size).unwrap_or(0) / (1024 * 1024),
         typst: Engine {
             version: typst.as_deref().and_then(version_of),
@@ -258,8 +308,10 @@ pub fn status(tectonic: Option<PathBuf>, typst: Option<PathBuf>) -> Status {
         pandoc: which("pandoc").map(|p| p.to_string_lossy().to_string()),
         pandoc_install: pandoc_install(),
         gh: which("gh").map(|p| p.to_string_lossy().to_string()),
-        home: std::env::var("HOME")
-            .or_else(|_| std::env::var("USERPROFILE"))
+        git: which("git").map(|p| p.to_string_lossy().to_string()),
+        git_install: git_install(),
+        home: crate::spawn::home_dir()
+            .map(|h| h.to_string_lossy().to_string())
             .unwrap_or_default(),
         platform: std::env::consts::OS,
     }
@@ -297,8 +349,12 @@ pub fn warm_latex(report: Report, tectonic: &Path) -> Result<(), String> {
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     fs::write(dir.join("warm.tex"), WARM_TEX).map_err(|e| e.to_string())?;
     fs::write(dir.join("refs.bib"), WARM_BIB).map_err(|e| e.to_string())?;
+    if let Err(e) = starts(tectonic) {
+        finish(report, "latex", false, e.clone());
+        return Err(e);
+    }
     emit(report, "latex", "Starting the LaTeX engine…", None);
-    let mut child = Command::new(tectonic)
+    let mut child = crate::spawn::tool(tectonic)
         .current_dir(&dir)
         .args(["-X", "compile", "warm.tex"])
         .stdin(Stdio::null())
@@ -465,7 +521,7 @@ pub fn install_typst(report: Report, bin: &Path) -> Result<PathBuf, String> {
         unzip(&bytes, &out)?;
     } else {
         // bsdtar on macOS and GNU tar on Linux both open .tar.xz themselves.
-        let st = Command::new("tar")
+        let st = crate::spawn::tool("tar")
             .arg("-xf")
             .arg(&archive)
             .arg("-C")
