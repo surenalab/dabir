@@ -2,8 +2,8 @@
 // compiled paper while it stays one editable buffer. Markup hides, math and
 // figures render as widgets, and anything under the cursor reveals its source.
 
-import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view";
-import { RangeSetBuilder, StateEffect, StateField, type Range, type EditorState } from "@codemirror/state";
+import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from "@codemirror/view";
+import { RangeSetBuilder, StateEffect, StateField, type Range, type EditorState, type Extension } from "@codemirror/state";
 import katex from "katex";
 import type { BibEntry } from "./latex";
 import { changesField, safeColor, type ChangeKind } from "./changes";
@@ -28,16 +28,72 @@ export const visualContext = () => ctx;
 export interface SuggBadge { kind: ChangeKind | "mixed"; color: string; author: string; count: number }
 const sameSugg = (a: SuggBadge | null, b: SuggBadge | null) => (a === b) || (!!a && !!b && a.kind === b.kind && a.color === b.color && a.author === b.author && a.count === b.count);
 
-/** A coauthor's caret, as an absolute offset in this document. Widgets that hide the caret's text wear the name instead. */
-export interface RemoteCursor { pos: number; name: string; color: string }
+/** A coauthor's caret (and selection) as absolute offsets. Widgets that hide the caret's text wear the name instead. */
+export interface RemoteCursor { pos: number; from: number; to: number; name: string; color: string }
 export const setRemoteCursors = StateEffect.define<RemoteCursor[]>();
 export const remoteCursorsField = StateField.define<RemoteCursor[]>({
   create: () => [],
   update(cs, tr) {
     for (const e of tr.effects) if (e.is(setRemoteCursors)) return e.value;
-    return tr.docChanged ? cs.map((c) => ({ ...c, pos: tr.changes.mapPos(c.pos) })) : cs;
+    return tr.docChanged ? cs.map((c) => ({ ...c, pos: tr.changes.mapPos(c.pos), from: tr.changes.mapPos(c.from), to: tr.changes.mapPos(c.to) })) : cs;
   },
 });
+
+class PeerCaret extends WidgetType {
+  constructor(readonly name: string, readonly color: string) { super(); }
+  eq(o: PeerCaret) { return o.name === this.name && o.color === this.color; }
+  toDOM() {
+    const el = document.createElement("span");
+    el.className = "cm-peer-caret";
+    el.style.setProperty("--peer-color", safeColor(this.color));
+    el.setAttribute("aria-label", `${this.name} is here`);
+    const name = document.createElement("span");
+    name.className = "cm-peer-caret-name";
+    name.textContent = this.name;
+    el.appendChild(name);
+    return el;
+  }
+  ignoreEvent() { return true; }
+}
+
+/** Nearest position CodeMirror can actually draw at. Visual replace-widgets swallow source offsets, which is why a
+ *  caret that was accurate in Source vanished or sat on the wrong glyph in Visual. */
+function nearestVisible(view: EditorView, pos: number): number {
+  const len = view.state.doc.length;
+  pos = Math.max(0, Math.min(pos, len));
+  const ok = (p: number) => { try { return view.coordsAtPos(p) != null; } catch { return false; } };
+  if (ok(pos)) return pos;
+  for (let d = 1; d < 400; d++) {
+    if (pos + d <= len && ok(pos + d)) return pos + d;
+    if (pos - d >= 0 && ok(pos - d)) return pos - d;
+  }
+  return pos;
+}
+
+function peerCaretSet(view: EditorView): DecorationSet {
+  const cs = view.state.field(remoteCursorsField, false) ?? [];
+  const ranges: Range<Decoration>[] = [];
+  for (const c of cs) {
+    const from = nearestVisible(view, c.from);
+    const to = nearestVisible(view, c.to);
+    const a = Math.min(from, to), b = Math.max(from, to);
+    if (b > a) ranges.push(Decoration.mark({ class: "cm-peer-sel", attributes: { style: `--peer-color:${safeColor(c.color)}` } }).range(a, b));
+    ranges.push(Decoration.widget({ widget: new PeerCaret(c.name, c.color), side: 1 }).range(nearestVisible(view, c.pos)));
+  }
+  return Decoration.set(ranges, true);
+}
+
+/** Remote carets and selections that survive Visual's replace widgets. Always on; y-codemirror.next's own marks
+ *  sit at source offsets and disappear inside hidden markup. */
+export function remoteCarets(): Extension {
+  return ViewPlugin.fromClass(class {
+    deco: DecorationSet;
+    constructor(view: EditorView) { this.deco = peerCaretSet(view); }
+    update(u: ViewUpdate) {
+      if (u.docChanged || u.viewportChanged || u.transactions.some((tr) => tr.effects.some((e) => e.is(setRemoteCursors)))) this.deco = peerCaretSet(u.view);
+    }
+  }, { decorations: (v) => v.deco });
+}
 const samePeers = (a: RemoteCursor[], b: RemoteCursor[]) => a.length === b.length && a.every((x, i) => x.name === b[i].name && x.color === b[i].color);
 
 export abstract class VzWidget extends WidgetType {

@@ -710,7 +710,7 @@ export function Inspector({ project, gitRepo, askFocus, prefill, tabRequest, onP
                     <div className="peer" key={pr.clientId}>
                       <span className="avatar" style={{ background: pr.color }}>{pr.name.slice(0, 2).toUpperCase()}</span>
                       <span className="name">{pr.name}{pr.me ? " (you)" : ""}</span>
-                      <span className="where">{pr.file ?? ""}</span>
+                      <span className="where">{pr.me ? "" : pr.file && currentFile && pr.file === currentFile ? "here" : (pr.file ?? "")}</span>
                     </div>
                   ))}
                 </div>
