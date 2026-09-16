@@ -9,6 +9,7 @@ import { EffortControl } from "./EffortControl";
 import { renderMarkdown } from "../lib/md";
 import { updateSettings, useSettings } from "../lib/settings";
 import type { Comment, Peer } from "../lib/collab";
+import { GithubPeople } from "./GithubPeople";
 import { chord } from "../lib/keys";
 import { isMac } from "../lib/backend";
 
@@ -275,6 +276,9 @@ function HistoryTab({ project, steps, busy, onRestore, onUndo, onOpenFile, focus
 interface Props {
   live: boolean;
   peers: Peer[];
+  following: number | null;
+  onJumpPeer: (id: number) => void;
+  onFollowPeer: (p: Peer) => void;
   comments: Comment[];
   currentFile: string | null;
   hasSelection: boolean;
@@ -331,7 +335,7 @@ export interface ReviewHandle {
   reject: () => void;
 }
 
-export function Inspector({ project, gitRepo, askFocus, prefill, tabRequest, onProviderReady, onSetup, onChanged, onBeforeRun, onOpenFile, onNote, live, peers, comments, currentFile, hasSelection, focus, onAddComment, onResolveComment, onReplyComment, onRemoveComment, onJumpComment, onShare, autoRun, changes, suggesting, onToggleSuggesting, onResolveChanges, onJumpChange, onReview, history, historyBusy, onRestoreStep, onUndoStep, historyFocus }: Props) {
+export function Inspector({ project, gitRepo, askFocus, prefill, tabRequest, onProviderReady, onSetup, onChanged, onBeforeRun, onOpenFile, onNote, live, peers, following, onJumpPeer, onFollowPeer, comments, currentFile, hasSelection, focus, onAddComment, onResolveComment, onReplyComment, onRemoveComment, onJumpComment, onShare, autoRun, changes, suggesting, onToggleSuggesting, onResolveChanges, onJumpChange, onReview, history, historyBusy, onRestoreStep, onUndoStep, historyFocus }: Props) {
   const [commentDraft, setCommentDraft] = useState("");
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [replyDraft, setReplyDraft] = useState("");
@@ -707,14 +711,20 @@ export function Inspector({ project, gitRepo, askFocus, prefill, tabRequest, onP
                 <label>In this session</label>
                 <div className="peers">
                   {peers.map((pr) => (
-                    <div className="peer" key={pr.clientId}>
-                      <span className="avatar" style={{ background: pr.color }}>{pr.name.slice(0, 2).toUpperCase()}</span>
-                      <span className="name">{pr.name}{pr.me ? " (you)" : ""}</span>
-                      <span className="where">{pr.me ? "" : pr.file && currentFile && pr.file === currentFile ? "here" : (pr.file ?? "")}</span>
+                    <div className={`peer${pr.typing ? " typing" : ""}${following === pr.clientId ? " following" : ""}`} key={pr.clientId} style={{ "--peer-color": pr.color } as React.CSSProperties}>
+                      <button type="button" className="peer-go" onClick={() => onJumpPeer(pr.clientId)} disabled={pr.me} title={pr.me ? "You" : "Go to their caret"}>
+                        <span className="avatar" style={{ background: pr.color }}>{pr.name.slice(0, 2).toUpperCase()}</span>
+                        <span className="name">{pr.name}{pr.me ? " (you)" : ""}</span>
+                        <span className="where">{pr.me ? "" : pr.typing ? "typing…" : pr.file && currentFile && pr.file === currentFile ? "here" : (pr.file ?? "")}</span>
+                      </button>
+                      {!pr.me && (
+                        <button type="button" className="peer-follow" aria-pressed={following === pr.clientId} onClick={() => onFollowPeer(pr)}>{following === pr.clientId ? "Following" : "Follow"}</button>
+                      )}
                     </div>
                   ))}
                 </div>
               </div>}
+              {project && <GithubPeople root={project.root} onNote={onNote} />}
               <div className="field">
                 <label>Suggested changes{currentFile ? <> in <code>{currentFile}</code></> : ""}</label>
                 <div className="suggest-head">

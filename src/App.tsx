@@ -22,7 +22,7 @@ import { paperSymbols, paperOutline, flattenFiles, type AssistSources } from "./
 import { stopLanguageServers } from "./lib/lsp";
 import type { PdfPin, PdfZoom } from "./components/PdfView";
 import type { ManualProvider } from "./lib/manual";
-import { addComment as yAddComment, connect as yConnect, decodeRange, disconnect as yDisconnect, encodeRange, peers as yPeers, randomRoom, removeComment as yRemoveComment, resolveComment as yResolveComment, setCurrentFile, textFor, whenSynced, signalUrl, iceServers, parseShareLink, type Comment, type Peer, type Session, type Transport, replyComment as yReplyComment, userName, colorFor, markHost, hostPresent, publishProject, republishChanged, awaitSnapshot, sharedTexts, persist, setFileChanges, seedLiveFiles } from "./lib/collab";
+import { addComment as yAddComment, connect as yConnect, cursorIndex, decodeRange, disconnect as yDisconnect, encodeRange, peers as yPeers, randomRoom, removeComment as yRemoveComment, resolveComment as yResolveComment, setCurrentFile, textFor, whenSynced, signalUrl, iceServers, parseShareLink, type Comment, type Peer, type Session, type Transport, replyComment as yReplyComment, userName, colorFor, markHost, hostPresent, publishProject, republishChanged, awaitSnapshot, sharedTexts, persist, setFileChanges, seedLiveFiles } from "./lib/collab";
 import type { CommentRange } from "./components/SourceEditor";
 import { safeColor, type Change, type ChangeRange } from "./lib/changes";
 import { proseWords } from "./lib/spell";
@@ -157,6 +157,8 @@ export default function App() {
   const [comments, setComments] = useState<Comment[]>([]);
   const [selection, setSelection] = useState<{ from: number; to: number }>({ from: 0, to: 0 });
   const [jumpOffset, setJumpOffset] = useState<{ pos: number; stamp: number } | null>(null);
+  const [followOffset, setFollowOffset] = useState<{ pos: number; stamp: number } | null>(null);
+  const [followId, setFollowId] = useState<number | null>(null);
   const [overleafUrl, setOverleafUrl] = useState<string | null>(null);
   const [prefill, setPrefill] = useState<{ text: string; stamp: number } | null>(null);
   const [agentReady, setAgentReady] = useState(false);
@@ -567,6 +569,7 @@ export default function App() {
     if (session) yDisconnect(session);
     unpersist.current?.(); unpersist.current = null;
     setSession(null); setPeers([]); setComments([]); setSessChanges([]); setLive(null); setHostAway(false);
+    setFollowId(null); setFollowOffset(null);
     (window as unknown as { __session?: Session }).__session = undefined;
     if (live?.host && live.transport === "relay") await relayStop();
     // The host's checkout is the record of the session: suggest the commit.
@@ -625,6 +628,47 @@ export default function App() {
   // seeds an empty shared text from the host's copy when the host opens it, and the host's seedFor above covers
   // files a guest opens first.
   const collab = useMemo(() => session && file && rel(file) ? { text: textFor(session, rel(file)!), awareness: session.awareness, host: !!live?.host } : null, [session, file, rel, live?.host]);
+
+  const goToPeer = useCallback(async (p: Peer, follow: boolean) => {
+    if (p.me || !project) return;
+    if (p.file) {
+      const abs = `${project.root}/${p.file}`;
+      if (abs !== fileRef.current) await selectFile(abs);
+    }
+    const sess = sessionRef.current;
+    const relFile = p.file ?? (fileRef.current ? relTo(project.root, fileRef.current) : "");
+    if (!sess || !relFile) return;
+    const pos = cursorIndex(textFor(sess, relFile), p.cursor);
+    if (pos == null) return;
+    if (follow) setFollowOffset({ pos, stamp: Date.now() });
+    else setJumpOffset({ pos, stamp: Date.now() });
+  }, [project, selectFile]);
+
+  const jumpToPeer = useCallback((id: number) => {
+    const p = peers.find((x) => x.clientId === id);
+    if (!p) return;
+    setFollowId(null);
+    void goToPeer(p, false);
+  }, [peers, goToPeer]);
+
+  const followPeer = useCallback((p: Peer) => {
+    setFollowId((cur) => cur === p.clientId ? null : p.clientId);
+  }, []);
+
+  useEffect(() => {
+    if (followId == null || !session) return;
+    let alive = true;
+    const apply = () => {
+      const p = yPeers(session).find((x) => x.clientId === followId);
+      if (!p || p.me) { if (alive) setFollowId(null); return; }
+      void goToPeer(p, true);
+    };
+    session.awareness.on("change", apply);
+    apply();
+    return () => { alive = false; session.awareness.off("change", apply); };
+  }, [followId, session, goToPeer]);
+
+  const stopFollow = useCallback(() => { if (followId != null) setFollowId(null); }, [followId]);
 
   // Comments live in the shared doc during a session, otherwise in .dabir/comments.json next to the paper.
   // Local anchors are plain offsets plus the quoted text, re-found by search when the offset drifts.
@@ -1149,7 +1193,7 @@ export default function App() {
     <div className={cls} style={{ "--nav-w": `${navW}px`, "--inspector-w": `${inspW}px` } as React.CSSProperties}>
       <Toolbar project={project} file={file} dirty={dirty} saveLabel={settings.autosave ? (saveState === "saving" ? "Saving…" : saveState === "unsaved" ? "Unsaved" : saveState === "saved" ? "Saved" : null) : null} mode={mode} navOpen={navOpen} inspectorOpen={inspectorOpen}
         compiling={compileState.status === "running"} onMode={setMode} onToggleNav={toggleNav} onToggleInspector={toggleInspector} onOpen={open} onCompile={compile} onCancelCompile={() => compileCancel()}
-        onShare={() => setSheet("share")} live={!!live} peers={peers} terminalOpen={terminal.open} onToggleTerminal={() => command("show-terminal")} run={runRecipeNow} onRun={() => command("run-file")} />
+        onShare={() => setSheet("share")} live={!!live} peers={peers} following={followId} onJumpPeer={jumpToPeer} terminalOpen={terminal.open} onToggleTerminal={() => command("show-terminal")} run={runRecipeNow} onRun={() => command("run-file")} />
       <Navigator project={project} current={file} outline={fileKind(file) === "code" || /\.(md|markdown)$/i.test(file ?? "") ? outline : paperOutline(map) ?? outline} git={git} commitFocus={commitFocus} busy={gitBusy || historyBusy} draftMessage={commitDraft} onDiscard={discardChange} onHistory={(id) => { if (!inspectorOpen) toggleInspector(); setHistoryFocus({ at: Date.now(), id: id ?? null }); }} history={versions}
         onSelect={selectFile} onJump={(l, f) => (f ? jumpToFile(f, l) : jumpTo(l))} onInitGit={initGit} onCommit={commitAll} find={findPaper} onCloseFind={closeFindPaper} />
       <Document project={project} onSetup={(f) => openSetup(f ?? null)} file={file} source={source} bib={bib} paperWords={paperWordsNow} openFiles={openFiles} dirty={dirty} onCloseFile={closeFile} headText={headText} code={codeState} mode={mode} jumpLine={jumpLine} jumpStamp={jumpStamp}
@@ -1159,14 +1203,14 @@ export default function App() {
         onSourceChange={onSourceChange} onSave={save} onCursorLine={onCursor} onSelectFile={selectFile} onJump={jumpTo} onPdfClick={onPdfClick}
         compileOnSave={compileOnSave} onToggleCompileOnSave={toggleCompileOnSave}
         agentReady={agentReady} onJumpFile={jumpToFile} onFix={fixWithAgent}
-        collab={collab} comments={commentRanges} onSelection={(from, to) => setSelection({ from, to })} jumpOffset={jumpOffset}
+        collab={collab} comments={commentRanges} onSelection={(from, to) => setSelection({ from, to })} jumpOffset={jumpOffset} followOffset={followOffset} onLocalEdit={stopFollow}
         changes={changeRanges} author={me} onChanges={onEditorChanges} onToggleSuggesting={toggleSuggesting}
         settings={settings} grammar={grammar} pins={pins} pdfZoom={pdfZoom} onPdfZoom={setPdfZoom} onOpenSettings={() => setSheet("settings")}
         onPdfComment={onPdfComment} pdfFindRequest={pdfFindRequest} editorRef={editorRef} onFind={() => command("find")} onCommentSelection={() => { if (!inspectorOpen) toggleInspector(); setAskFocus(0); setNote("Type the comment in the People tab; it attaches to your selection."); }} hasSelection={selection.to > selection.from}
         review={docReview} dictionary={dictionary} onAddWord={addWord} onContinue={continueWithAgent} splitRatio={splitRatio} onSplitRatio={setSplitRatio} onPin={(id) => { const c = allComments.find((x) => x.id === id); if (c) jumpToComment(c); }}
         assist={assist} />
       <Inspector project={project} onSetup={() => openSetup("agents")} gitRepo={!!git?.isRepo} askFocus={askFocus} prefill={prefill} tabRequest={tabRequest} onProviderReady={setAgentReady} onChanged={onChanged} onBeforeRun={flush} onOpenFile={selectFile} history={versions} historyBusy={historyBusy} onRestoreStep={restoreVersion} onUndoStep={undoVersion} historyFocus={historyFocus} onNote={setNote} autoRun={autoRun} onReview={setReview}
-        live={!!live} peers={peers} comments={allComments} currentFile={rel(file)} hasSelection={selection.to > selection.from} focus={agentFocus}
+        live={!!live} peers={peers} following={followId} onJumpPeer={jumpToPeer} onFollowPeer={followPeer} comments={allComments} currentFile={rel(file)} hasSelection={selection.to > selection.from} focus={agentFocus}
         changes={changeItems} suggesting={settings.suggesting} onToggleSuggesting={toggleSuggesting} onResolveChanges={resolveChange} onJumpChange={jumpToChange}
         onAddComment={(t) => addCommentAtSelection(t)} onResolveComment={resolveAnyComment} onReplyComment={replyAnyComment} onRemoveComment={removeAnyComment} onJumpComment={jumpToComment} onShare={() => setSheet("share")} />
       <div className={`divider nav ${dragging === "nav" ? "dragging" : ""}`} onPointerDown={() => setDragging("nav")} role="separator" aria-orientation="vertical" aria-label="Resize sidebar" />

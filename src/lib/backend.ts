@@ -566,6 +566,42 @@ export async function gitRemoteUrl(root: string, name: string): Promise<string |
 export async function gitPull(root: string, remote: string): Promise<string> { if (!native) { await wait(600); return "Already up to date."; } return invoke<string>("git_pull", { root, remote }); }
 export async function gitPush(root: string, remote: string): Promise<string> { if (!native) { await wait(600); return "Pushed main."; } return invoke<string>("git_push", { root, remote }); }
 
+export interface GithubPerson { login: string; role: string; pending: boolean; invitationId: number | null }
+export interface GithubPeople {
+  repo: string | null;
+  gh: boolean;
+  signedIn: boolean;
+  me: string | null;
+  permission: string | null;
+  collaborators: GithubPerson[];
+  error: string | null;
+}
+const SAMPLE_PEOPLE: GithubPeople = {
+  repo: "ada/paper",
+  gh: true,
+  signedIn: true,
+  me: "ada",
+  permission: "admin",
+  collaborators: [
+    { login: "ada", role: "admin", pending: false, invitationId: null },
+    { login: "bob", role: "write", pending: false, invitationId: null },
+    { login: "cam", role: "write", pending: true, invitationId: 1 },
+  ],
+  error: null,
+};
+export async function githubPeople(root: string): Promise<GithubPeople> {
+  if (!native) return SAMPLE_PEOPLE;
+  return invoke<GithubPeople>("github_people", { root });
+}
+export async function githubInvite(root: string, login: string, permission: string): Promise<void> {
+  if (!native) return;
+  return invoke("github_invite", { root, login, permission });
+}
+export async function githubRemove(root: string, login: string, invitationId: number | null): Promise<void> {
+  if (!native) return;
+  return invoke("github_remove", { root, login, invitationId });
+}
+
 // ---------------------------------------------------------------- window
 
 export function onMenu(handler: (id: string) => void): () => void {

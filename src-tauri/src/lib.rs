@@ -7,6 +7,7 @@
 mod agents;
 mod export;
 mod git;
+mod github;
 mod lsp;
 mod memory;
 mod paper;
@@ -1210,6 +1211,19 @@ fn git_remote_url(root: String, name: String) -> Option<String> {
 fn git_pull(root: String, remote: String) -> Result<String, String> {
     git::pull(Path::new(&root), &remote)
 }
+#[tauri::command]
+fn github_people(root: String) -> github::People {
+    github::people(Path::new(&root))
+}
+#[tauri::command]
+fn github_invite(root: String, login: String, permission: String) -> Result<(), String> {
+    github::invite(Path::new(&root), &login, &permission)
+}
+#[tauri::command]
+fn github_remove(root: String, login: String, invitation_id: Option<u64>) -> Result<(), String> {
+    github::remove(Path::new(&root), &login, invitation_id)
+}
+
 #[tauri::command]
 fn git_push(root: String, remote: String) -> Result<String, String> {
     git::push(Path::new(&root), &remote)
@@ -2720,6 +2734,9 @@ pub fn run() {
             git_remote_url,
             git_pull,
             git_push,
+            github_people,
+            github_invite,
+            github_remove,
             relay_start,
             relay_stop,
             project_snapshot,

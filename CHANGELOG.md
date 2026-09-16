@@ -4,7 +4,10 @@ Newest first. Every merged pull request adds a line under Unreleased; a release 
 
 ## Unreleased
 
-- Live sessions: a coauthor's caret and selection show in Visual as well as Source, and sit on the visible glyph rather than a hidden markup offset. The title bar shows who else is in the session.
+- Live sessions: a coauthor's caret and selection show in Visual as well as Source, and sit on the visible glyph rather than a hidden markup offset. The title bar shows who else is in the session; click an avatar (or a name in the People tab) to jump to their caret. Follow keeps the document scrolling with them without moving your own caret. A coauthor who is typing is marked on the avatar.
+- People tab: collaborators on the paper's GitHub repository, listed and invited through the GitHub CLI already on this machine (`gh`). Roles come from GitHub. Dabir still has no accounts and sends no email.
+- One universal macOS DMG in the release pipeline (Apple silicon and Intel, Tectonic lipo'd), so a single notarisation covers both Macs. `latest.json` still names `darwin-aarch64` and `darwin-x86_64` so 0.1.8 installs keep updating.
+- Windows installer stays unsigned. SmartScreen's "Windows protected your PC" is dismissed with More info → Run anyway; there is no plan to buy an Authenticode certificate. CI still signs if `WINDOWS_CERTIFICATE` secrets are ever set.
 
 ## 0.1.8
 
