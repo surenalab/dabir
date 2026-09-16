@@ -24,6 +24,7 @@ interface Props {
   onCancelCompile: () => void;
   onShare: () => void;
   live: boolean;
+  peers: { clientId: number; name: string; color: string; file?: string; me: boolean }[];
   terminalOpen: boolean;
   onToggleTerminal: () => void;
   /** The command that runs the open file, when Dabir has a recipe for it; null hides the Run button. */
@@ -31,7 +32,7 @@ interface Props {
   onRun: () => void;
 }
 
-export function Toolbar({ project, file, dirty, saveLabel, mode, navOpen, inspectorOpen, compiling, onMode, onToggleNav, onToggleInspector, onCompile, onCancelCompile, onShare, live, terminalOpen, onToggleTerminal, run, onRun }: Props) {
+export function Toolbar({ project, file, dirty, saveLabel, mode, navOpen, inspectorOpen, compiling, onMode, onToggleNav, onToggleInspector, onCompile, onCancelCompile, onShare, live, peers, terminalOpen, onToggleTerminal, run, onRun }: Props) {
   const rel = file && project ? relTo(project.root, file) : null;
   const canCompile = !!project?.mainTex && !compiling;
   return (
@@ -69,6 +70,13 @@ export function Toolbar({ project, file, dirty, saveLabel, mode, navOpen, inspec
         <button className="tb-btn icon" onClick={onToggleTerminal} aria-pressed={terminalOpen} aria-label={terminalOpen ? "Hide Terminal" : "Show Terminal"} title={chord(`${terminalOpen ? "Hide" : "Show"} Terminal (⌃\`)`)} disabled={!project}>
           <SquareTerminal />
         </button>
+        {live && peers.some((p) => !p.me) && (
+          <span className="tb-peers" aria-label="Coauthors in this session">
+            {peers.filter((p) => !p.me).slice(0, 4).map((p) => (
+              <span key={p.clientId} className="tb-peer" style={{ background: p.color }} title={`${p.name}${p.file ? ` · ${p.file}` : ""}`}>{p.name.slice(0, 1).toUpperCase()}</span>
+            ))}
+          </span>
+        )}
         <button className={`tb-btn icon ${live ? "live" : ""}`} aria-label="Share" title={live ? "Live session running. Share…" : "Share: live session or Overleaf"} onClick={onShare} disabled={!project} aria-pressed={live}>
           <Share2 />
         </button>

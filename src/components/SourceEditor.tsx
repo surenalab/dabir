@@ -13,10 +13,10 @@ import { search, searchKeymap, openSearchPanel, highlightSelectionMatches } from
 import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap, startCompletion, closeCompletion, completionStatus, currentCompletions, type CompletionSource } from "@codemirror/autocomplete";
 import { tags } from "@lezer/highlight";
 import { latex, latexCompletionSource } from "codemirror-lang-latex";
-import { yCollab } from "y-codemirror.next";
+import { ySync, ySyncFacet, YSyncConfig } from "y-codemirror.next";
 import * as Y from "yjs";
 import type { Awareness } from "y-protocols/awareness";
-import { visualExtensions, remoteCursorsField, setRemoteCursors, type RemoteCursor } from "../lib/visual";
+import { visualExtensions, remoteCursorsField, remoteCarets, setRemoteCursors, type RemoteCursor } from "../lib/visual";
 import { typstVisualExtensions } from "../lib/visual-typst";
 import { projectSource, commandSource, dollarPairing, matchingEnvironment, goToDefinition, goToDefinitionCommand, paperLint, headingEmphasis, type AssistSources } from "../lib/assist";
 import { codeLanguage, fileKind, hasProse, isManuscript, typstLanguage, typstHighlight } from "../lib/languages";
@@ -318,7 +318,7 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
         suggestComp.current.of(suggestConfig.of({ on: suggesting, author })),
         trackChanges(),
         readOnlyComp.current.of([]),
-        reviewField, remoteCursorsField,
+        reviewField, remoteCursorsField, remoteCarets(),
         spellComp.current.of(spellCfg(settings, dictionary, pathRef.current)), spelling(),
         commentField, marksList, markField, grammarField, grammarHover,
         Prec.high(keymap.of([{ key: "Shift-Enter", run: (v) => {
@@ -398,7 +398,7 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
 
   // Bind the editor to the session's shared text for this file. Unbind first: while the previous file's binding
   // is live, replacing the document would be sent to that file's shared text and overwrite it for everyone.
-  // The host seeds an empty shared text from this file's `value`. A guest must not bind yCollab (or replace the
+  // The host seeds an empty shared text from this file's `value`. A guest must not bind the live text (or replace the
   // document) while that text is still empty: y-codemirror would treat the empty Y.Text as truth and blank the
   // editor, which is why 0.1.6 joiners saw filenames and no .tex. They keep the snapshot on screen and bind
   // once the host's seed arrives. A layout effect, so no keystroke lands between the swap and it.
@@ -414,11 +414,15 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
       const doc = collab.text.doc; if (!doc) return;
       collab.awareness.getStates().forEach((st, clientId) => {
         if (clientId === collab.awareness.clientID) return;
-        const cur = (st as { cursor?: { head?: unknown } }).cursor, u = (st as { user?: { name?: string; color?: string } }).user;
+        const cur = (st as { cursor?: { head?: unknown; anchor?: unknown } }).cursor, u = (st as { user?: { name?: string; color?: string } }).user;
         if (!cur?.head || !u?.name) return;
         try {
-          const abs = Y.createAbsolutePositionFromRelativePosition(Y.createRelativePositionFromJSON(cur.head), doc);
-          if (abs && abs.type === collab.text) out.push({ pos: abs.index, name: u.name, color: u.color ?? "#888888" });
+          const head = Y.createAbsolutePositionFromRelativePosition(Y.createRelativePositionFromJSON(cur.head), doc);
+          const anchor = cur.anchor ? Y.createAbsolutePositionFromRelativePosition(Y.createRelativePositionFromJSON(cur.anchor), doc) : head;
+          if (head && head.type === collab.text) {
+            const pos = head.index, from = anchor && anchor.type === collab.text ? Math.min(anchor.index, pos) : pos, to = anchor && anchor.type === collab.text ? Math.max(anchor.index, pos) : pos;
+            out.push({ pos, from, to, name: u.name, color: u.color ?? "#888888" });
+          }
         } catch { /* stale position */ }
       });
       view_.dispatch({ effects: setRemoteCursors.of(out) });
@@ -432,7 +436,20 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
         replaceDoc(view_, shared);
         if (shared.length > 0) onChangeRef.current(shared);
       }
-      view_.dispatch({ effects: collabComp.current.reconfigure(yCollab(collab.text, collab.awareness)) });
+      const ycfg = new YSyncConfig(collab.text, collab.awareness);
+      view_.dispatch({ effects: collabComp.current.reconfigure([
+        ySyncFacet.of(ycfg),
+        ySync,
+        EditorView.updateListener.of((u) => {
+          if (!u.view.hasFocus) return;
+          if (!u.selectionSet && !u.focusChanged && !u.docChanged) return;
+          const sel = u.state.selection.main;
+          collab.awareness.setLocalStateField("cursor", {
+            anchor: Y.createRelativePositionFromTypeIndex(collab.text, sel.anchor),
+            head: Y.createRelativePositionFromTypeIndex(collab.text, sel.head),
+          });
+        }),
+      ]) });
       syncCursors();
     };
 

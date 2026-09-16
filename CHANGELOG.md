@@ -4,6 +4,8 @@ Newest first. Every merged pull request adds a line under Unreleased; a release 
 
 ## Unreleased
 
+- Live sessions: a coauthor's caret and selection show in Visual as well as Source, and sit on the visible glyph rather than a hidden markup offset. The title bar shows who else is in the session.
+
 ## 0.1.8
 
 - Live sessions: Windows joiners now share the same live buffer as the host. Relative paths were built with a forward slash (`root + "/"`), which does not match `C:\…\main.tex`, so each side edited a different Y.Text and neither saw the other's keystrokes or caret.
