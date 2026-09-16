@@ -1,4 +1,5 @@
 import { PanelLeft, PanelRight, Play, Share2, Square, SquareTerminal, CirclePlay } from "lucide-react";
+import type { CSSProperties } from "react";
 import type { Project } from "../lib/backend";
 import { Segmented } from "./Segmented";
 import { chord, RUN_FILE } from "../lib/keys";
@@ -24,7 +25,9 @@ interface Props {
   onCancelCompile: () => void;
   onShare: () => void;
   live: boolean;
-  peers: { clientId: number; name: string; color: string; file?: string; me: boolean }[];
+  peers: { clientId: number; name: string; color: string; file?: string; me: boolean; typing?: boolean }[];
+  following: number | null;
+  onJumpPeer: (id: number) => void;
   terminalOpen: boolean;
   onToggleTerminal: () => void;
   /** The command that runs the open file, when Dabir has a recipe for it; null hides the Run button. */
@@ -32,7 +35,7 @@ interface Props {
   onRun: () => void;
 }
 
-export function Toolbar({ project, file, dirty, saveLabel, mode, navOpen, inspectorOpen, compiling, onMode, onToggleNav, onToggleInspector, onCompile, onCancelCompile, onShare, live, peers, terminalOpen, onToggleTerminal, run, onRun }: Props) {
+export function Toolbar({ project, file, dirty, saveLabel, mode, navOpen, inspectorOpen, compiling, onMode, onToggleNav, onToggleInspector, onCompile, onCancelCompile, onShare, live, peers, following, onJumpPeer, terminalOpen, onToggleTerminal, run, onRun }: Props) {
   const rel = file && project ? relTo(project.root, file) : null;
   const canCompile = !!project?.mainTex && !compiling;
   return (
@@ -73,7 +76,15 @@ export function Toolbar({ project, file, dirty, saveLabel, mode, navOpen, inspec
         {live && peers.some((p) => !p.me) && (
           <span className="tb-peers" aria-label="Coauthors in this session">
             {peers.filter((p) => !p.me).slice(0, 4).map((p) => (
-              <span key={p.clientId} className="tb-peer" style={{ background: p.color }} title={`${p.name}${p.file ? ` · ${p.file}` : ""}`}>{p.name.slice(0, 1).toUpperCase()}</span>
+              <button
+                key={p.clientId}
+                type="button"
+                className={`tb-peer${p.typing ? " typing" : ""}${following === p.clientId ? " following" : ""}`}
+                style={{ background: p.color, "--peer-color": p.color } as CSSProperties}
+                title={`${p.name}${p.file ? ` · ${p.file}` : ""}${p.typing ? " · typing" : ""}. Click to go to their caret.`}
+                aria-label={`Go to ${p.name}${p.typing ? ", typing" : ""}`}
+                onClick={() => onJumpPeer(p.clientId)}
+              >{p.name.slice(0, 1).toUpperCase()}</button>
             ))}
           </span>
         )}

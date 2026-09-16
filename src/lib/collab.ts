@@ -10,7 +10,15 @@ import type { Awareness } from "y-protocols/awareness";
 import type { Change } from "./changes";
 import { slash } from "./path";
 
-export interface Peer { clientId: number; name: string; color: string; file?: string; me: boolean }
+export interface Peer {
+  clientId: number;
+  name: string;
+  color: string;
+  file?: string;
+  me: boolean;
+  typing?: boolean;
+  cursor?: { head: unknown; anchor?: unknown };
+}
 export interface Reply { author: string; color: string; text: string; at: number }
 export interface Comment { id: string; author: string; color: string; text: string; file: string; anchor: string; head: string; at: number; resolved: boolean; replies?: Reply[] }
 
@@ -113,11 +121,25 @@ export function seedLiveFiles(s: Session, files: SnapFile[]): void {
 export function peers(s: Session): Peer[] {
   const out: Peer[] = [];
   s.awareness.getStates().forEach((state, clientId) => {
-    const u = (state as { user?: { name: string; color: string }; file?: string }).user;
+    const st = state as { user?: { name: string; color: string }; file?: string; typing?: boolean; cursor?: { head?: unknown; anchor?: unknown } };
+    const u = st.user;
     if (!u) return;
-    out.push({ clientId, name: u.name, color: u.color, file: (state as { file?: string }).file, me: clientId === s.awareness.clientID });
+    out.push({
+      clientId, name: u.name, color: u.color, file: st.file, me: clientId === s.awareness.clientID,
+      typing: !!st.typing, cursor: st.cursor?.head != null ? { head: st.cursor.head, anchor: st.cursor.anchor } : undefined,
+    });
   });
   return out.sort((a, b) => Number(b.me) - Number(a.me) || a.name.localeCompare(b.name));
+}
+
+/** Absolute offset of a peer's caret in `text`, or null when they are in another file or the position is stale. */
+export function cursorIndex(text: Y.Text, cursor?: { head?: unknown; anchor?: unknown }): number | null {
+  if (!cursor?.head || !text.doc) return null;
+  try {
+    const head = Y.createAbsolutePositionFromRelativePosition(Y.createRelativePositionFromJSON(cursor.head), text.doc);
+    if (head && head.type === text) return head.index;
+  } catch { /* stale position */ }
+  return null;
 }
 
 export function setCurrentFile(s: Session, relPath: string | null) {

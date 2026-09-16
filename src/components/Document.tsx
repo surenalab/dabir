@@ -125,6 +125,8 @@ interface Props {
   onToggleSuggesting: () => void;
   onSelection: (from: number, to: number) => void;
   jumpOffset: { pos: number; stamp: number } | null;
+  followOffset: { pos: number; stamp: number } | null;
+  onLocalEdit?: () => void;
   settings: Settings;
   grammar: GrammarMatch[];
   assist: AssistSources;
@@ -285,7 +287,7 @@ export function Document(p: Props) {
   const editor = source != null && isTex ? (
     <SourceEditor ref={p.editorRef} value={previewing ? rv!.text! : source} visual={mode === "visual" && /\.tex$/i.test(p.file ?? "") ? "tex" : mode === "visual" && /\.typ$/i.test(p.file ?? "") ? "typst" : false} onChange={p.onSourceChange} onSave={p.onSave}
       onCursorLine={p.onCursorLine} jumpLine={p.jumpLine} jumpStamp={p.jumpStamp} findRequest={p.findRequest}
-      collab={p.collab} comments={p.comments} onSelection={p.onSelection} jumpOffset={p.jumpOffset} marks={editorMarks}
+      collab={p.collab} comments={p.comments} onSelection={p.onSelection} jumpOffset={p.jumpOffset} followOffset={p.followOffset} onLocalEdit={p.onLocalEdit} marks={editorMarks}
       changes={previewing ? [] : p.changes} suggesting={p.settings.suggesting} author={p.author} onChanges={p.onChanges}
       review={previewing ? rv!.marks : null} dictionary={p.dictionary} onAddWord={p.onAddWord} onContinue={p.onContinue}
       settings={p.settings} grammar={p.grammar} assist={p.assist} headText={headText} onRunSelection={code.onRunSelection} onLanguageServer={code.onServer} onLint={code.onLint} />

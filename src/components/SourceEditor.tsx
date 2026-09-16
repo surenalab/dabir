@@ -167,6 +167,10 @@ interface Props {
   onContinue?: (before: string) => Promise<string | null>;
   onSelection: (from: number, to: number) => void;
   jumpOffset: { pos: number; stamp: number } | null;
+  /** Scroll to a coauthor without moving the local caret or taking focus. */
+  followOffset: { pos: number; stamp: number } | null;
+  /** Local typing or a pointer selection; App uses this to stop following a coauthor. */
+  onLocalEdit?: () => void;
   onChange: (text: string) => void;
   onSave: () => void;
   onCursorLine: (line: number, col: number) => void;
@@ -236,7 +240,7 @@ function selectionOrLine(v: EditorView): string {
 
 const modeExt = (visual: Props["visual"], path: string | null) => (visual === "typst" ? typstVisualExtensions() : visual ? visualExtensions() : sourceOnly(path));
 
-export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({ value, visual, settings, assist, collab, comments, changes, suggesting, author, onChanges, grammar, marks, review, dictionary, onAddWord, onContinue, onSelection, jumpOffset, onChange, onSave, onCursorLine, jumpLine, jumpStamp, findRequest, headText = null, onRunSelection, onLanguageServer, onLint }, ref) {
+export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({ value, visual, settings, assist, collab, comments, changes, suggesting, author, onChanges, grammar, marks, review, dictionary, onAddWord, onContinue, onSelection, jumpOffset, followOffset, onLocalEdit, onChange, onSave, onCursorLine, jumpLine, jumpStamp, findRequest, headText = null, onRunSelection, onLanguageServer, onLint }, ref) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const modeComp = useRef(new Compartment());
@@ -268,6 +272,7 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
   const onChangesRef = useRef(onChanges); onChangesRef.current = onChanges;
   const changesSeen = useRef({ version: 0, marks: 0 });
   const onChangeRef = useRef(onChange); onChangeRef.current = onChange;
+  const onLocalEditRef = useRef(onLocalEdit); onLocalEditRef.current = onLocalEdit;
   const onSaveRef = useRef(onSave); onSaveRef.current = onSave;
   const onCursorRef = useRef(onCursorLine); onCursorRef.current = onCursorLine;
   const onSelRef = useRef(onSelection); onSelRef.current = onSelection;
@@ -334,6 +339,8 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
         ]),
         EditorView.updateListener.of((u) => {
           if (u.docChanged && !loading.current) onChangeRef.current(u.state.doc.toString());
+          const local = u.transactions.some((tr) => tr.isUserEvent("input") || tr.isUserEvent("delete") || tr.isUserEvent("select.pointer"));
+          if (local) onLocalEditRef.current?.();
           if (u.selectionSet || u.docChanged) {
             { const head = u.state.selection.main.head; const ln = u.state.doc.lineAt(head); onCursorRef.current(ln.number, head - ln.from + 1); }
             onSelRef.current(u.state.selection.main.from, u.state.selection.main.to);
@@ -408,6 +415,13 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
     v.dispatch({ effects: collabComp.current.reconfigure([]) });
     if (!collab) return;
 
+    let typingTimer: ReturnType<typeof setTimeout> | 0 = 0;
+    const stopTyping = () => {
+      clearTimeout(typingTimer);
+      typingTimer = 0;
+      try { collab.awareness.setLocalStateField("typing", false); } catch { /* destroyed */ }
+    };
+
     const syncCursors = () => {
       const view_ = view.current; if (!view_) return;
       const out: RemoteCursor[] = [];
@@ -448,6 +462,14 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
             anchor: Y.createRelativePositionFromTypeIndex(collab.text, sel.anchor),
             head: Y.createRelativePositionFromTypeIndex(collab.text, sel.head),
           });
+          if (u.docChanged) {
+            collab.awareness.setLocalStateField("typing", true);
+            clearTimeout(typingTimer);
+            typingTimer = setTimeout(() => {
+              typingTimer = 0;
+              try { collab.awareness.setLocalStateField("typing", false); } catch { /* unbound */ }
+            }, 800);
+          }
         }),
       ]) });
       syncCursors();
@@ -469,6 +491,7 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
       collab.text.doc?.on("update", onSeed);
       collab.awareness.on("change", syncCursors); syncCursors();
       return () => {
+        stopTyping();
         collab.text.unobserve(onSeed);
         collab.text.doc?.off("update", onSeed);
         collab.awareness.off("change", syncCursors);
@@ -477,7 +500,7 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
     }
     bind();
     collab.awareness.on("change", syncCursors);
-    return () => { collab.awareness.off("change", syncCursors); view.current?.dispatch({ effects: setRemoteCursors.of([]) }); };
+    return () => { stopTyping(); collab.awareness.off("change", syncCursors); view.current?.dispatch({ effects: setRemoteCursors.of([]) }); };
   }, [collab]); // eslint-disable-line react-hooks/exhaustive-deps -- `value` is read once, at the moment the binding changes
 
   useEffect(() => { view.current?.dispatch({ effects: setComments.of(comments) }); }, [comments]);
@@ -496,6 +519,14 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
     v.dispatch({ selection: { anchor: pos }, effects: EditorView.scrollIntoView(pos, { y: "center" }) });
     v.focus();
   }, [jumpOffset]);
+
+  // Follow a coauthor: scroll only. Moving the local selection would steal their place in the text.
+  useEffect(() => {
+    const v = view.current;
+    if (!v || !followOffset) return;
+    const pos = Math.min(followOffset.pos, v.state.doc.length);
+    v.dispatch({ effects: EditorView.scrollIntoView(pos, { y: "center" }) });
+  }, [followOffset]);
 
   // The document is being replaced from outside: another file, the agent's version, a checkout, the session's
   // shared text. The old undo history, completion state and diagnostics belong to the old text: dropping them
