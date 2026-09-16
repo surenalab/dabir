@@ -4,6 +4,8 @@ Newest first. Every merged pull request adds a line under Unreleased; a release 
 
 ## Unreleased
 
+## 0.1.10
+
 - Jump and Follow to a coauthor leave PDF-only view so the caret is on screen, including when the editor was unmounted. Follow no longer re-scrolls when they have not moved. Removing a GitHub collaborator asks first. The People list no longer waits on `gh` on the UI thread, and a lookup failure is shown instead of spinning forever.
 
 ## 0.1.9
