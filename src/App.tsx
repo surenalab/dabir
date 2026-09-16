@@ -152,6 +152,8 @@ export default function App() {
   const unpersist = useRef<(() => void) | null>(null);
   const projectRef = useRef<Project | null>(null);
   const fileRef = useRef<string | null>(null);
+  const modeRef = useRef(mode);
+  const followAt = useRef<{ clientId: number; file: string; pos: number } | null>(null);
   const [liveBusy, setLiveBusy] = useState<string | null>(null);
   const [peers, setPeers] = useState<Peer[]>([]);
   const [comments, setComments] = useState<Comment[]>([]);
@@ -177,6 +179,7 @@ export default function App() {
   const sourceRef = useRef<string | null>(null);
   sourceRef.current = source;
   fileRef.current = file;
+  modeRef.current = mode;
   const dirtyRef = useRef(false);
   dirtyRef.current = dirty;
 
@@ -569,7 +572,7 @@ export default function App() {
     if (session) yDisconnect(session);
     unpersist.current?.(); unpersist.current = null;
     setSession(null); setPeers([]); setComments([]); setSessChanges([]); setLive(null); setHostAway(false);
-    setFollowId(null); setFollowOffset(null);
+    setFollowId(null); setFollowOffset(null); followAt.current = null;
     (window as unknown as { __session?: Session }).__session = undefined;
     if (live?.host && live.transport === "relay") await relayStop();
     // The host's checkout is the record of the session: suggest the commit.
@@ -631,6 +634,8 @@ export default function App() {
 
   const goToPeer = useCallback(async (p: Peer, follow: boolean) => {
     if (p.me || !project) return;
+    // PDF-only hides the editor, so jump/follow would set an offset nothing can scroll to.
+    if (modeRef.current === "pdf") setMode("visual");
     if (p.file) {
       const abs = `${project.root}/${p.file}`;
       if (abs !== fileRef.current) await selectFile(abs);
@@ -640,8 +645,12 @@ export default function App() {
     if (!sess || !relFile) return;
     const pos = cursorIndex(textFor(sess, relFile), p.cursor);
     if (pos == null) return;
-    if (follow) setFollowOffset({ pos, stamp: Date.now() });
-    else setJumpOffset({ pos, stamp: Date.now() });
+    if (follow) {
+      const prev = followAt.current;
+      if (prev && prev.clientId === p.clientId && prev.file === relFile && prev.pos === pos) return;
+      followAt.current = { clientId: p.clientId, file: relFile, pos };
+      setFollowOffset({ pos, stamp: Date.now() });
+    } else setJumpOffset({ pos, stamp: Date.now() });
   }, [project, selectFile]);
 
   const jumpToPeer = useCallback((id: number) => {
@@ -652,7 +661,11 @@ export default function App() {
   }, [peers, goToPeer]);
 
   const followPeer = useCallback((p: Peer) => {
-    setFollowId((cur) => cur === p.clientId ? null : p.clientId);
+    setFollowId((cur) => {
+      if (cur === p.clientId) { followAt.current = null; return null; }
+      followAt.current = null;
+      return p.clientId;
+    });
   }, []);
 
   useEffect(() => {
@@ -668,7 +681,7 @@ export default function App() {
     return () => { alive = false; session.awareness.off("change", apply); };
   }, [followId, session, goToPeer]);
 
-  const stopFollow = useCallback(() => { if (followId != null) setFollowId(null); }, [followId]);
+  const stopFollow = useCallback(() => { followAt.current = null; setFollowId(null); }, []);
 
   // Comments live in the shared doc during a session, otherwise in .dabir/comments.json next to the paper.
   // Local anchors are plain offsets plus the quoted text, re-found by search when the offset drifts.

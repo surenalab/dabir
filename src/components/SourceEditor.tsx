@@ -371,6 +371,16 @@ export const SourceEditor = forwardRef<EditorApi, Props>(function SourceEditor({
     if (!host.current) return;
     const v = new EditorView({ state: createState(value), parent: host.current });
     view.current = v;
+    // Jump/Follow can be issued while PDF-only has this editor unmounted; apply the pending offset
+    // on the first view so leaving PDF still scrolls to the coauthor.
+    if (jumpOffset) {
+      const pos = Math.min(jumpOffset.pos, v.state.doc.length);
+      v.dispatch({ selection: { anchor: pos }, effects: EditorView.scrollIntoView(pos, { y: "center" }) });
+      v.focus();
+    } else if (followOffset) {
+      const pos = Math.min(followOffset.pos, v.state.doc.length);
+      v.dispatch({ effects: EditorView.scrollIntoView(pos, { y: "center" }) });
+    }
     const h = host.current as HTMLDivElement & { __view?: EditorView; __complete?: () => unknown };
     h.__view = v; // for automated tests
     h.__complete = () => { startCompletion(v); return { status: completionStatus(v.state), count: currentCompletions(v.state).length }; };

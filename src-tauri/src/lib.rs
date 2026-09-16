@@ -1212,16 +1212,37 @@ fn git_pull(root: String, remote: String) -> Result<String, String> {
     git::pull(Path::new(&root), &remote)
 }
 #[tauri::command]
-fn github_people(root: String) -> github::People {
-    github::people(Path::new(&root))
+async fn github_people(root: String) -> github::People {
+    let root = PathBuf::from(root);
+    tauri::async_runtime::spawn_blocking(move || github::people(&root))
+        .await
+        .unwrap_or_else(|_| github::People {
+            repo: None,
+            gh: false,
+            signed_in: false,
+            me: None,
+            permission: None,
+            collaborators: vec![],
+            error: Some("Could not ask GitHub.".into()),
+        })
 }
 #[tauri::command]
-fn github_invite(root: String, login: String, permission: String) -> Result<(), String> {
-    github::invite(Path::new(&root), &login, &permission)
+async fn github_invite(root: String, login: String, permission: String) -> Result<(), String> {
+    let root = PathBuf::from(root);
+    tauri::async_runtime::spawn_blocking(move || github::invite(&root, &login, &permission))
+        .await
+        .map_err(|e| e.to_string())?
 }
 #[tauri::command]
-fn github_remove(root: String, login: String, invitation_id: Option<u64>) -> Result<(), String> {
-    github::remove(Path::new(&root), &login, invitation_id)
+async fn github_remove(
+    root: String,
+    login: String,
+    invitation_id: Option<u64>,
+) -> Result<(), String> {
+    let root = PathBuf::from(root);
+    tauri::async_runtime::spawn_blocking(move || github::remove(&root, &login, invitation_id))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
