@@ -4,6 +4,8 @@ Newest first. Every merged pull request adds a line under Unreleased; a release 
 
 ## Unreleased
 
+- Jump and Follow to a coauthor leave PDF-only view so the caret is on screen, including when the editor was unmounted. Follow no longer re-scrolls when they have not moved. Removing a GitHub collaborator asks first. The People list no longer waits on `gh` on the UI thread, and a lookup failure is shown instead of spinning forever.
+
 ## 0.1.9
 
 - Live sessions: a coauthor's caret and selection show in Visual as well as Source, and sit on the visible glyph rather than a hidden markup offset. The title bar shows who else is in the session; click an avatar (or a name in the People tab) to jump to their caret. Follow keeps the document scrolling with them without moving your own caret. A coauthor who is typing is marked on the avatar.

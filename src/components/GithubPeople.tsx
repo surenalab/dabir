@@ -14,7 +14,9 @@ export function GithubPeople({ root, onNote }: Props) {
   const [err, setErr] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
-    githubPeople(root).then(setData).catch(() => setData(null));
+    githubPeople(root).then(setData).catch((e) => setData({
+      repo: null, gh: false, signedIn: false, me: null, permission: null, collaborators: [], error: String(e),
+    }));
   }, [root]);
   useEffect(() => { refresh(); }, [refresh]);
 
@@ -33,6 +35,10 @@ export function GithubPeople({ root, onNote }: Props) {
   };
   const remove = async (who: string, invitationId: number | null) => {
     if (busy) return;
+    const q = invitationId != null
+      ? `Withdraw the invite for @${who}?`
+      : `Remove @${who} from ${data?.repo ?? "this repository"}? They will lose access.`;
+    if (!window.confirm(q)) return;
     setBusy(true); setErr(null);
     try {
       await githubRemove(root, who, invitationId);
@@ -42,12 +48,19 @@ export function GithubPeople({ root, onNote }: Props) {
     finally { setBusy(false); }
   };
 
-  if (!data) return null;
+  if (!data) {
+    return (
+      <div className="field">
+        <label>On GitHub</label>
+        <span className="target">Looking up collaborators…</span>
+      </div>
+    );
+  }
   if (!data.repo) {
     return (
       <div className="field">
         <label>GitHub</label>
-        <span className="target">This paper’s origin is not a GitHub repository. Clone from GitHub, or add GitHub as origin, to invite people as collaborators. Live sessions above do not need GitHub.</span>
+        <span className="target">{data.error ?? "This paper’s origin is not a GitHub repository. Clone from GitHub, or add GitHub as origin, to invite people as collaborators. Live sessions above do not need GitHub."}</span>
       </div>
     );
   }
