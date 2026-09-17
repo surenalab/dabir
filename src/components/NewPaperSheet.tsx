@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ArrowUpRight, Search } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { native, onTemplateProgress, templatesList, type Template, type TemplateListing } from "../lib/backend";
+import { chord } from "../lib/keys";
 
 /** The venue's own kit, or a starter Dabir wrote on a class the engine fetches from CTAN. */
 function sourceLine(t: Template): string {
@@ -125,7 +126,7 @@ export function NewPaperSheet({ onClose, onCreate, onWord, initial }: { onClose:
           </aside>
         </div>
         <footer>
-          <button className="btn" onClick={onWord} disabled={!!busy} title="Turn a .docx a coauthor sent into a LaTeX paper. To keep writing in Word, choose Word document here, or File › Open Word Document…">Convert Word to LaTeX…</button>
+          <button className="btn" onClick={onWord} disabled={!!busy} title={chord("Turn a .docx a coauthor sent into a LaTeX paper (⇧⌥⌘I). To keep writing in Word, choose Word document here, or File › Open Word Document…")}>Convert Word to LaTeX…</button>
           {busy ? <span className="progress" role="status" aria-live="polite">{progress ?? "Working…"}</span> : error ? <span className="progress error" role="alert">{error}</span> : <span className="progress">Create… opens a save panel to name and place the paper's folder. Git and the memory scaffold are set up inside it.</span>}
           <button className="btn" onClick={onClose} disabled={!!busy}>Cancel</button>
           <button className="btn primary" onClick={go} disabled={!current || !!busy} autoFocus>{busy ? "Creating…" : "Create…"}</button>
