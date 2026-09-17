@@ -273,6 +273,10 @@ export default function App() {
   const paperWordsNow = project && map && map.files.length > 1 && paperWords?.root === project.root ? paperWords.words : null;
 
   const openFolder = useCallback(async (folder: string, main?: string | null) => {
+    // Opening another paper is a file switch: the open document goes to disk first, as it does in selectFile and
+    // Close Paper. selectFile at the foot of this callback flushes too, but only when the new paper has a
+    // manuscript to open; a folder with none would otherwise unmount the editor over unsaved edits.
+    await flushRef.current();
     stopLanguageServers();
     const p = await openProject(folder, main ?? null);
     setProject(p); setCompileState({ status: "idle" }); setError(null); setPdfTarget(null);
@@ -305,9 +309,12 @@ export default function App() {
     setWindowTitle("Dabir");
   }, []);
 
+  // The manuscript the paper was opened with is carried through the reload: Open Word Document… chose a .docx that
+  // find_main_tex would not choose again (a folder with a main.tex beside it), and a reload after an agent's Accept,
+  // a History step or a reference sync must not move the paper to another file under the open document.
   const reloadProject = useCallback(async () => {
     if (!project) return;
-    try { const p = await openProject(project.root); setProject(p); loadBib(p); loadMap(p.root); refreshGit(p); } catch (e) { setError(String(e)); }
+    try { const p = await openProject(project.root, project.mainTex); setProject(p); loadBib(p); loadMap(p.root); refreshGit(p); } catch (e) { setError(String(e)); }
   }, [project, loadBib, loadMap, refreshGit]);
 
   // Browser preview only: ?open=sample&view=split&inspector=1&file=code/sweep.py&demo=run opens the sample in a given state,

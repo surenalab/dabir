@@ -3,8 +3,11 @@
 import JSZip from "jszip";
 import { addParagraphIds, lacksParagraphIds, paragraphIdMaker, paragraphIdsIn, repairCoreProperties } from "./word.ts";
 
-/** The parts whose paragraphs Word numbers. */
-const PARAGRAPH_PARTS = /^word\/(document|footnotes|endnotes|comments|header\d*|footer\d*)\.xml$/;
+/** The parts whose paragraphs Word numbers. `document\d*` because Office 365 writes the main part as
+ *  `document2.xml`, which the package relationships name (`import::office_document` and the Word view's Rust side
+ *  read them for that reason). Numbering a part that is not the main one costs nothing; missing the one that is
+ *  leaves the engine to repack the document whole on the first save. */
+const PARAGRAPH_PARTS = /^word\/(document\d*|footnotes|endnotes|comments|header\d*|footer\d*)\.xml$/;
 
 /** The document with a `w14:paraId` on every paragraph (see addParagraphIds). The same bytes come back when there is
  *  nothing to add, which is the case for anything Word saved. */

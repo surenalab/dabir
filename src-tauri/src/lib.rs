@@ -436,8 +436,10 @@ fn read_binary(path: String) -> Result<tauri::ipc::Response, String> {
 
 /// Replace a binary file (the Word view's saves). The bytes are the raw request body and the path travels
 /// percent-encoded in the `x-dabir-path` header, so a document is not sent as a JSON array of numbers.
+/// The write itself is spawned: a synchronous command runs on the main thread, and `write_all` + `sync_all`
+/// of a multi-megabyte document would hold the window there until the disk answered.
 #[tauri::command]
-fn write_binary(request: tauri::ipc::Request<'_>) -> Result<(), String> {
+async fn write_binary(request: tauri::ipc::Request<'_>) -> Result<(), String> {
     let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
         return Err("write_binary expects the file's bytes as the request body".into());
     };
@@ -447,7 +449,10 @@ fn write_binary(request: tauri::ipc::Request<'_>) -> Result<(), String> {
         .and_then(|v| v.to_str().ok())
         .ok_or("write_binary needs the x-dabir-path header")?;
     let path = word::percent_decode(path)?;
-    word::write_atomic(Path::new(&path), bytes)
+    let bytes = bytes.clone();
+    tauri::async_runtime::spawn_blocking(move || word::write_atomic(Path::new(&path), &bytes))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// A Word document as Markdown, for Export › Markdown.
@@ -1167,7 +1172,16 @@ async fn import_word(docx: String, parent: String, name: String) -> Result<impor
     let dest = PathBuf::from(&parent).join(paper_folder_name(&name)?);
     tauri::async_runtime::spawn_blocking(move || {
         let report = import::docx_to_latex(Path::new(&docx), &dest)?;
-        scaffold_paper(&dest, &format!("New paper from {}", report.source))?;
+        // The conversion is on disk by now, so a failure here does not throw it away; but the folder is no
+        // longer empty and Import would refuse it again, so the error says where the paper is and what to do.
+        scaffold_paper(&dest, &format!("New paper from {}", report.source)).map_err(|e| {
+            format!(
+                "{} was converted into {}, but the paper could not be set up there: {}. Open that folder to keep the conversion, or delete it and import again.",
+                report.source,
+                dest.display(),
+                e.trim().trim_end_matches('.'),
+            )
+        })?;
         Ok(report)
     })
     .await
@@ -2446,9 +2460,13 @@ fn checkpoint(
 ) -> Result<Option<String>, String> {
     git::checkpoint_with(Path::new(&root), &message, coalesce.unwrap_or(false))
 }
+/// The diff of one step. Spawned rather than run on the main thread: a step that touched a Word document
+/// unzips both sides of it and reads each as Markdown (`git::word_patch`), which is not work for the UI thread.
 #[tauri::command]
-fn checkpoint_patch(root: String, id: String) -> Result<String, String> {
-    git::checkpoint_patch(Path::new(&root), &id)
+async fn checkpoint_patch(root: String, id: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || git::checkpoint_patch(Path::new(&root), &id))
+        .await
+        .map_err(|e| e.to_string())?
 }
 #[tauri::command]
 fn checkpoint_undo(root: String, id: String) -> Result<(), String> {

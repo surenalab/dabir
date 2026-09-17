@@ -147,3 +147,17 @@ test("a package without paragraph ids is numbered once, a numbered one is return
   assert.equal(await read.file("word/styles.xml").async("string"), "<w:styles/>");
   assert.equal(await withParagraphIds(once), once, "nothing to add: the same bytes");
 });
+
+// Office 365 writes the main part as word/document2.xml (import.rs and word.rs both read the package
+// relationships for that reason). The ids must reach it: without them the engine's selective save bails
+// out and repacks the document whole, which drops the comments part and the fields that span paragraphs.
+test("the main part is numbered whatever Office called it", async () => {
+  const JSZip = (await import("jszip")).default;
+  const { withParagraphIds } = await import("../src/lib/word-package.ts");
+  const zip = new JSZip();
+  zip.file("[Content_Types].xml", "<Types/>");
+  zip.file("_rels/.rels", '<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document2.xml"/></Relationships>');
+  zip.file("word/document2.xml", '<w:document xmlns:w="w"><w:body><w:p><w:r><w:t>Hello</w:t></w:r></w:p></w:body></w:document>');
+  const read = await JSZip.loadAsync(await withParagraphIds(await zip.generateAsync({ type: "uint8array" })));
+  assert.match(await read.file("word/document2.xml").async("string"), /<w:p w14:paraId="[0-9A-F]{8}"/);
+});
