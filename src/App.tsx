@@ -1121,6 +1121,9 @@ export default function App() {
       if (e.altKey && k === "c") { e.preventDefault(); command("commit"); return; }
       if (e.altKey && !e.shiftKey && (k === "n" || e.code === "KeyN")) { e.preventDefault(); command("new-word"); return; }
       if (e.altKey && !e.shiftKey && (k === "o" || e.code === "KeyO")) { e.preventDefault(); command("open-word"); return; }
+      // The third of the Word chords. ⌥⌘I, the obvious one, is Show/Hide Inspector below, so Import
+      // takes the Shift of it; Option+I on the Mac is a dead key, hence the e.code fallback.
+      if (e.altKey && e.shiftKey && (k === "i" || e.code === "KeyI")) { e.preventDefault(); command("import-word"); return; }
       if (e.altKey && (k === "e" || e.code === "KeyE")) { e.preventDefault(); command("export"); return; }
       if (e.altKey && (k === "r" || e.code === "KeyR")) { e.preventDefault(); command("references"); return; }
       if (k === "=" || k === "+") { e.preventDefault(); command("zoom-in"); return; }

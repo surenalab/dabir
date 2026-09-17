@@ -2558,7 +2558,17 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
                 .build(app)?,
         )
         .item(&MenuItemBuilder::with_id("import-overleaf", "Import from Overleaf…").build(app)?)
-        .item(&MenuItemBuilder::with_id("import-word", "Import Word Document…").build(app)?)
+        .item(
+            // The Word family is ⌥⌘N, ⌥⌘O and this one. ⌥⌘I, which would have been the obvious third,
+            // is Show/Hide Inspector and has been since 0.1.0, so Import takes the Shift of it.
+            &MenuItemBuilder::with_id("import-word", "Import Word Document…")
+                .accelerator(if cfg!(target_os = "macos") {
+                    "Shift+Alt+Cmd+I"
+                } else {
+                    "CmdOrCtrl+Shift+Alt+I"
+                })
+                .build(app)?,
+        )
         .item(
             &MenuItemBuilder::with_id("clone", "Clone from GitHub…")
                 .accelerator("CmdOrCtrl+Shift+O")
