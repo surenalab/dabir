@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronRight, FileText, BookMarked, Code2, Image, Database, File, Folder, GitCommitHorizontal, Undo2, History as HistoryIcon, X } from "lucide-react";
+import { ChevronRight, FileText, FileType, BookMarked, Code2, Image, Database, File, Folder, GitCommitHorizontal, Undo2, History as HistoryIcon, X } from "lucide-react";
 import { searchPaper, type Checkpoint, type Entry, type GitStatus, type Project, type SearchHit } from "../lib/backend";
 import { Scrubber, stepKind } from "./Scrubber";
 import type { OutlineItem } from "../lib/latex";
 import { chord } from "../lib/keys";
 
-const ICON = { tex: FileText, bib: BookMarked, code: Code2, figure: Image, data: Database, other: File, dir: Folder } as const;
+const ICON = { tex: FileText, bib: BookMarked, code: Code2, figure: Image, data: Database, word: FileType, other: File, dir: Folder } as const;
 
 function Node({ entry, current, onSelect, depth }: { entry: Entry; current: string | null; onSelect: (p: string) => void; depth: number }) {
   const [open, setOpen] = useState(depth < 1);
@@ -145,8 +145,8 @@ export function Navigator({ project, current, outline, git, commitFocus, busy, o
         <section className="nav-section">
           <div className="nav-heading"><span>Outline</span></div>
           {outline.map((o) => (
-            <button key={`${o.file ?? ""}-${o.number}-${o.line}`} className={`outline-row l${o.level}`} onClick={() => onJump(o.line, o.file)} title={o.file ? `${o.file}:${o.line}` : `Line ${o.line}`}>
-              <span className="num">{o.number}</span><span>{o.text}</span>
+            <button key={`${o.file ?? ""}-${o.number}-${o.line}`} className={`outline-row l${o.level}`} onClick={() => onJump(o.line, o.file)} title={o.hint ?? (o.file ? `${o.file}:${o.line}` : `Line ${o.line}`)}>
+              {o.hint == null && <span className="num">{o.number}</span>}<span>{o.text}</span>
             </button>
           ))}
         </section>
@@ -171,7 +171,7 @@ export function Navigator({ project, current, outline, git, commitFocus, busy, o
                 <div className="change" key={c.path}>
                   <span className="file" title={c.path}>{c.path}</span>
                   <span className="meta"><span>{c.status}</span>
-                    <span className="stat">{c.binary ? <span className="add">binary</span> : <><span className="add">+{c.add}</span><span className="del">−{c.del}</span></>}</span>
+                    <span className="stat">{c.binary ? <span className={/\.docx$/i.test(c.path) ? "kind" : "add"}>{/\.docx$/i.test(c.path) ? "document" : "binary"}</span> : <><span className="add">+{c.add}</span><span className="del">−{c.del}</span></>}</span>
                   </span>
                   <button className="discard" onClick={() => onDiscard(c.path)} disabled={busy} title={`Discard the uncommitted changes to ${c.path}. History keeps a step first, so this can be undone.`} aria-label={`Discard changes to ${c.path}`}><Undo2 aria-hidden /></button>
                 </div>

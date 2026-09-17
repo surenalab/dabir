@@ -6,10 +6,11 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
-import { SAMPLE_FILES, SAMPLE_PROJECT } from "./sample";
+import { SAMPLE_FILES, SAMPLE_PROJECT, SAMPLE_WORD_ROOT, sampleWordProject } from "./sample";
+import { looksLikeDocx } from "./word";
 import { applyPatch } from "./review";
 
-export type EntryKind = "dir" | "tex" | "bib" | "code" | "figure" | "data" | "other";
+export type EntryKind = "dir" | "tex" | "bib" | "code" | "figure" | "data" | "word" | "other";
 export interface Entry { name: string; path: string; kind: EntryKind; children: Entry[] }
 /** Where the code runs when `dabir.toml [remote]` names a host: an ssh destination and the repository's path there. */
 export interface Remote { host: string; dir: string }
@@ -69,9 +70,12 @@ export async function pickFolder(title = "Open a paper"): Promise<string | null>
   return typeof picked === "string" ? picked : null;
 }
 
-export async function openProject(path: string): Promise<Project> {
-  if (!native) return SAMPLE_PROJECT;
-  return invoke<Project>("open_project", { path });
+/** Browser preview: `?docx=name.docx` puts another document from DABIR_SAMPLE_DOCX_DIR in the Word paper. */
+const previewDocx = () => { try { return new URLSearchParams(location.search).get("docx"); } catch { return null; } };
+/** Open a folder as a paper. `main` names the manuscript when the author chose it (a Word document opened on its own). */
+export async function openProject(path: string, main: string | null = null): Promise<Project> {
+  if (!native) return path === SAMPLE_WORD_ROOT ? sampleWordProject(previewDocx() || undefined) : SAMPLE_PROJECT;
+  return invoke<Project>("open_project", { path, main });
 }
 
 /** A heading in the paper, with the file and line it starts on. */
@@ -112,10 +116,39 @@ export async function writeText(path: string, contents: string): Promise<void> {
   return invoke("write_text", { path, contents });
 }
 
+/** Browser preview only: binary files written this session, by path. */
+const PREVIEW_BINARY = new Map<string, Uint8Array>();
+async function previewBinary(path: string): Promise<Uint8Array> {
+  const kept = PREVIEW_BINARY.get(path);
+  if (kept) return kept.slice();
+  // `npm run dev` serves the sample Word paper's documents (scripts/vite-word-preview.mjs); a production preview has none.
+  if (!import.meta.env.DEV || !path.startsWith(`${SAMPLE_WORD_ROOT}/`)) return new Uint8Array();
+  try {
+    const r = await fetch(`/__dabir/word?name=${encodeURIComponent(path.split("/").pop() ?? "")}`);
+    return r.ok ? new Uint8Array(await r.arrayBuffer()) : new Uint8Array();
+  } catch { return new Uint8Array(); }
+}
+
 export async function readBinary(path: string): Promise<Uint8Array> {
-  if (!native) return new Uint8Array();
+  if (!native) return previewBinary(path);
   const bytes = await invoke<ArrayBuffer | number[]>("read_binary", { path });
   return bytes instanceof ArrayBuffer ? new Uint8Array(bytes) : Uint8Array.from(bytes);
+}
+
+/** Replace a binary file in one step (a temporary file beside it, then a rename), so a crash never leaves half a
+ *  document. A .docx must be a zip; anything else is refused rather than written over the author's document. */
+export async function writeBinary(path: string, bytes: Uint8Array): Promise<void> {
+  if (/\.docx$/i.test(path) && !looksLikeDocx(bytes)) throw new Error(`Refused to save ${path.split(/[\\/]/).pop()}: the editor produced something that is not a Word document.`);
+  if (!native) {
+    PREVIEW_BINARY.set(path, bytes.slice());
+    PREVIEW_WRITES.push({ path: path.split("/").slice(-2).join("/"), head: `${bytes.length} bytes` });
+    (window as unknown as { __writes?: unknown }).__writes = PREVIEW_WRITES;
+    // `npm run dev`: keep a copy under the system temp folder so a round trip can be checked outside the browser.
+    if (import.meta.env.DEV) fetch(`/__dabir/word-saved?name=${encodeURIComponent(path.split("/").pop() ?? "")}`, { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: bytes.slice() }).catch(() => {});
+    return;
+  }
+  // A raw body reaches the command without a JSON array of numbers; the path travels in a header.
+  return invoke("write_binary", bytes, { headers: { "x-dabir-path": encodeURIComponent(path) } });
 }
 
 export interface SnapFile { path: string; text: string | null; base64: string | null; size: number }
@@ -176,7 +209,7 @@ export async function importOverleaf(): Promise<string | null> {
 // ---------------------------------------------------------------- new paper and references
 
 export interface Template {
-  id: string; label: string; venue: string; group: string; engine: "latex" | "typst";
+  id: string; label: string; venue: string; group: string; engine: "latex" | "typst" | "word";
   official: boolean; featured: boolean; version: string | null; summary: string; site: string | null;
   main: string;
   /** Host the official kit is fetched from; null when bundled. */
@@ -188,8 +221,10 @@ export interface Template {
 }
 export interface TemplateGroup { id: string; label: string }
 export interface TemplateListing { groups: TemplateGroup[]; templates: Template[] }
+const WORD_TEMPLATE_VENUE = "A research article as a Word document, for journals and coauthors that work in .docx";
+const WORD_TEMPLATE_SUMMARY = "Title, authors and affiliations, abstract and keywords, IMRaD headings, captions and a reference list, on Word's own styles so a journal's template can restyle it. Opens in Dabir's Word editor with nothing to compile, and stays a .docx for coauthors in Word.";
 const SAMPLE_TEMPLATES: TemplateListing = {
-  groups: [{ id: "ml", label: "Machine learning" }, { id: "vision", label: "Vision and graphics" }, { id: "nlp", label: "Language" }, { id: "publishers", label: "Journals and publishers" }, { id: "biology", label: "Biology and medicine" }, { id: "math", label: "Mathematics" }, { id: "general", label: "General" }, { id: "typst", label: "Typst" }],
+  groups: [{ id: "ml", label: "Machine learning" }, { id: "vision", label: "Vision and graphics" }, { id: "nlp", label: "Language" }, { id: "publishers", label: "Journals and publishers" }, { id: "biology", label: "Biology and medicine" }, { id: "math", label: "Mathematics" }, { id: "general", label: "General" }, { id: "typst", label: "Typst" }, { id: "word", label: "Word documents" }],
   templates: [
     { id: "neurips", label: "NeurIPS 2026", venue: "Conference on Neural Information Processing Systems", group: "ml", engine: "latex", official: true, featured: true, version: "2026", summary: "The official neurips_2026.sty with the paper checklist. Anonymous with line numbers by default; add the final or preprint option when the time comes.", site: "https://neurips.cc/Conferences/2026/CallForPapers", main: "main.tex", kit: "media.neurips.cc", cached: false, notes: [] },
     { id: "iclr", label: "ICLR 2027", venue: "International Conference on Learning Representations", group: "ml", engine: "latex", official: true, featured: true, version: "2027", summary: "The official ICLR style, bibliography style and math_commands.tex from the ICLR master template.", site: "https://github.com/ICLR/Master-Template", main: "main.tex", kit: "raw.githubusercontent.com", cached: true, notes: [] },
@@ -203,6 +238,7 @@ const SAMPLE_TEMPLATES: TemplateListing = {
     { id: "ieee-journal", label: "IEEE Transactions", venue: "IEEE journals and transactions", group: "publishers", engine: "latex", official: false, featured: true, version: null, summary: "A short paper on IEEEtran in journal mode, fetched from CTAN by the engine on first compile.", site: "https://ctan.org/pkg/ieeetran", main: "main.tex", kit: null, cached: true, notes: [] },
     { id: "siam", label: "SIAM journals", venue: "Society for Industrial and Applied Mathematics", group: "math", engine: "latex", official: true, featured: true, version: "251216", summary: "The official siamart251216.cls, siamplain.bst and the example article with its shared front matter.", site: "https://epubs.siam.org/journal-authors", main: "main.tex", kit: "epubs.siam.org", cached: false, notes: ["the SIAM class only compiles under pdfLaTeX or dvips without this prelude", "EPS figures cannot be embedded by the bundled engine"] },
     { id: "article", label: "Plain article", venue: "Preprints, notes and drafts", group: "general", engine: "latex", official: false, featured: true, version: null, summary: "The standard article class with the usual packages and a numbered bibliography. Nothing to fetch.", site: null, main: "main.tex", kit: null, cached: true, notes: [] },
+    { id: "word-manuscript", label: "Word document", venue: WORD_TEMPLATE_VENUE, group: "word", engine: "word", official: false, featured: true, version: null, summary: WORD_TEMPLATE_SUMMARY, site: null, main: "manuscript.docx", kit: null, cached: true, notes: [] },
     { id: "typst-ieee", label: "IEEE (Typst)", venue: "IEEE-style conference and journal papers", group: "typst", engine: "typst", official: false, featured: false, version: null, summary: "The charged-ieee template from Typst Universe (MIT-0).", site: "https://typst.app/universe/package/charged-ieee", main: "main.typ", kit: null, cached: true, notes: [] },
   ],
 };
@@ -237,6 +273,7 @@ export async function templatesList(): Promise<TemplateListing> {
 export async function newPaper(parent: string, name: string, template: string): Promise<string> {
   if (!native) {
     const say = (message: string) => templateHandlers.forEach((h) => h({ template, message }));
+    if (template === "word-manuscript") { await wait(300); say("Laying out the paper…"); await wait(300); say("Initialising Git and the memory scaffold…"); await wait(300); return SAMPLE_WORD_ROOT; }
     await wait(300); say("Fetching the official kit from media.neurips.cc…");
     await wait(900); say("Unpacking the kit…");
     await wait(300); say("Laying out the paper…");
@@ -285,6 +322,33 @@ export async function importWord(docx: string, parent: string, name: string): Pr
     };
   }
   return invoke<WordImport>("import_word", { docx, parent, name });
+}
+
+// ---------------------------------------------------------------- Word documents
+
+/** File › Open Word Document…: a .docx anywhere; its folder opens with it as the paper. Null when cancelled. */
+export async function pickWordToOpen(): Promise<string | null> {
+  if (!native) return `${SAMPLE_WORD_ROOT}/manuscript.docx`;
+  const picked = await openDialog({ multiple: false, title: "Open Word Document", filters: [{ name: "Word document", extensions: ["docx"] }] });
+  return typeof picked === "string" ? picked : null;
+}
+/** The document as Markdown (headings, lists, tables, footnotes; insertions kept, deletions left out), read from disk. */
+export async function wordMarkdown(path: string): Promise<string> {
+  if (!native) {
+    await wait(200);
+    return "# Willow buffers remove more nitrate than grass strips in lowland streams\n\nAda Lindqvist, Maryam Karimi, Tomás Ferreira\n\n## Introduction\n\nNitrate leaching from arable land is the main cause of nutrient enrichment in lowland streams.\n";
+  }
+  return invoke<string>("word_markdown", { path });
+}
+/** Git's user.name for the paper (then the global one): the author a Word document's changes carry when Dabir has no name on record. */
+export async function authorName(root: string): Promise<string | null> {
+  if (!native) return "Ada Lindqvist";
+  try { return await invoke<string | null>("author_name", { root }); } catch { return null; }
+}
+/** Print the window through the system panel (its PDF button saves a PDF); the Word view shows only its pages while printing. */
+export async function printWindow(): Promise<void> {
+  if (!native) { window.print(); return; }
+  await invoke("print_window");
 }
 
 // ---------------------------------------------------------------- export
@@ -379,8 +443,17 @@ const SAMPLE_GIT: GitStatus = {
   ],
 };
 
+const SAMPLE_WORD_GIT: GitStatus = {
+  isRepo: true, branch: "main", remote: null,
+  changes: [
+    { path: "manuscript.docx", status: "modified", add: 0, del: 0, binary: true },
+    { path: "code/removal.R", status: "modified", add: 2, del: 1, binary: false },
+  ],
+  recent: [{ id: "1f7e6a0", summary: "New paper from Word document template", author: "Ada", when: Date.now() / 1000 - 86400 * 2 }],
+};
+
 export async function gitStatus(root: string): Promise<GitStatus> {
-  if (!native) return SAMPLE_GIT;
+  if (!native) return root === SAMPLE_WORD_ROOT ? SAMPLE_WORD_GIT : SAMPLE_GIT;
   return invoke<GitStatus>("git_status", { root });
 }
 export async function gitInit(root: string): Promise<void> { if (native) await invoke("git_init", { root }); }
@@ -485,7 +558,7 @@ export async function agentComplete(root: string, provider: string, file: string
 /** A follow-up continues the run under review in its own worktree, on top of the changes it made. */
 export interface FollowUp { runId: string; prompt: string; reply: string }
 /** Where the author is in the editor when asking: file, cursor line, selection. "This paragraph" resolves against it. */
-export interface Focus { file: string; line: number; endLine?: number; selection?: string }
+export interface Focus { file: string; line: number; endLine?: number; selection?: string; /** A Word document's paragraph at the cursor. */ paragraph?: string }
 export async function agentRun(root: string, provider: string, prompt: string, model = "", effort = "", followUp: FollowUp | null = null, focus: Focus | null = null): Promise<{ runId: string; worktree: string; repoNote?: string | null }> {
   if (!native) {
     const runId = followUp?.runId ?? Math.random().toString(16).slice(2, 10);
@@ -554,9 +627,16 @@ const SAMPLE_HISTORY: Checkpoint[] = [
   { id: "31a8c77", message: "You edited refs.bib", at: now - 86400 - 600, files: [{ path: "refs.bib", status: "modified", add: 6, del: 0, binary: false }] },
 ];
 /** Snapshot the working tree; `coalesce` folds a repeat of the newest message within a few minutes into it. */
+// The Word paper's history in the preview: a Word document's step reads as a diff of its text (see git::checkpoint_patch).
+const SAMPLE_WORD_HISTORY: Checkpoint[] = [
+  { id: "4c1d2e8", message: "You edited manuscript.docx", at: now - 240, files: [{ path: "manuscript.docx", status: "modified", add: 2, del: 1, binary: true }] },
+  { id: "9ab03f1", message: "Rscript code/removal.R", at: now - 3600 * 3, files: [{ path: "tables/removal.csv", status: "modified", add: 3, del: 3, binary: false }] },
+  { id: "1f7e6a0", message: "New paper from Word document template", at: now - 86400 * 2, files: [{ path: "manuscript.docx", status: "added", add: 0, del: 0, binary: true }] },
+];
+const SAMPLE_WORD_PATCH = "diff --git a/manuscript.docx b/manuscript.docx\n--- a/manuscript.docx (as text)\n+++ b/manuscript.docx (as text)\n@@ -9,3 +9,3 @@\n \n-Willow buffers removed 58 % of incoming nitrate against 31 % for grass strips of the same width.\n+Willow buffers removed 58 % (95 % CI 51–64) of incoming nitrate against 31 % for grass strips of the same width.\n \n@@ -21,0 +22,2 @@\n+\n+Sites were sampled after at least three dry days.\n";
 export async function checkpoint(root: string, message: string, coalesce = false): Promise<string | null> { return native ? invoke<string | null>("checkpoint", { root, message, coalesce }) : null; }
-export async function checkpoints(root: string): Promise<Checkpoint[]> { return native ? invoke<Checkpoint[]>("checkpoints", { root }) : SAMPLE_HISTORY; }
-export async function checkpointPatch(root: string, id: string): Promise<string> { if (!native) { await wait(150); return SAMPLE_PATCH; } return invoke<string>("checkpoint_patch", { root, id }); }
+export async function checkpoints(root: string): Promise<Checkpoint[]> { return native ? invoke<Checkpoint[]>("checkpoints", { root }) : root === SAMPLE_WORD_ROOT ? SAMPLE_WORD_HISTORY : SAMPLE_HISTORY; }
+export async function checkpointPatch(root: string, id: string): Promise<string> { if (!native) { await wait(150); return root === SAMPLE_WORD_ROOT ? SAMPLE_WORD_PATCH : SAMPLE_PATCH; } return invoke<string>("checkpoint_patch", { root, id }); }
 /** Put the paper back as it was at this step. The current state is snapshotted first. */
 export async function checkpointRestore(root: string, id: string): Promise<void> { if (native) await invoke("checkpoint_restore", { root, id }); }
 /** Take this one step out, leaving later edits in place; fails when they overlap. */

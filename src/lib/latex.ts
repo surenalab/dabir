@@ -24,7 +24,7 @@ export type Inline =
   | { kind: "bold"; text: string }
   | { kind: "cmd"; tex: string };
 
-export interface OutlineItem { level: 1 | 2 | 3; number: string; text: string; line: number; /** Set when the outline spans the paper's files. */ file?: string }
+export interface OutlineItem { level: 1 | 2 | 3; number: string; text: string; line: number; /** Set when the outline spans the paper's files. */ file?: string; /** The row's tooltip, where a line number means nothing (a Word heading). */ hint?: string }
 
 const stripComments = (s: string) => s.replace(/(^|[^\\])%.*$/gm, "$1");
 

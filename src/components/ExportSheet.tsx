@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Check } from "lucide-react";
 import { exportPaper, exportTools, pickSavePath, revealPath, type ExportKind, type ExportReport, type Project } from "../lib/backend";
+import { WORD_EXPORTS, type WordExport } from "../lib/word";
 
 interface Row { kind: ExportKind; label: string; detail: string; ext: string; filter: string; suffix: string; needsPandoc?: boolean; latexOnly?: boolean }
 
@@ -19,7 +20,40 @@ function fmtBytes(n: number): string {
 }
 
 /** File › Export…: one list of formats, what each holds, and Export. */
-export function ExportSheet({ project, onClose, ensurePdf, onNote, onSetup }: { project: Project; onClose: () => void; ensurePdf: () => Promise<boolean>; onNote: (s: string) => void; onSetup: () => void }) {
+export function ExportSheet({ project, onClose, ensurePdf, onNote, onSetup, word }: { project: Project; onClose: () => void; ensurePdf: () => Promise<boolean>; onNote: (s: string) => void; onSetup: () => void; word?: { name: string; onExport: (k: WordExport) => void } | null }) {
+  if (word) return <WordExportSheet name={word.name} onClose={onClose} onExport={word.onExport} />;
+  return <PaperExportSheet project={project} onClose={onClose} ensurePdf={ensurePdf} onNote={onNote} onSetup={onSetup} />;
+}
+
+function WordExportSheet({ name, onClose, onExport }: { name: string; onClose: () => void; onExport: (k: WordExport) => void }) {
+  const [kind, setKind] = useState<WordExport>("docx");
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <div className="sheet-backdrop" onClick={onClose}>
+      <div className="sheet export" role="dialog" aria-modal="true" aria-labelledby="export-title" onClick={(e) => e.stopPropagation()}>
+        <h2 id="export-title">Export {name}</h2>
+        <div className="export-rows" role="radiogroup" aria-label="Format">
+          {WORD_EXPORTS.map((r) => (
+            <label key={r.kind} className={`export-row ${r.kind === kind ? "on" : ""}`}>
+              <input type="radio" name="export-kind" value={r.kind} checked={r.kind === kind} onChange={() => setKind(r.kind)} />
+              <span className="text"><span className="name">{r.sheet}</span><span className="detail">{r.detail}</span></span>
+            </label>
+          ))}
+        </div>
+        <footer>
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn primary" onClick={() => { onClose(); onExport(kind); }} autoFocus>{WORD_EXPORTS.find((r) => r.kind === kind)?.action ?? "Export…"}</button>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+function PaperExportSheet({ project, onClose, ensurePdf, onNote, onSetup }: { project: Project; onClose: () => void; ensurePdf: () => Promise<boolean>; onNote: (s: string) => void; onSetup: () => void }) {
   const isTypst = /\.typ$/i.test(project.mainTex ?? "");
   const [kind, setKind] = useState<ExportKind>("pdf");
   const [pandoc, setPandoc] = useState<string | null | undefined>(undefined);

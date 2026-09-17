@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
-import { AlertCircle, CheckCircle2, FolderOpen, FilePlus, GitBranch, Loader2, Circle, Upload, Radio, Sparkles, Check, X, Compass } from "lucide-react";
+import { AlertCircle, CheckCircle2, FolderOpen, FilePlus, GitBranch, Loader2, Circle, Upload, Radio, Sparkles, Check, X, Compass, Minus, Plus, FileType } from "lucide-react";
 import { parseDocument, type BibEntry } from "../lib/latex";
 import { setVisualContext } from "../lib/visual";
 import { readBinary, type Diagnostic, type PdfPos, type Project } from "../lib/backend";
@@ -26,8 +26,31 @@ import { proseWords } from "../lib/spell";
 import type { ChangeRange } from "../lib/changes";
 import type { ReviewMarks } from "../lib/review";
 import { chord } from "../lib/keys";
+import type { WordHandle, WordStats } from "./WordView";
+import { stepWordZoom, zoomLabel, type WordMode, type WordOutlineRow, type WordZoom } from "../lib/word";
 
 const PdfView = lazy(() => import("./PdfView").then((m) => ({ default: m.PdfView })));
+// The Word editor is the largest chunk in the app; it loads the first time a .docx is opened.
+const WordView = lazy(() => import("./WordView"));
+
+/** The open Word document's state and actions, owned by the app. */
+export interface WordPane {
+  mode: WordMode;
+  zoom: WordZoom;
+  stats: WordStats | null;
+  author: string;
+  reload: number;
+  onZoom: (z: WordZoom) => void;
+  onEdit: (path: string) => void;
+  onSaved: (path: string, error: string | null) => void;
+  onStats: (s: WordStats) => void;
+  onOutline: (rows: WordOutlineRow[]) => void;
+  onMode: (m: WordMode) => void;
+  onFocus: (f: { selection: string; paragraph: string } | null) => void;
+  /** The editor could not read or show the document (not a save failure). */
+  onError: (message: string) => void;
+}
+const ZOOM_PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
 /** Pull \newcommand definitions from the preamble so KaTeX can expand them. */
 function collectMacros(src: string): Record<string, string> {
@@ -147,6 +170,10 @@ interface Props {
   dictionary: string[];
   onAddWord: (word: string) => void;
   onContinue?: (before: string) => Promise<string | null>;
+  /** Set when the open file is a Word document. */
+  word: WordPane | null;
+  /** The open Word document's handle; the Word view sets it. */
+  wordRef: React.RefObject<WordHandle | null>;
 }
 
 /** An agent run under review, as the document shows it. */
@@ -226,6 +253,50 @@ export function Document(p: Props) {
   const currentRel = p.file && project ? relTo(project.root, p.file) : null;
   // Code diagnostics already live in the editor through the language server; only compile marks are added.
   const editorMarks = grouped.filter((d) => d.category !== "code" && d.line != null && (d.file ?? mainRel) === currentRel).map((d) => ({ line: d.line!, severity: d.severity, message: d.message }));
+
+  if (project && file && p.word && fileKind(file) === "word") {
+    const w = p.word;
+    const stats = w.stats;
+    const scale = stats?.scale ?? 1;
+    return (
+      <main className="document word-document">
+        {error && <div className="banner error" role="alert"><span>{error}</span><button onClick={p.onDismissError}>Dismiss</button></div>}
+        {p.hostAway && <div className="banner" role="status"><span>The host has left. Your edits stay in this mirror and rejoin when they are back.</span></div>}
+        <FileTabs root={project.root} files={openFiles} active={file} dirty={fileDirty} onSelect={onSelectFile} onClose={onCloseFile} />
+        <div className="panes">
+          <div className="scroll word-pane">
+            <Suspense fallback={<div className="word-loading" role="status">Opening {file.split(/[\\/]/).pop()}…</div>}>
+              <WordView ref={p.wordRef} path={file} reload={w.reload} mode={w.mode} zoom={w.zoom} author={w.author} jump={p.jumpLine != null ? { line: p.jumpLine, stamp: p.jumpStamp } : null}
+                onEdit={w.onEdit} onSaved={w.onSaved} onStats={w.onStats} onOutline={w.onOutline} onMode={w.onMode} onFocus={w.onFocus} onError={w.onError} />
+            </Suspense>
+          </div>
+        </div>
+        {terminal.open && <TerminalPane cwd={project.root} remote={project.remote ?? null} onClose={onToggleTerminal} focusStamp={terminal.focusStamp} run={terminal.run ?? null} />}
+        {/* Page and word counts change on every scroll and keystroke, so only the mode is a live region. */}
+        <footer className="status">
+          <span className="state"><FileType aria-hidden /> Word document</span>
+          <span role="status" aria-live="polite" data-p="2">
+            {w.mode === "suggesting" && <span className="state suggesting" title="Every edit is recorded as a tracked change under your name">Suggesting as {w.author}</span>}
+            {w.mode === "viewing" && <span className="state">Viewing, read-only</span>}
+          </span>
+          <button onClick={onToggleTerminal} data-p="2" title={chord("A shell in the paper's folder (⌃`)")}>{terminal.open ? "Hide terminal" : "Terminal"}</button>
+          <span className="grow" />
+          {stats && <span data-p="3" className="num">{stats.words.toLocaleString()} words</span>}
+          {stats && stats.pages > 0 && <span data-p="3" className="num">Page {Math.min(Math.max(stats.page, 1), stats.pages)} of {stats.pages}</span>}
+          {stats && <span className="word-zoom" data-p="1">
+            <button className="icon" onClick={() => w.onZoom(stepWordZoom(scale, -1))} aria-label="Zoom out" title={chord("Zoom out (⌘−)")}><Minus aria-hidden /></button>
+            <select className="zoomsel" value={typeof w.zoom === "number" ? String(w.zoom) : w.zoom} onChange={(e) => { const v = e.target.value; w.onZoom(v === "fit" || v === "page" ? v : Number(v)); }} aria-label="Zoom">
+              <option value="fit">{w.zoom === "fit" ? zoomLabel("fit", scale) : "Fit width"}</option>
+              <option value="page">{w.zoom === "page" ? zoomLabel("page", scale) : "Whole page"}</option>
+              {ZOOM_PRESETS.map((z) => <option key={z} value={String(z)}>{Math.round(z * 100)} %</option>)}
+              {typeof w.zoom === "number" && !ZOOM_PRESETS.includes(w.zoom) && <option value={String(w.zoom)}>{Math.round(w.zoom * 100)} %</option>}
+            </select>
+            <button className="icon" onClick={() => w.onZoom(stepWordZoom(scale, 1))} aria-label="Zoom in" title={chord("Zoom in (⌘=)")}><Plus aria-hidden /></button>
+          </span>}
+        </footer>
+      </main>
+    );
+  }
 
   if (project && !p.file && mode !== "pdf") {
     // A folder is open but holds no manuscript: say so, rather than showing the welcome card over a full sidebar.

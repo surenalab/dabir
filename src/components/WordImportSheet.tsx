@@ -20,17 +20,21 @@ function withCode(note: string) {
 }
 
 /**
+ * With `convert`, the sheet is Export › Convert to LaTeX Paper… for the open Word document: no file panel, and the
+ * save panel starts at `convert.folder`, beside the Word paper.
+ *
  * File › Import Word Document… (and From Word Document… in New Paper): a .docx from a coauthor becomes a
  * LaTeX paper in a new folder. `autoPick` opens the file panel at once when pandoc is there; the sheet
  * stays behind it to say what happens, show progress, and list what to check once the paper is open.
  */
-export function WordImportSheet({ onClose, chooseFolder, onImported, onSetup, autoPick }: {
+export function WordImportSheet({ onClose, chooseFolder, onImported, onSetup, autoPick, convert }: {
   onClose: () => void;
   chooseFolder: ChooseFolder;
   /** Opens the new paper; resolves once it is on screen. */
   onImported: (r: WordImport, parent: string) => Promise<void>;
   onSetup: () => void;
   autoPick: boolean;
+  convert?: { docx: string; folder: string } | null;
 }) {
   const [pandoc, setPandoc] = useState<string | null | undefined>(undefined);
   const [busy, setBusy] = useState<string | null>(null);
@@ -50,9 +54,9 @@ export function WordImportSheet({ onClose, chooseFolder, onImported, onSetup, au
     choosing.current = true;
     setError(null);
     try {
-      const docx = await pickWordDocument();
+      const docx = convert?.docx ?? await pickWordDocument();
       if (!docx) return;
-      const dest = await chooseFolder(suggestedFolder(docx));
+      const dest = await chooseFolder(convert?.folder ?? suggestedFolder(docx));
       if (!dest) return;
       setBusy(fileName(docx));
       const r = await importWord(docx, dest.parent, dest.name);
@@ -64,7 +68,7 @@ export function WordImportSheet({ onClose, chooseFolder, onImported, onSetup, au
       setBusy(null);
       choosing.current = false;
     }
-  }, [chooseFolder, onImported]);
+  }, [chooseFolder, onImported, convert]);
 
   useEffect(() => {
     if (!autoPick || !pandoc || picked.current) return;
@@ -75,7 +79,7 @@ export function WordImportSheet({ onClose, chooseFolder, onImported, onSetup, au
   return (
     <div className="sheet-backdrop" onClick={() => { if (!busy) onClose(); }}>
       <div className="sheet word-import" role="dialog" aria-modal="true" aria-labelledby="word-title" onClick={(e) => e.stopPropagation()}>
-        <h2 id="word-title">{done ? `Imported ${done.source}` : "Import a Word Document"}</h2>
+        <h2 id="word-title">{done ? `${convert ? "Converted" : "Imported"} ${done.source}` : convert ? `Convert ${fileName(convert.docx)} to LaTeX` : "Import a Word Document"}</h2>
         {done ? (
           <div className="word-done">
             <p className="word-summary" role="status">
@@ -91,7 +95,7 @@ export function WordImportSheet({ onClose, chooseFolder, onImported, onSetup, au
           </div>
         ) : (
           <>
-            <p className="word-lede">The document becomes a LaTeX paper in a new folder, with Git and the memory scaffold set up as for any new paper. The Word file itself is not changed.</p>
+            <p className="word-lede">{convert ? "A LaTeX copy of the document goes in a new folder beside this paper, with Git and the memory scaffold set up as for any new paper, and opens when it is ready. The Word document is not changed and stays a paper of its own." : "The document becomes a LaTeX paper in a new folder, with Git and the memory scaffold set up as for any new paper. The Word file itself is not changed."}</p>
             <dl className="word-carry">
               <dt>Comes across</dt>
               <dd>Title, authors and abstract; headings, text, lists, footnotes and links; tables, equations and images; citations inserted with Zotero, Mendeley or EndNote, with their references in <code>refs.bib</code>.</dd>
@@ -109,7 +113,7 @@ export function WordImportSheet({ onClose, chooseFolder, onImported, onSetup, au
           ) : (
             <>
               <button className="btn" onClick={onClose} disabled={!!busy}>Cancel</button>
-              <button className="btn primary" onClick={() => void choose()} disabled={!pandoc || !!busy} autoFocus>{busy ? "Converting…" : "Choose Document…"}</button>
+              <button className="btn primary" onClick={() => void choose()} disabled={!pandoc || !!busy} autoFocus>{busy ? "Converting…" : convert ? "Choose Folder…" : "Choose Document…"}</button>
             </>
           )}
         </footer>

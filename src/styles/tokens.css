@@ -11,6 +11,9 @@
   --paper-2: #f3f1ec;
   --chrome: rgba(243, 241, 236, 0.86);
   --raised: #ffffff;
+  /* A document page (Word view, print): white paper and black type in both themes, as printed. */
+  --page: #ffffff;
+  --page-ink: #000000;
   --line: #ddd9d0;
   --line-strong: #c4c0b6;
 
@@ -34,6 +37,15 @@
   /* The effort slider: its travelled fill and the knob, which stays light in both themes so it reads on the fill. */
   --effort-fill: color-mix(in srgb, var(--accent) 55%, var(--paper-2));
   --effort-knob: #ffffff;
+
+  /* The same surfaces, ink and accent as bare HSL channels, for the Word editor's controls (they write hsl(var(--x))). */
+  --hsl-raised: 0 0% 100%;
+  --hsl-paper-2: 42.9 22.6% 93.9%;
+  --hsl-ink: 222.9 10.8% 12.7%;
+  --hsl-ink-3: 226.2 5.9% 42.9%;
+  --hsl-line: 41.5 16% 84.1%;
+  --hsl-accent: 2.4 57.7% 41.8%;
+  --hsl-accent-ink: 0 0% 100%;
 
   --ok: #2f6b3a;
   --ok-wash: #e3efe4;
@@ -103,6 +115,14 @@
     --selection: rgba(224, 106, 99, 0.24);
     --effort-knob: #ebe9e2;
 
+    --hsl-raised: 230 7.3% 16.1%;
+    --hsl-paper-2: 228 7.2% 13.5%;
+    --hsl-ink: 46.7 18.4% 90.4%;
+    --hsl-ink-3: 228 4.7% 58%;
+    --hsl-line: 225 7.1% 22%;
+    --hsl-accent: 3.4 66.8% 63.3%;
+    --hsl-accent-ink: 225 7.1% 11%;
+
     --ok: #7dc48a;
     --ok-wash: #22301f;
     --warn: #d9b35a;
@@ -139,6 +159,14 @@
   --accent-ink: #1a1b1e;
   --accent-wash: #3a2624;
   --selection: rgba(224, 106, 99, 0.24);
+
+  --hsl-raised: 230 7.3% 16.1%;
+  --hsl-paper-2: 228 7.2% 13.5%;
+  --hsl-ink: 46.7 18.4% 90.4%;
+  --hsl-ink-3: 228 4.7% 58%;
+  --hsl-line: 225 7.1% 22%;
+  --hsl-accent: 3.4 66.8% 63.3%;
+  --hsl-accent-ink: 225 7.1% 11%;
 
   --ok: #7dc48a;
   --ok-wash: #22301f;
