@@ -1,16 +1,17 @@
 // The Word view: one page-layout editor for a .docx, in place of Visual, Source and PDF. The engine is
-// eigenpal's docx-editor (Apache-2.0: @eigenpal/docx-editor-react and -core 1.9.0, the last release before
-// review features moved to a proprietary package). It lays pages out as Word does, keeps what it does not
-// understand, and saves by patching only the paragraphs that changed.
+// docx-editor on its free line (Apache-2.0: @heyirisai/docx-editor-react and -core 1.12.0, the community
+// continuation of eigenpal's 1.9.0, which is the last release before the upstream 2.x line moved comments and
+// tracked changes into a paid package). It lays pages out as Word does, keeps what it does not understand, and
+// saves by patching only the paragraphs that changed.
 //
 // Saving follows the editor invariants in AGENTS.md: each document gets its own `WordDocument`, keyed by path,
 // whose path never changes, so its save can only ever write that document's bytes to that path. The app
 // flushes the open document before switching files, and before a run, a restore or a close.
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { DocxEditor, type DocxEditorRef } from "@eigenpal/docx-editor-react";
-import { collectHeadings } from "@eigenpal/docx-editor-core/utils/headingCollector";
-import { renderAllPagesNow } from "@eigenpal/docx-editor-core/layout-painter";
-import editorCss from "@eigenpal/docx-editor-react/styles.css?inline";
+import { DocxEditor, type DocxEditorRef } from "@heyirisai/docx-editor-react";
+import { collectHeadings } from "@heyirisai/docx-editor-core/utils/headingCollector";
+import { renderAllPagesNow } from "@heyirisai/docx-editor-core/layout-painter";
+import editorCss from "@heyirisai/docx-editor-react/styles.css?inline";
 import { printWindow, readBinary, revealPath, writeBinary } from "../lib/backend";
 import { repaired, withParagraphIds } from "../lib/word-package";
 import { countWords, looksLikeDocx, markupWidth, pagePixels, wordOutline, wordScale, type WordMode, type WordOutlineRow, type WordZoom } from "../lib/word";

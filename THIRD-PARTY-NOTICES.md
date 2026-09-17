@@ -8,7 +8,7 @@ Dabir is licensed under the AGPL-3.0 (see LICENSE). It bundles or depends on the
 - **PDF.js**: Apache License 2.0, copyright Mozilla Foundation.
 - **KaTeX**: MIT licence, copyright Khan Academy.
 - **CodeMirror 6**: MIT licence, copyright Marijn Haverbeke and contributors.
-- **docx-editor** (the Word view's engine: `@eigenpal/docx-editor-react`, `-core`, `-i18n` and `-agents` 1.9.0): Apache License 2.0, copyright EigenPal. https://github.com/eigenpal/docx-editor. The project's later `@docx-editor.dev/pro` and `@docx-editor.dev/editor-api` packages are under the proprietary EigenPal Pro licence; Dabir does not use them.
+- **docx-editor** (the Word view's engine: `@heyirisai/docx-editor-react`, `-core`, `-i18n` and `-agents` 1.12.0): Apache License 2.0, copyright EigenPal and the docx-editor contributors. https://github.com/heyirisai/docx-editor — the community continuation of eigenpal's Apache-2.0 1.9.0, with every package in that repository under the same licence. The original project's later `@docx-editor.dev/pro` and `@docx-editor.dev/editor-api` packages are under the proprietary EigenPal Pro licence; Dabir does not use them and does not follow that line.
 - **ProseMirror** (under the Word view): MIT licence, copyright Marijn Haverbeke and contributors.
 - **JSZip**: MIT or GPL-3.0-or-later, used under MIT. **pako**: MIT and Zlib. **sax** (read by xml-js inside the Word view): Blue Oak Model License 1.0.0, a permissive licence.
 - **codemirror-lang-latex**: AGPL-3.0-or-later. This package is the reason Dabir cannot be relicensed more permissively without replacing it.
@@ -38,16 +38,16 @@ Dabir is licensed under the AGPL-3.0 (see LICENSE). It bundles or depends on the
 | @codemirror/search | 6.7.2 | MIT |
 | @codemirror/state | 6.7.4 | MIT |
 | @codemirror/view | 6.43.11 | MIT |
-| @eigenpal/docx-editor-agents | 1.9.0 | Apache-2.0 |
-| @eigenpal/docx-editor-core | 1.9.0 | Apache-2.0 |
-| @eigenpal/docx-editor-i18n | 1.9.0 | Apache-2.0 |
-| @eigenpal/docx-editor-react | 1.9.0 | Apache-2.0 |
 | @floating-ui/core | 1.8.0 | MIT |
 | @floating-ui/dom | 1.8.0 | MIT |
 | @floating-ui/react-dom | 2.1.9 | MIT |
 | @floating-ui/utils | 0.2.12 | MIT |
 | @fontsource/ibm-plex-mono | 5.3.0 | OFL-1.1 |
 | @fontsource/stix-two-text | 5.3.0 | OFL-1.1 |
+| @heyirisai/docx-editor-agents | 1.12.0 | Apache-2.0 |
+| @heyirisai/docx-editor-core | 1.12.0 | Apache-2.0 |
+| @heyirisai/docx-editor-i18n | 1.12.0 | Apache-2.0 |
+| @heyirisai/docx-editor-react | 1.12.0 | Apache-2.0 |
 | @lezer/common | 1.5.2 | MIT |
 | @lezer/cpp | 1.1.6 | MIT |
 | @lezer/css | 1.3.6 | MIT |
