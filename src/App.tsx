@@ -1378,7 +1378,7 @@ export default function App() {
       <Document project={project} onSetup={(f) => openSetup(f ?? null)} file={file} source={source} bib={bib} paperWords={paperWordsNow} openFiles={openFiles} dirty={dirty} onCloseFile={closeFile} headText={headText} code={codeState} mode={mode} jumpLine={jumpLine} jumpStamp={jumpStamp}
         compileState={compileState} progress={progress} showLog={showLog} onToggleLog={() => setShowLog((v) => !v)} terminal={terminal} onToggleTerminal={toggleTerminal} findRequest={findRequest}
         error={error ?? note} onDismissError={() => { setError(null); setNote(null); }} pdfTarget={pdfTarget}
-        onOpen={open} onImport={importFromOverleaf} onClone={() => setSheet("clone")} onNew={openNew} onTour={startTour} onJoin={() => setSheet("share")} hostAway={hostAway} onOutline={setOutline}
+        onOpen={open} onOpenWord={() => void openWordFile()} onImport={importFromOverleaf} onClone={() => setSheet("clone")} onNew={openNew} onTour={startTour} onJoin={() => setSheet("share")} hostAway={hostAway} onOutline={setOutline}
         onSourceChange={onSourceChange} onSave={save} onCursorLine={onCursor} onSelectFile={selectFile} onJump={jumpTo} onPdfClick={onPdfClick}
         compileOnSave={compileOnSave} onToggleCompileOnSave={toggleCompileOnSave}
         agentReady={agentReady} onJumpFile={jumpToFile} onFix={fixWithAgent}

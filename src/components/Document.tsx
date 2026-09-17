@@ -118,6 +118,8 @@ interface Props {
   terminal: { open: boolean; focusStamp: number; run?: { command: string; stamp: number } | null };
   onToggleTerminal: () => void;
   onOpen: () => void;
+  /** File › Open Word Document…, offered on the welcome screen too. */
+  onOpenWord: () => void;
   onImport: () => void;
   onClone: () => void;
   onNew: (template?: string) => void;
@@ -333,6 +335,12 @@ export function Document(p: Props) {
               <button className="btn" onClick={p.onImport} title="Unpack an Overleaf source zip into a folder"><Upload /> Import from Overleaf…</button>
               <button className="btn" onClick={p.onClone}><GitBranch /> Clone from GitHub…</button>
               <button className="btn" onClick={p.onJoin} title="Paste a coauthor's link or invite code; their paper is mirrored here"><Radio /> Join a Live Session…</button>
+            </div>
+            {/* The way in for a researcher whose paper is a .docx. One quiet line rather than a sixth
+                button: the row above is already at the number of choices this screen can carry, and
+                Open Folder… has to stay the obvious one. */}
+            <div className="word-offer">
+              Writing in Word? <button className="link" onClick={p.onOpenWord} title={chord("Open a .docx and edit it as it is (⌥⌘O)")}>Open a Word Document…</button>
             </div>
             <div className="tour-offer">
               <div className="tour-offer-text">

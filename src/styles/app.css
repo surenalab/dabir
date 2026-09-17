@@ -407,6 +407,10 @@ button { background: none; border: 0; padding: 0; cursor: default; }
 .btn svg { width: 15px; height: 15px; stroke-width: 1.75; }
 .doc-empty .hint { font-size: var(--text-sm); color: var(--ink-3); margin-top: var(--space-4); }
 .doc-empty code { font-family: var(--font-mono); font-size: .92em; background: var(--paper-2); padding: 1px 5px; border-radius: 3px; }
+/* The Word way in: one line under the buttons, so the row above keeps the hierarchy it has. */
+.word-offer { font-size: var(--text-sm); color: var(--ink-3); margin-top: var(--space-3); }
+.word-offer .link { border: 0; background: none; padding: 0; font: inherit; color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.word-offer .link:hover { color: var(--accent-hover); }
 
 /* Errors from the backend, non-modal */
 .banner { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-2) var(--space-4); background: var(--warn-wash); color: var(--ink); border-bottom: 1px solid var(--line); font-size: var(--text-sm); }
@@ -1275,6 +1279,7 @@ input[type="range"] { accent-color: var(--accent); width: 140px; }
 .doc-empty .card > :nth-child(3) { animation-delay: 90ms; }
 .doc-empty .card > :nth-child(4) { animation-delay: 150ms; }
 .doc-empty .card > :nth-child(5) { animation-delay: 200ms; }
+.doc-empty .card > :nth-child(6) { animation-delay: 245ms; }
 @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 .tour-offer { display: flex; align-items: center; gap: var(--space-4); margin-top: var(--space-5); padding: var(--space-3) var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--paper-2); text-align: left; }
 .tour-offer-text { font-size: var(--text-sm); color: var(--ink-2); line-height: 1.5; }
