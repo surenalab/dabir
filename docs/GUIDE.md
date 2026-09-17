@@ -28,6 +28,7 @@ A Dabir project is a folder with a `.tex` (or `.typ`) file in it. No import, no 
 - **Open Folder…** (⌘O) opens any folder in place. Dabir finds the main file (the one with `\documentclass`), reads the bibliography and the figures, and shows the Git state if the folder is a repository. If it is not, the sidebar offers to initialise one.
 - **New Paper…** (⌘N) starts from a venue's official kit, fetched from the venue itself: NeurIPS, ICML, ICLR, CVPR, ICCV and ECCV, ACL, TMLR, SIAM, Springer Nature, Nature Portfolio, BMC, PLOS, Frontiers; or from starters for IEEE, ACM, SIGGRAPH, Elsevier, LNCS, AMS, APS and JMLR; or in Typst. Choose the folder in the save panel that follows. Each new paper is a Git repository with its first commit made.
 - **Import from Overleaf…** unpacks the zip Overleaf exports (Menu › Download › Source) into a folder. To keep working with Overleaf afterwards, see §12.
+- **Import Word Document…** (File menu, or *From Word Document…* at the foot of New Paper) turns a .docx a coauthor sent into a new LaTeX paper through pandoc, which Setup installs. Choose the document, then the folder in the save panel; the paper opens with Git and the memory scaffold set up as for any new paper, and the Word file is not changed. `main.tex` uses the plain article layout with only the packages the text needs. The title, authors and abstract, headings, emphasis, lists, footnotes, links, tables (as booktabs tables), equations (`$…$` in the text, numbered `equation`s on their own line) and pictures come across; pictures go to `figures/` at the width they had on the Word page. Citations inserted with Zotero, Mendeley or EndNote become `\cite` commands with their entries in `refs.bib`; citations typed as text stay text. Page layout, fonts and colours stay in Word, comments are left out, and tracked changes are accepted as they stand. The sheet then lists what to check against the Word file. A picture LaTeX cannot place (EMF, WMF, TIFF, SVG) is replaced by a framed note naming the file to save as PDF or PNG.
 - **Clone from GitHub…** (⇧⌘O) clones a repository with a paper in it.
 
 Dabir remembers the last paper and reopens it at launch. The sidebar lists the folder's files; click one to open it, and the files opened in a session become tabs above the editor (⇧⌘] and ⇧⌘[ cycle through them, × closes, a dot marks unsaved edits).
@@ -165,6 +166,7 @@ Nothing here is Dabir's own format: `git log` shows the same history, and any Gi
 - **GitHub collaborators**: the People tab lists who has access to the paper's GitHub repository and, if you are an admin, invites or removes them. Auth is your `gh` login (the same CLI that opens pull requests). Roles come from GitHub; Dabir has no accounts of its own.
 - **Overleaf**: name the project's Git bridge once, then pull and push from Share while coauthors keep using Overleaf.
 - **Export** (⌥⌘E): the PDF, the sources arXiv needs, a zip for Overleaf or a submission system, or Word and HTML through pandoc.
+- **Word coauthors**: export to Word, and when a .docx comes back, File › Import Word Document… (§3) makes it a new paper to compare with yours. Its tracked changes are accepted on the way in; they do not yet arrive as suggestions.
 
 ## 13. Settings and shortcuts
 
@@ -173,6 +175,7 @@ Settings (⌘,) hold every switch: autosave and format on save, compile on save,
 ## 14. When something goes wrong
 
 - **The compile fails at once**: Tectonic must be installed (`brew install tectonic`); `DABIR_TECTONIC` points Dabir at a binary elsewhere. The full log is under ⇧⌘L.
+- **Word import or export says pandoc is missing**: Help › Set Up Dabir installs it. An older pandoc brings Zotero, Mendeley and EndNote citations in as plain text, and the import sheet says so.
 - **The agent is not listed**: its command-line tool must be on your PATH when Dabir starts; the Agent menu in the inspector shows what was found.
 - **A language server is not used**: Settings › Code files lists the servers Dabir looked for and the install command of each.
 - **Something looks wrong on screen**: script errors are written to `~/Library/Logs/com.surenalab.dabir/ui.log` (or the platform's log folder). Attach it to an issue.

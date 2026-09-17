@@ -4,6 +4,8 @@ Newest first. Every merged pull request adds a line under Unreleased; a release 
 
 ## Unreleased
 
+- Import a Word document (File › Import Word Document…, or From Word Document… in New Paper): pandoc turns the .docx into a new LaTeX paper with `main.tex` on the plain article layout, only the packages it uses, the pictures in `figures/`, booktabs tables, `$…$` and `equation` maths, and `\cite` with a `refs.bib` for Zotero, Mendeley and EndNote citations; the folder is set up as New Paper sets one up. Comments are left out and tracked changes accepted, and the sheet lists what to check. `import::revisions` reads the tracked changes and comments for the Word round trip to come; nothing calls it yet. The Setup row for pandoc now names the import too.
+
 ## 0.1.10
 
 - Jump and Follow to a coauthor leave PDF-only view so the caret is on screen, including when the editor was unmounted. Follow no longer re-scrolls when they have not moved. Removing a GitHub collaborator asks first. The People list no longer waits on `gh` on the UI thread, and a lookup failure is shown instead of spinning forever.

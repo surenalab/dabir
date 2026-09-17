@@ -129,11 +129,11 @@ export function SetupSheet({ firstRun, onClose, focus }: Props) {
                 : <>Only for Typst papers. Dabir can download the compiler ({status.typstSizeMb} MB, from Typst's own release) and keep it inside the app.</>}
               progress={typst.running ? typst : null}
               action={status && !status.typst.path && !typst.running ? <button className="btn" onClick={() => start("typst")}>{typst.done && !typst.ok ? "Try again" : "Download Typst"}</button> : null} />
-            <Row id="pandoc" small state={!status ? "wait" : status.pandoc ? "ok" : "todo"} title="Word and HTML export"
+            <Row id="pandoc" small state={!status ? "wait" : status.pandoc ? "ok" : "todo"} title="Word and HTML"
               detail={!status ? "Checking…"
                 : status.pandoc ? <>Ready. <code>pandoc</code> at <code>{status.pandoc}</code>.</>
-                : status.pandocInstall ? <>Only for File › Export to Word or HTML. Installs <code>pandoc</code> with <code>{status.pandocInstall}</code>, shown as it runs.</>
-                : <>Only for File › Export to Word or HTML. Install <code>pandoc</code> from <a href="https://pandoc.org/installing.html" target="_blank" rel="noreferrer">pandoc.org</a>, then check again.</>}
+                : status.pandocInstall ? <>Only for File › Import Word Document and for exporting to Word or HTML. Installs <code>pandoc</code> with <code>{status.pandocInstall}</code>, shown as it runs.</>
+                : <>Only for File › Import Word Document and for exporting to Word or HTML. Install <code>pandoc</code> from <a href="https://pandoc.org/installing.html" target="_blank" rel="noreferrer">pandoc.org</a>, then check again.</>}
               action={status && !status.pandoc && status.pandocInstall ? <button className="btn small" onClick={() => runInShell(status.pandocInstall!, "the pandoc installer")}>Install pandoc</button> : null} />
           </section>
 

@@ -8,6 +8,7 @@ mod agents;
 mod export;
 mod git;
 mod github;
+mod import;
 mod lsp;
 mod memory;
 mod paper;
@@ -1042,14 +1043,7 @@ fn new_paper(
     template: String,
 ) -> Result<String, String> {
     let dir = templates_dir(&app).ok_or("Templates are missing from this build")?;
-    let safe = name.trim().replace(
-        |c: char| !(c.is_alphanumeric() || c == '-' || c == '_'),
-        "-",
-    );
-    if safe.is_empty() {
-        return Err("Give the paper a folder name".into());
-    }
-    let dest = PathBuf::from(&parent).join(&safe);
+    let dest = PathBuf::from(&parent).join(paper_folder_name(&name)?);
     if dest.exists() {
         return Err(format!("{} already exists", dest.display()));
     }
@@ -1068,6 +1062,26 @@ fn new_paper(
         let _ = fs::remove_dir_all(&dest);
         return Err(e);
     }
+    progress("Initialising Git and the memory scaffold…");
+    scaffold_paper(&dest, "New paper from Dabir template")?;
+    Ok(dest.to_string_lossy().to_string())
+}
+
+/// The folder name typed in the save panel, with anything but letters, digits, `-` and `_` as `-`.
+fn paper_folder_name(name: &str) -> Result<String, String> {
+    let safe = name.trim().replace(
+        |c: char| !(c.is_alphanumeric() || c == '-' || c == '_'),
+        "-",
+    );
+    if safe.is_empty() {
+        return Err("Give the paper a folder name".into());
+    }
+    Ok(safe)
+}
+
+/// What a new paper gets once its files are in place, whether from a template or a Word document:
+/// the usual folders, a .gitignore, a Git repository with a first commit, and the memory scaffold.
+fn scaffold_paper(dest: &Path, message: &str) -> Result<(), String> {
     for d in ["figures", "code", "tables"] {
         let _ = fs::create_dir_all(dest.join(d));
     }
@@ -1078,12 +1092,26 @@ fn new_paper(
             ".dabir/build/\n.dabir/index/\n.dabir/worktrees/\n*.aux\n*.log\n*.bbl\n*.blg\n*.out\n*.synctex.gz\n",
         );
     }
-    progress("Initialising Git and the memory scaffold…");
-    git::init(&dest)?;
-    let main = find_main_tex(&dest);
-    memory::setup(&dest, main.as_deref())?;
-    git::commit(&dest, "New paper from Dabir template", None)?;
-    Ok(dest.to_string_lossy().to_string())
+    git::init(dest)?;
+    let main = find_main_tex(dest);
+    memory::setup(dest, main.as_deref())?;
+    git::commit(dest, message, None)?;
+    Ok(())
+}
+
+/// A new paper from a Word document: pandoc converts it into `main.tex`, `figures/` and, for
+/// reference-manager citations, `refs.bib` in `parent/name` (new or empty), then the folder is set up
+/// as New Paper sets one up. The report says what was converted and what to check.
+#[tauri::command]
+async fn import_word(docx: String, parent: String, name: String) -> Result<import::Report, String> {
+    let dest = PathBuf::from(&parent).join(paper_folder_name(&name)?);
+    tauri::async_runtime::spawn_blocking(move || {
+        let report = import::docx_to_latex(Path::new(&docx), &dest)?;
+        scaffold_paper(&dest, &format!("New paper from {}", report.source))?;
+        Ok(report)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -2367,6 +2395,7 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
                 .build(app)?,
         )
         .item(&MenuItemBuilder::with_id("import-overleaf", "Import from Overleaf…").build(app)?)
+        .item(&MenuItemBuilder::with_id("import-word", "Import Word Document…").build(app)?)
         .item(
             &MenuItemBuilder::with_id("clone", "Clone from GitHub…")
                 .accelerator("CmdOrCtrl+Shift+O")
@@ -2738,6 +2767,7 @@ pub fn run() {
             export_tools,
             export_paper,
             new_paper,
+            import_word,
             open_sample,
             bib_import_file,
             zotero_import,

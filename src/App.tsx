@@ -9,6 +9,7 @@ import { ShortcutSheet } from "./components/ShortcutSheet";
 import { CloneSheet } from "./components/CloneSheet";
 import { ShareSheet, type LiveState } from "./components/ShareSheet";
 import { NewPaperSheet } from "./components/NewPaperSheet";
+import { WordImportSheet } from "./components/WordImportSheet";
 import { ExportSheet } from "./components/ExportSheet";
 import { ReferencesSheet } from "./components/ReferencesSheet";
 import { useRefSync } from "./lib/refsync";
@@ -29,7 +30,7 @@ import { proseWords } from "./lib/spell";
 import {
   agentComplete, checkForUpdates, projectSnapshot, sessionMaterialize, checkpoint, checkpoints, checkpointRestore, checkpointUndo, gitDiscard, type Checkpoint, newPaper, compile as runCompile, compileCancel, gitClone, gitPull, gitPush, gitRemoteAdd, gitRemoteUrl, isMac, onCompileProgress, relayStart, relayStop, gitCommit, gitInit, gitStatus, importOverleaf, native, onMenu, onWindowFocus,
   openProject, pickFolder, pickNewPaperPath, readText, setWindowTitle, synctexForward, synctexInverse, writeText, openSample, openGuide, onDeepLink,
-  type CompileResult, type GitStatus, type PdfPos, type Project, type Focus, paperMap, type PaperMap, gitHeadText } from "./lib/backend";
+  type CompileResult, type GitStatus, type PdfPos, type Project, type Focus, paperMap, type PaperMap, gitHeadText, type WordImport } from "./lib/backend";
 import { runRecipe, replCommand, formattersFor, formatText } from "./lib/code-tools";
 import { serversFor } from "./lib/lsp";
 import { fileKind } from "./lib/languages";
@@ -101,7 +102,7 @@ export default function App() {
   const [focused, setFocused] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  const [sheet, setSheet] = useState<"shortcuts" | "clone" | "share" | "new" | "settings" | "export" | "refs" | "setup" | null>(null);
+  const [sheet, setSheet] = useState<"shortcuts" | "clone" | "share" | "new" | "word" | "settings" | "export" | "refs" | "setup" | null>(null);
   // A dabir://join link, clicked in Mail or a chat: the Share sheet opens on it and joins when the name is known.
   const [pendingLink, setPendingLink] = useState<string | null>(null);
   // Setup opens by itself on the first launch (skippable), and from Help › Set Up Dabir, Settings, or the place
@@ -132,6 +133,9 @@ export default function App() {
   const [tour, setTour] = useState<number | null>(null);
   const [tabRequest, setTabRequest] = useState<{ tab: InspectorTab; stamp: number } | null>(null);
   const openNew = useCallback((template?: string) => { setNewTemplate(template ?? null); setSheet("new"); }, []);
+  // Word import opens the file panel at once from File › Import Word Document… and from New Paper.
+  const [wordPick, setWordPick] = useState(false);
+  const openWordImport = useCallback((pick: boolean) => { setWordPick(pick); setSheet("word"); }, []);
   const settings = useSettings();
   const [grammar, setGrammar] = useState<GrammarMatch[]>([]);
   const [localComments, setLocalComments] = useState<Comment[]>([]);
@@ -316,20 +320,29 @@ export default function App() {
     try { const folder = await importOverleaf(); if (folder) await openFolder(folder); } catch (e) { setError(String(e)); }
   }, [openFolder]);
 
-  // The save panel names and places the folder in one step; false means the author cancelled.
-  const createPaper = useCallback(async (template: string, suggested: string): Promise<boolean> => {
+  // The save panel names and places the folder in one step; null means the author cancelled.
+  const chooseNewPaperFolder = useCallback(async (suggested: string): Promise<{ parent: string; name: string } | null> => {
     const last = localStorage.getItem("dabir.papersDir");
     const path = await pickNewPaperPath(last ? `${last}/${suggested}` : suggested);
-    if (!path) return false;
+    if (!path) return null;
     const cut = path.replace(/[\\/]+$/, "").lastIndexOf(path.includes("\\") && !path.includes("/") ? "\\" : "/");
     const parent = path.slice(0, cut);
     const name = path.slice(cut + 1);
     if (!parent || !name) throw new Error("Choose a folder name inside a location.");
-    const dest = await newPaper(parent, name, template);
-    localStorage.setItem("dabir.papersDir", parent);
+    return { parent, name };
+  }, []);
+  const createPaper = useCallback(async (template: string, suggested: string): Promise<boolean> => {
+    const folder = await chooseNewPaperFolder(suggested);
+    if (!folder) return false;
+    const dest = await newPaper(folder.parent, folder.name, template);
+    localStorage.setItem("dabir.papersDir", folder.parent);
     await openFolder(dest);
     setNote("New paper created with Git and memory set up.");
     return true;
+  }, [openFolder, chooseNewPaperFolder]);
+  const openImportedPaper = useCallback(async (r: WordImport, parent: string) => {
+    localStorage.setItem("dabir.papersDir", parent);
+    await openFolder(r.path);
   }, [openFolder]);
   // Reference sync runs while the paper is open; when entries land, say so and reload the bibliography.
   const onRefsChanged = useCallback((summary: string) => { setNote(summary); reloadProject(); }, [reloadProject]);
@@ -938,6 +951,7 @@ export default function App() {
       case "close-paper": if (project) closePaper(); break;
       case "new": setSheet("new"); break;
       case "import-overleaf": importFromOverleaf(); break;
+      case "import-word": openWordImport(true); break;
       case "clone": setSheet("clone"); break;
       case "share": setSheet("share"); break;
       case "export": setSheet("export"); break;
@@ -995,7 +1009,7 @@ export default function App() {
         checkForUpdates(async (v, notes) => window.confirm(`Dabir ${v} is available.\n\n${notes}\n\nDownload and restart now?`)).then(setNote).catch((e) => setNote(String(e)));
         break;
     }
-  }, [open, startTour, openSetup, closePaper, importFromOverleaf, save, compile, showInPdf, toggleNav, toggleInspector, toggleTerminal, openFindPaper, toggleFocusMode, inspectorOpen, navOpen, runGrammar, mode, cycleFile, closeFile, file, project, runFile, runSelection, openRepl, formatDocument, settings.formatOnSave]);
+  }, [open, startTour, openSetup, closePaper, importFromOverleaf, openWordImport, save, compile, showInPdf, toggleNav, toggleInspector, toggleTerminal, openFindPaper, toggleFocusMode, inspectorOpen, navOpen, runGrammar, mode, cycleFile, closeFile, file, project, runFile, runSelection, openRepl, formatDocument, settings.formatOnSave]);
 
   useEffect(() => onMenu(command), [command]);
   useEffect(() => onCompileProgress((line) => setProgress(line.length > 90 ? line.slice(0, 87) + "…" : line)), []);
@@ -1237,7 +1251,8 @@ export default function App() {
       )}
       {sheet === "refs" && project && <ReferencesSheet project={project} sync={refSync} bibCount={Object.keys(bib).length} onClose={() => setSheet(null)} onChanged={onRefsChanged} agentReady={agentReady} onCheck={checkReferences} />}
       {sheet === "export" && project && <ExportSheet project={project} onClose={() => setSheet(null)} ensurePdf={ensurePdf} onNote={setNote} onSetup={() => openSetup("pandoc")} />}
-      {sheet === "new" && <NewPaperSheet onClose={() => setSheet(null)} onCreate={createPaper} initial={newTemplate} />}
+      {sheet === "new" && <NewPaperSheet onClose={() => setSheet(null)} onCreate={createPaper} onWord={() => openWordImport(true)} initial={newTemplate} />}
+      {sheet === "word" && <WordImportSheet autoPick={wordPick} onClose={() => setSheet(null)} chooseFolder={chooseNewPaperFolder} onImported={openImportedPaper} onSetup={() => openSetup("pandoc")} />}
       {sheet === "settings" && <SettingsSheet onClose={() => setSheet(null)} onSetup={() => openSetup()} />}
       {sheet === "setup" && <SetupSheet firstRun={firstRun} onClose={closeSetup} focus={setupFocus} />}
       {tour != null && <Tour steps={tourSteps} step={tour} onStep={setTour} onClose={() => setTour(null)} />}

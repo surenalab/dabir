@@ -20,8 +20,9 @@ function suggestedFolder(t: Template): string {
  * New Paper: a chooser in the manner of a document template picker. Groups on the left, the group's
  * templates in the middle, the chosen one explained on the right. Create opens the save panel, where
  * the folder is named and placed in one step; `onCreate` resolves false when that panel is cancelled.
+ * From Word Document… leaves the chooser for the Word import, which starts from a coauthor's .docx.
  */
-export function NewPaperSheet({ onClose, onCreate, initial }: { onClose: () => void; onCreate: (template: string, suggested: string) => Promise<boolean>; initial?: string | null }) {
+export function NewPaperSheet({ onClose, onCreate, onWord, initial }: { onClose: () => void; onCreate: (template: string, suggested: string) => Promise<boolean>; onWord: () => void; initial?: string | null }) {
   const [listing, setListing] = useState<TemplateListing | null>(null);
   const [group, setGroup] = useState<string>("featured");
   const [selected, setSelected] = useState<string | null>(initial ?? null);
@@ -123,6 +124,7 @@ export function NewPaperSheet({ onClose, onCreate, initial }: { onClose: () => v
           </aside>
         </div>
         <footer>
+          <button className="btn" onClick={onWord} disabled={!!busy} title="Start from a .docx a coauthor sent: it becomes a LaTeX paper">From Word Document…</button>
           {busy ? <span className="progress" role="status" aria-live="polite">{progress ?? "Working…"}</span> : error ? <span className="progress error" role="alert">{error}</span> : <span className="progress">Create… opens a save panel to name and place the paper's folder. Git and the memory scaffold are set up inside it.</span>}
           <button className="btn" onClick={onClose} disabled={!!busy}>Cancel</button>
           <button className="btn primary" onClick={go} disabled={!current || !!busy} autoFocus>{busy ? "Creating…" : "Create…"}</button>
