@@ -2692,12 +2692,10 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
                 .build(app)?,
         )
         .item(
+            // Alt everywhere: off the Mac, CmdOrCtrl+Shift+I is Format > Italic, and the web view's
+            // own table already reads Ctrl+Alt+I for the inspector.
             &MenuItemBuilder::with_id("toggle-inspector", "Show/Hide Inspector")
-                .accelerator(if cfg!(target_os = "macos") {
-                    "Alt+Cmd+I"
-                } else {
-                    "CmdOrCtrl+Shift+I"
-                })
+                .accelerator("Alt+CmdOrCtrl+I")
                 .build(app)?,
         )
         .separator()

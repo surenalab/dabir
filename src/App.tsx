@@ -1118,21 +1118,21 @@ export default function App() {
       if (e.shiftKey && !e.altKey && shifted[k]) { e.preventDefault(); command(shifted[k]); return; }
       if (e.shiftKey && (e.key === "]" || e.key === "}" || e.code === "BracketRight")) { e.preventDefault(); command("next-file"); return; }
       if (e.shiftKey && (e.key === "[" || e.key === "{" || e.code === "BracketLeft")) { e.preventDefault(); command("prev-file"); return; }
-      if (e.altKey && k === "c") { e.preventDefault(); command("commit"); return; }
+      if (e.altKey && !e.shiftKey && k === "c") { e.preventDefault(); command("commit"); return; }
       if (e.altKey && !e.shiftKey && (k === "n" || e.code === "KeyN")) { e.preventDefault(); command("new-word"); return; }
       if (e.altKey && !e.shiftKey && (k === "o" || e.code === "KeyO")) { e.preventDefault(); command("open-word"); return; }
       // The third of the Word chords. ⌥⌘I, the obvious one, is Show/Hide Inspector below, so Import
       // takes the Shift of it; Option+I on the Mac is a dead key, hence the e.code fallback.
       if (e.altKey && e.shiftKey && (k === "i" || e.code === "KeyI")) { e.preventDefault(); command("import-word"); return; }
-      if (e.altKey && (k === "e" || e.code === "KeyE")) { e.preventDefault(); command("export"); return; }
-      if (e.altKey && (k === "r" || e.code === "KeyR")) { e.preventDefault(); command("references"); return; }
+      if (e.altKey && !e.shiftKey && (k === "e" || e.code === "KeyE")) { e.preventDefault(); command("export"); return; }
+      if (e.altKey && !e.shiftKey && (k === "r" || e.code === "KeyR")) { e.preventDefault(); command("references"); return; }
       if (k === "=" || k === "+") { e.preventDefault(); command("zoom-in"); return; }
       if (k === "-") { e.preventDefault(); command("zoom-out"); return; }
       if (k === "0") { e.preventDefault(); command("zoom-fit"); return; }
       // ⌃⌘S on the Mac; Ctrl+Alt+S elsewhere, where Ctrl+Shift+S is Share.
       if (isMac ? (e.ctrlKey && k === "s") : (e.altKey && (k === "s" || e.code === "KeyS"))) { e.preventDefault(); command("toggle-sidebar"); return; }
-      if (e.altKey && (k === "i" || e.code === "KeyI")) { e.preventDefault(); command("toggle-inspector"); return; }
-      if (e.altKey && (k === "f" || e.code === "KeyF")) { e.preventDefault(); command("focus-mode"); return; }
+      if (e.altKey && !e.shiftKey && (k === "i" || e.code === "KeyI")) { e.preventDefault(); command("toggle-inspector"); return; }
+      if (e.altKey && !e.shiftKey && (k === "f" || e.code === "KeyF")) { e.preventDefault(); command("focus-mode"); return; }
       // Off the Mac the modifier is Ctrl itself, so only Alt and Shift rule a plain chord out; and in the
       // terminal a plain Ctrl chord is the shell's (Ctrl+B is the tmux prefix, Ctrl+F and Ctrl+S readline,
       // Ctrl+K kill-line), so it passes through there. The Shift and Alt chords above still work from it.
