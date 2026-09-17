@@ -10,7 +10,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { DocxEditor, type DocxEditorRef } from "@heyirisai/docx-editor-react";
 import { collectHeadings } from "@heyirisai/docx-editor-core/utils/headingCollector";
-import { renderAllPagesNow } from "@heyirisai/docx-editor-core/layout-painter";
+import { renderAllPagesForPrint } from "@heyirisai/docx-editor-core/layout-painter";
 import editorCss from "@heyirisai/docx-editor-react/styles.css?inline";
 import { printWindow, readBinary, revealPath, writeBinary } from "../lib/backend";
 import { repaired, withParagraphIds } from "../lib/word-package";
@@ -85,11 +85,14 @@ function useDark(): boolean {
   return dark;
 }
 
-/** Copy the laid-out pages into a print-only root and print them; the app's chrome is hidden by the print stylesheet. */
+/** Copy the laid-out pages into a print-only root and print them; the app's chrome is hidden by the print stylesheet.
+ *  The engine keeps pages nobody has scrolled to as empty shells, so the copy is taken only after
+ *  `renderAllPagesForPrint` has filled every page *and waited for its images to decode*: `renderAllPagesNow`
+ *  fills the shells but returns before the pictures are there, which printed a figure on page 8 as a blank. */
 async function printPages(host: HTMLElement | null): Promise<void> {
   const pages = host?.querySelector<HTMLElement>(".paged-editor__pages");
   if (!pages) throw new Error("The document is not laid out yet.");
-  renderAllPagesNow(pages);
+  const materialized = await renderAllPagesForPrint(pages);
   document.getElementById("word-print")?.remove();
   const root = document.createElement("div");
   root.id = "word-print";
@@ -101,7 +104,16 @@ async function printPages(host: HTMLElement | null): Promise<void> {
   document.body.appendChild(root);
   const html = document.documentElement;
   html.classList.add("printing-word");
-  const done = () => { html.classList.remove("printing-word"); root.remove(); };
+  // Once: the print panel's afterprint and a failed printWindow can both reach here, and the materialization
+  // is released exactly once so the pages go back to being virtualized.
+  let finished = false;
+  const done = () => {
+    if (finished) return;
+    finished = true;
+    html.classList.remove("printing-word");
+    root.remove();
+    materialized.release();
+  };
   window.addEventListener("afterprint", done, { once: true });
   try { await printWindow(); } catch (e) { done(); throw e; }
 }
@@ -294,7 +306,6 @@ const WordDocument = forwardRef<WordHandle, Props & { dark: boolean; onRetry: ()
           author={p.author}
           colorMode={p.dark ? "dark" : "light"}
           className="word-editor"
-          style={{ height: "100%" }}
           showFileOpen={false}
           showHelpMenu={false}
           showZoomControl={false}

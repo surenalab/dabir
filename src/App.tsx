@@ -891,8 +891,10 @@ export default function App() {
     if (!project) return;
     await gitRemoteAdd(project.root, "overleaf", url); setOverleafUrl(url); setNote("Overleaf remote saved.");
   }, [project]);
-  const pullOverleaf = useCallback(async () => { if (!project) return; setLiveBusy("pull"); try { setNote(await gitPull(project.root, "overleaf")); await reloadProject(); if (file && isWordPath(file)) setWordReload((n) => n + 1); else if (file) setSource(await readText(file)); } finally { setLiveBusy(null); } }, [project, file, reloadProject]);
-  const pushOverleaf = useCallback(async () => { if (!project) return; setLiveBusy("push"); try { setNote(await gitPush(project.root, "overleaf")); } finally { setLiveBusy(null); } }, [project]);
+  // A pull rewrites files under the open document, so the buffer goes to disk first (and a Word save in flight
+  // finishes) — otherwise the reload below shows the pulled bytes while the pending save writes the old ones back.
+  const pullOverleaf = useCallback(async () => { if (!project) return; try { await flushRef.current(); } catch (e) { setError(String(e)); return; } setLiveBusy("pull"); try { setNote(await gitPull(project.root, "overleaf")); await reloadProject(); if (file && isWordPath(file)) setWordReload((n) => n + 1); else if (file) setSource(await readText(file)); } finally { setLiveBusy(null); } }, [project, file, reloadProject]);
+  const pushOverleaf = useCallback(async () => { if (!project) return; try { await flushRef.current(); } catch (e) { setError(String(e)); return; } setLiveBusy("push"); try { setNote(await gitPush(project.root, "overleaf")); } finally { setLiveBusy(null); } }, [project]);
 
   const toggleNav = useCallback(() => { setAnimating(true); setNavOpen((v) => !v); }, []);
   const toggleInspector = useCallback(() => { setAnimating(true); autoCollapsed.current = false; setInspectorOpen((v) => !v); }, []);

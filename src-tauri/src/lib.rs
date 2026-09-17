@@ -1719,9 +1719,31 @@ fn paper_map(root: String) -> Result<paper::PaperMap, String> {
 }
 
 /// Start an agent run on a fresh worktree. Events stream on the `agent-event` channel.
+///
+/// Spawned rather than run on the main thread: adding the worktree seeds the working copy, and the preamble
+/// reads a Word paper's document and writes its Markdown copy under `.dabir/context/`, neither of which the
+/// window should wait on.
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
-fn agent_run(
+async fn agent_run(
+    app: AppHandle,
+    root: String,
+    provider: String,
+    prompt: String,
+    model: Option<String>,
+    effort: Option<String>,
+    follow_up: Option<FollowUp>,
+    focus: Option<Focus>,
+) -> Result<RunStarted, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        agent_run_blocking(app, root, provider, prompt, model, effort, follow_up, focus)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[allow(clippy::too_many_arguments)]
+fn agent_run_blocking(
     app: AppHandle,
     root: String,
     provider: String,

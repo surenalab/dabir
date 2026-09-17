@@ -1510,6 +1510,8 @@ input[type="range"] { accent-color: var(--accent); width: 140px; }
 /* The engine's own layers (z-index up to 50) stay inside the document column, under the title bar's menus. */
 .word-host { isolation: isolate; }
 .word-host > .ep-root { flex: 1; min-height: 0; }
+/* The engine measures its own root to lay the pages out, so it needs a height rather than only a flex share. */
+.word-host > .word-editor { height: 100%; }
 .word-loading { flex: 1; display: grid; place-items: center; font-size: var(--text-sm); color: var(--ink-3); }
 .word-view .ep-root, .word-view .ep-root.dark, .word-view .ep-root .ep-root, .word-view .ep-root.dark .ep-root {
   font-family: var(--font-ui);
