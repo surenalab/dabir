@@ -20,6 +20,7 @@ mod synctex;
 mod templates;
 mod terminal;
 mod texlog;
+mod word;
 
 use serde::Serialize;
 use std::fs;
@@ -49,6 +50,7 @@ pub enum EntryKind {
     Code,
     Figure,
     Data,
+    Word,
     Other,
 }
 
@@ -90,6 +92,7 @@ fn classify(path: &Path) -> EntryKind {
     {
         Some(ext) => match ext.as_str() {
             "tex" | "sty" | "cls" => EntryKind::Tex,
+            "docx" => EntryKind::Word,
             "bib" => EntryKind::Bib,
             "py" | "jl" | "r" | "m" | "rs" | "js" | "ts" | "sh" | "ipynb" => EntryKind::Code,
             "pdf" | "png" | "jpg" | "jpeg" | "svg" | "eps" => EntryKind::Figure,
@@ -117,7 +120,8 @@ fn walk(dir: &Path, depth: usize, budget: &mut usize) -> Vec<Entry> {
         }
         let path = e.path();
         let name = e.file_name().to_string_lossy().to_string();
-        if name.starts_with('.') || SKIP_DIRS.contains(&name.as_str()) {
+        // Word's lock file (`~$paper.docx`) exists only while Word has the document open.
+        if name.starts_with('.') || name.starts_with("~$") || SKIP_DIRS.contains(&name.as_str()) {
             continue;
         }
         *budget -= 1;
@@ -146,9 +150,16 @@ fn walk(dir: &Path, depth: usize, budget: &mut usize) -> Vec<Entry> {
     entries
 }
 
-/// Find the root document: main.tex, a .tex file containing \documentclass, or main.typ.
-/// The manuscript: main.tex or main.typ, else a .tex with \documentclass, in the folder or one level down.
+/// The manuscript: a Word document `dabir.toml` names; else main.tex or main.typ, else a .tex with
+/// \documentclass, in the folder or one level down; else a Word document in the folder (word::find_main).
 fn find_main_tex(root: &Path) -> Option<PathBuf> {
+    if let Some(p) = word::declared_main(root) {
+        return Some(p);
+    }
+    find_latex_main(root).or_else(|| word::find_main(root))
+}
+
+fn find_latex_main(root: &Path) -> Option<PathBuf> {
     fn in_dir(dir: &Path) -> Option<PathBuf> {
         let preferred = dir.join("main.tex");
         if preferred.exists() {
@@ -375,12 +386,17 @@ fn session_materialize(name: String, files: Vec<SnapFile>) -> Result<String, Str
     Ok(root.to_string_lossy().to_string())
 }
 
+/// Open a folder as a paper. `main` is the manuscript the author chose (a Word document opened on its own);
+/// it must be a file inside the folder, otherwise the folder's own manuscript is used.
 #[tauri::command]
-fn open_project(path: String) -> Result<Project, String> {
+fn open_project(path: String, main: Option<String>) -> Result<Project, String> {
     let root = PathBuf::from(&path);
     if !root.is_dir() {
         return Err(format!("{} is not a folder", path));
     }
+    let chosen = main
+        .map(PathBuf::from)
+        .filter(|m| m.is_file() && m.parent() == Some(root.as_path()));
     let name = root
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
@@ -390,7 +406,9 @@ fn open_project(path: String) -> Result<Project, String> {
     Ok(Project {
         root: root.to_string_lossy().to_string(),
         name,
-        main_tex: find_main_tex(&root).map(|p| p.to_string_lossy().to_string()),
+        main_tex: chosen
+            .or_else(|| find_main_tex(&root))
+            .map(|p| p.to_string_lossy().to_string()),
         has_git: git2::Repository::discover(&root).is_ok(),
         has_memory: root.join(".dabir").join("PROJECT.md").exists(),
         tree,
@@ -414,6 +432,45 @@ fn read_binary(path: String) -> Result<tauri::ipc::Response, String> {
     fs::read(&path)
         .map(tauri::ipc::Response::new)
         .map_err(|e| format!("Could not read {}: {}", path, e))
+}
+
+/// Replace a binary file (the Word view's saves). The bytes are the raw request body and the path travels
+/// percent-encoded in the `x-dabir-path` header, so a document is not sent as a JSON array of numbers.
+#[tauri::command]
+fn write_binary(request: tauri::ipc::Request<'_>) -> Result<(), String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("write_binary expects the file's bytes as the request body".into());
+    };
+    let path = request
+        .headers()
+        .get("x-dabir-path")
+        .and_then(|v| v.to_str().ok())
+        .ok_or("write_binary needs the x-dabir-path header")?;
+    let path = word::percent_decode(path)?;
+    word::write_atomic(Path::new(&path), bytes)
+}
+
+/// A Word document as Markdown, for Export › Markdown.
+#[tauri::command]
+async fn word_markdown(path: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        word::markdown_file(Path::new(&path), word::Options::default())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// The system print panel for the window (Export › PDF of a Word document: its PDF button saves the pages).
+#[tauri::command]
+fn print_window(window: tauri::WebviewWindow) -> Result<(), String> {
+    window.print().map_err(|e| e.to_string())
+}
+
+/// The name the author's tracked changes and comments carry in a Word document when Dabir has none on record:
+/// Git's `user.name` for the paper, or the global one.
+#[tauri::command]
+fn author_name(root: String) -> Option<String> {
+    git::author_name(Path::new(&root))
 }
 
 // ---------------------------------------------------------------- import
@@ -703,6 +760,9 @@ fn compile_cancel() -> bool {
 #[tauri::command]
 fn compile(app: AppHandle, main_tex: String) -> Result<CompileResult, String> {
     let main = PathBuf::from(&main_tex);
+    if word::is_docx(&main) {
+        return Err("A Word document has nothing to compile: it is already laid out as pages. Export › PDF prints it.".into());
+    }
     let root = main
         .parent()
         .ok_or("The main .tex file has no parent folder")?;
@@ -1631,6 +1691,9 @@ fn lsp_stop(servers: tauri::State<lsp::Shared>, id: u32) {
 fn paper_map(root: String) -> Result<paper::PaperMap, String> {
     let root = PathBuf::from(&root);
     let main = find_main_tex(&root).ok_or("no main file")?;
+    if word::is_docx(&main) {
+        return Err("a Word paper has no LaTeX map; its outline comes from the Word view".into());
+    }
     Ok(paper::build(&root, &main))
 }
 
@@ -1791,10 +1854,16 @@ pub struct Focus {
     /// The selected text, if any, cut to a few hundred characters by the caller.
     #[serde(default)]
     pub selection: Option<String>,
+    /// In a Word document, which has no lines: the paragraph the cursor is in.
+    #[serde(default)]
+    pub paragraph: Option<String>,
 }
 
 impl Focus {
     fn describe(&self, map: &paper::PaperMap) -> String {
+        if word::is_docx(Path::new(&self.file)) {
+            return self.describe_word();
+        }
         // The deepest heading at or above the cursor in the same file.
         let section = map
             .headings
@@ -1820,6 +1889,34 @@ impl Focus {
             _ => s.push_str(
                 " A request that says this, here or this paragraph refers to that place.",
             ),
+        }
+        s
+    }
+}
+
+impl Focus {
+    /// A Word document has paragraphs, not lines: the author's place is the paragraph and the selection.
+    fn describe_word(&self) -> String {
+        let cut = |t: &str| -> String {
+            let c: String = t.chars().take(600).collect();
+            if t.chars().count() > 600 {
+                format!("{}…", c)
+            } else {
+                c
+            }
+        };
+        let mut s = format!("The author has the Word document {} open.", self.file);
+        if let Some(p) = self.paragraph.as_deref().filter(|p| !p.trim().is_empty()) {
+            s.push_str(&format!(
+                " The cursor is in this paragraph; a request that says this paragraph or here means it:\n<<<\n{}\n>>>",
+                cut(p)
+            ));
+        }
+        if let Some(sel) = self.selection.as_deref().filter(|t| !t.trim().is_empty()) {
+            s.push_str(&format!(
+                " The author has this text selected; a request that says this or the selection means it:\n<<<\n{}\n>>>",
+                cut(sel)
+            ));
         }
         s
     }
@@ -1920,7 +2017,10 @@ pub fn request_mode(prompt: &str, focus: Option<&Focus>) -> RequestMode {
     });
     let focus_paper = focus.is_some_and(|f| {
         let ext = f.file.rsplit('.').next().unwrap_or("").to_lowercase();
-        matches!(ext.as_str(), "tex" | "typ" | "bib" | "sty" | "cls" | "md")
+        matches!(
+            ext.as_str(),
+            "tex" | "typ" | "bib" | "sty" | "cls" | "md" | "docx"
+        )
     });
     // "rerun" alone means both sides: the artefact and the numbers quoted from it.
     let rerun = l.contains("rerun") || l.contains("re-run") || l.contains("regenerate");
@@ -1952,11 +2052,22 @@ fn agent_preamble(
     focus: Option<&Focus>,
 ) -> String {
     let main_path = find_main_tex(root);
+    let word_paper = main_path.as_ref().is_some_and(|p| word::is_docx(p));
     let map = main_path
         .as_ref()
+        .filter(|_| !word_paper)
         .map(|m| paper::build(root, m))
         .unwrap_or_default();
-    let map_text = paper::render(&map, 5000);
+    let map_text = match main_path.as_ref().filter(|_| word_paper) {
+        // A Word paper's map is its headings.
+        Some(m) => word::summary(m)
+            .headings
+            .iter()
+            .map(|(l, t)| format!("{}{}", "  ".repeat((*l as usize).saturating_sub(1)), t))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        None => paper::render(&map, 5000),
+    };
     let main = main_path
         .and_then(|p| {
             p.strip_prefix(root)
@@ -1965,6 +2076,23 @@ fn agent_preamble(
         })
         .unwrap_or_else(|| "main.tex".into());
     let is_typst = main.ends_with(".typ");
+    // Word documents the run may need to read, as Markdown copies in the worktree: the manuscript and the open file.
+    let mut word_docs: Vec<String> = vec![];
+    if word_paper {
+        word_docs.push(main.clone());
+    }
+    if let Some(f) = focus.filter(|f| word::is_docx(Path::new(&f.file))) {
+        if !word_docs.contains(&f.file) {
+            word_docs.push(f.file.clone());
+        }
+    }
+    let word_copies: Vec<(String, Result<String, String>)> = word_docs
+        .into_iter()
+        .map(|d| {
+            let copy = word::write_context(cwd, &d);
+            (d, copy)
+        })
+        .collect();
     let brief = fs::read_to_string(root.join(".dabir").join("PROJECT.md")).ok();
     let mem = memory::read(root).ok();
     let prefix = mem.as_ref().and_then(|m| m.env_prefix.clone());
@@ -2068,16 +2196,27 @@ fn agent_preamble(
     let mut out = String::new();
     out.push_str(&format!(
         "You are a coauthor on a {} paper. You work in `{}`, a copy of the paper's folder in a Git worktree; your changes are reviewed hunk by hunk before they reach the author's checkout.\n",
-        if is_typst { "Typst" } else { "LaTeX" },
+        if word_paper { "Word" } else if is_typst { "Typst" } else { "LaTeX" },
         cwd.display()
     ));
     out.push_str("This folder is the whole task. Directories above it belong to other projects: do not read, search or edit anything outside it, and ignore instruction files (AGENTS.md, CLAUDE.md) found above it.\n\n");
+    if !word_copies.is_empty() {
+        out.push_str("Word documents\n");
+        for (doc, copy) in &word_copies {
+            match copy {
+                Ok(md) => out.push_str(&format!("- `{doc}` is a Word document. Read it through `{md}`, a Markdown copy made for this run (headings, text, lists, tables, footnotes, and the comments at the end; tracked insertions are in, deletions out). The copy is read-only: edits to it are not saved anywhere.\n")),
+                Err(e) => out.push_str(&format!("- `{doc}` is a Word document; no text copy could be made ({e}).\n")),
+            }
+        }
+        out.push_str("Never open, edit, rewrite, convert, rename or delete a .docx file, not even with a script: it is a binary package that Dabir's Word editor owns, and a changed .docx cannot be reviewed. When the request asks for new or changed wording in a Word document, do not apply it anywhere: put it in your reply, quoting the passage it replaces, so the author can make the change in the Word editor. Everything else in the folder (code, data, figures, notes) you change as usual.\n\n");
+    }
 
     // The request is either about the manuscript or about the code behind it. The agent gets told which,
     // so it does not compile the paper after a code fix or rewrite a script to change a sentence.
     let mode = request_mode(prompt, focus);
     match mode {
         RequestMode::Code => out.push_str("This request is about the code, not the manuscript. Work in the code files: run the script or its tests before and after the change (skills run-and-test, debug-failing-run, refactor-safely, notebook-to-script), and do not edit .tex, .typ or .bib files unless a figure, table or number the paper quotes changed because of your change; then update those from the new output and compile once.\n\n"),
+        RequestMode::Paper if word_paper => out.push_str("This request is about the manuscript, a Word document: read its Markdown copy and answer in your reply, with any new wording quoted there. Do not edit code, notebooks or generated artefacts unless the request asks for a rerun, in which case follow rerun-experiment and change the code that writes the artefact.\n\n"),
         RequestMode::Paper => out.push_str("This request is about the manuscript. Work in the .tex, .typ and .bib files; do not edit code, notebooks or generated artefacts unless the request asks for a rerun, in which case follow rerun-experiment and change the code that writes the artefact.\n\n"),
         RequestMode::Both => {}
     }
@@ -2092,7 +2231,9 @@ fn agent_preamble(
     if let Some(r) = memory::remote(root) {
         out.push_str(&format!("   The code runs on the host `{h}` in `{d}`, not here: run every experiment or artefact command as `ssh {h} 'cd {d} && <command>'` and copy results back with `scp {h}:{d}/<path> <path>`. The repository there is a clone of this one; push or pull before running if the code changed.\n", h = r.host, d = r.dir));
     }
-    if mode == RequestMode::Code {
+    if word_paper {
+        out.push_str("4. There is nothing to compile: the manuscript is a Word document. If you changed code, check it by running it (the recorded command, the tests or the script, with the env prefix if there is one). Do not install packages.\n");
+    } else if mode == RequestMode::Code {
         out.push_str("4. Check the code by running it: the recorded command, the project's tests, or the script itself, with the env prefix if there is one. Compile the paper only if you changed a manuscript file. Do not install packages, inspect PDFs or explore build folders.\n");
     } else if is_typst {
         out.push_str(&format!("4. If `typst` is on PATH, compile once at the end with `typst compile {main}` and fix what it reports. Do not install anything, inspect the PDF or explore the build folder: Dabir compiles and reviews the result.\n"));
@@ -2136,7 +2277,11 @@ fn agent_preamble(
     // bench can measure what they buy; the app never sets it.
     let bare = std::env::var("DABIR_BENCH_BARE").is_ok();
     if !bare && !map_text.trim().is_empty() {
-        out.push_str("\nPaper map\n");
+        out.push_str(if word_paper {
+            "\nDocument outline (the Word headings)\n"
+        } else {
+            "\nPaper map\n"
+        });
         out.push_str(&map_text);
     }
     if let Some(f) = focus.filter(|_| !bare) {
@@ -2394,6 +2539,24 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
                 .accelerator("CmdOrCtrl+O")
                 .build(app)?,
         )
+        .item(
+            &MenuItemBuilder::with_id("new-word", "New Word Document…")
+                .accelerator(if cfg!(target_os = "macos") {
+                    "Alt+Cmd+N"
+                } else {
+                    "CmdOrCtrl+Alt+N"
+                })
+                .build(app)?,
+        )
+        .item(
+            &MenuItemBuilder::with_id("open-word", "Open Word Document…")
+                .accelerator(if cfg!(target_os = "macos") {
+                    "Alt+Cmd+O"
+                } else {
+                    "CmdOrCtrl+Alt+O"
+                })
+                .build(app)?,
+        )
         .item(&MenuItemBuilder::with_id("import-overleaf", "Import from Overleaf…").build(app)?)
         .item(&MenuItemBuilder::with_id("import-word", "Import Word Document…").build(app)?)
         .item(
@@ -2427,6 +2590,7 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
                 })
                 .build(app)?,
         )
+        .item(&MenuItemBuilder::with_id("convert-latex", "Convert to LaTeX Paper…").build(app)?)
         .separator()
         .close_window()
         .build()?;
@@ -2768,6 +2932,10 @@ pub fn run() {
             export_paper,
             new_paper,
             import_word,
+            write_binary,
+            word_markdown,
+            print_window,
+            author_name,
             open_sample,
             bib_import_file,
             zotero_import,
@@ -2851,8 +3019,7 @@ mod tests {
         let at = |file: &str| Focus {
             file: file.into(),
             line: 1,
-            end_line: None,
-            selection: None,
+            ..Default::default()
         };
         assert_eq!(
             request_mode("Tighten the abstract to 150 words", None),
@@ -3290,6 +3457,7 @@ mod tests {
             line: 6,
             end_line: Some(6),
             selection: Some("Anchoring holds a margin.".into()),
+            paragraph: None,
         };
         let with = agent_preamble(&dir, &cwd, "shorten this", "shorten this", Some(&focus));
         assert!(with.contains("Where the author is"), "{with}");
@@ -3337,13 +3505,13 @@ mod tests {
             fs::write(dir.join(format!("f{i}.txt")), "x").unwrap();
         }
         fs::write(dir.join("paper/thesis.tex"), "\\documentclass{article}").unwrap();
-        let p = open_project(dir.to_string_lossy().to_string()).unwrap();
+        let p = open_project(dir.to_string_lossy().to_string(), None).unwrap();
         assert!(p.tree_truncated);
         assert!(p.tree.len() <= TREE_BUDGET);
         assert!(Path::new(&p.main_tex.unwrap()).ends_with(Path::new("paper").join("thesis.tex")));
         let empty = std::env::temp_dir().join(format!("dabir-empty-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&empty).unwrap();
-        let q = open_project(empty.to_string_lossy().to_string()).unwrap();
+        let q = open_project(empty.to_string_lossy().to_string(), None).unwrap();
         assert!(!q.tree_truncated && q.main_tex.is_none());
         let _ = fs::remove_dir_all(&dir);
         let _ = fs::remove_dir_all(&empty);
@@ -3478,6 +3646,151 @@ mod tests {
             r#"{"type":"turn.failed","error":{"message":"boom"}}"#,
         );
         assert_eq!(evs[0].1, "boom");
+    }
+
+    #[test]
+    fn a_word_paper_opens_on_its_document_and_reads_as_text() {
+        use word::fixture::document;
+        let dir = std::env::temp_dir().join(format!("dabir-wordpaper-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let doc = dir.join("manuscript.docx");
+        fs::write(
+            &doc,
+            document(&[
+                ("Title", "Willow buffers"),
+                ("", "Abstract"),
+                ("", "Buffers remove nitrate."),
+                ("Heading1", "Introduction"),
+                ("", "Grass strips remove less."),
+            ]),
+        )
+        .unwrap();
+        fs::write(dir.join("~$manuscript.docx"), b"lock").unwrap();
+        fs::write(dir.join("letter.docx"), document(&[("", "Dear editor")])).unwrap();
+        fs::write(
+            dir.join("dabir.toml"),
+            "[paper]\nmain = \"manuscript.docx\"\n",
+        )
+        .unwrap();
+        init_repo(&dir);
+        git::commit(&dir, "init", None).unwrap();
+
+        // The folder opens on its Word manuscript, lists it as one, and hides Word's lock file.
+        let p = open_project(dir.to_string_lossy().to_string(), None).unwrap();
+        assert!(p.main_tex.as_deref().unwrap().ends_with("manuscript.docx"));
+        assert!(p
+            .tree
+            .iter()
+            .any(|e| e.name == "manuscript.docx" && e.kind == EntryKind::Word));
+        assert!(!p.tree.iter().any(|e| e.name.starts_with("~$")));
+        // A document the author chose opens instead, but only from inside the folder.
+        let chosen = dir.join("letter.docx").to_string_lossy().to_string();
+        let p = open_project(dir.to_string_lossy().to_string(), Some(chosen.clone())).unwrap();
+        assert_eq!(p.main_tex.as_deref(), Some(chosen.as_str()));
+        let p = open_project(
+            dir.to_string_lossy().to_string(),
+            Some("/elsewhere/x.docx".into()),
+        )
+        .unwrap();
+        assert!(p.main_tex.as_deref().unwrap().ends_with("manuscript.docx"));
+        assert!(paper_map(dir.to_string_lossy().to_string()).is_err());
+
+        // A Word step in History reads as a diff of the text, not "binary".
+        fs::write(
+            &doc,
+            document(&[
+                ("Title", "Willow buffers"),
+                ("", "Abstract"),
+                ("", "Buffers remove nitrate."),
+                ("Heading1", "Introduction"),
+                ("", "Willow strips remove more."),
+            ]),
+        )
+        .unwrap();
+        let id = git::checkpoint(&dir, "You edited manuscript.docx")
+            .unwrap()
+            .unwrap();
+        let patch = git::checkpoint_patch(&dir, &id).unwrap();
+        assert!(
+            patch.contains("diff --git a/manuscript.docx b/manuscript.docx"),
+            "{patch}"
+        );
+        assert!(
+            patch.contains("-Grass strips remove less.")
+                && patch.contains("+Willow strips remove more."),
+            "{patch}"
+        );
+        assert!(!patch.contains("Binary files"), "{patch}");
+        let steps = git::checkpoints(&dir, 5).unwrap();
+        assert!(steps[0]
+            .files
+            .iter()
+            .any(|f| f.path == "manuscript.docx" && f.binary));
+
+        // The memory scaffold reads the document for the brief and records the engine.
+        memory::setup(&dir, Some(&doc)).unwrap();
+        let toml = fs::read_to_string(dir.join("dabir.toml")).unwrap();
+        assert!(toml.contains("[env]"), "{toml}");
+        let brief = fs::read_to_string(dir.join(".dabir/PROJECT.md")).unwrap();
+        assert!(brief.starts_with("# Willow buffers"), "{brief}");
+        assert!(
+            brief.contains("A Word document: main file `manuscript.docx`"),
+            "{brief}"
+        );
+        assert!(brief.contains("Buffers remove nitrate."), "{brief}");
+        assert!(!brief.contains("compile-and-fix"), "{brief}");
+
+        // The agent is told it is a Word paper, gets a Markdown copy, and is not asked to compile.
+        let focus = Focus {
+            file: "manuscript.docx".into(),
+            paragraph: Some("Willow strips remove more.".into()),
+            ..Default::default()
+        };
+        let out = agent_preamble(
+            &dir,
+            &dir,
+            "Tighten this paragraph",
+            "Tighten this paragraph",
+            Some(&focus),
+        );
+        assert!(
+            out.starts_with("You are a coauthor on a Word paper."),
+            "{out}"
+        );
+        assert!(out.contains("`manuscript.docx` is a Word document. Read it through `.dabir/context/manuscript.md`"), "{out}");
+        assert!(
+            out.contains("Never open, edit, rewrite, convert, rename or delete a .docx file"),
+            "{out}"
+        );
+        assert!(out.contains("There is nothing to compile"), "{out}");
+        assert!(!out.contains("tectonic -X compile"), "{out}");
+        assert!(
+            out.contains("Document outline (the Word headings)\nIntroduction"),
+            "{out}"
+        );
+        assert!(out.contains("The cursor is in this paragraph"), "{out}");
+        let copy = fs::read_to_string(dir.join(".dabir/context/manuscript.md")).unwrap();
+        assert!(
+            copy.contains("# Introduction\n\nWillow strips remove more."),
+            "{copy}"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn dabir_folders_are_excluded_once() {
+        let out = git::with_excludes("");
+        assert_eq!(
+            out,
+            "**/.dabir/worktrees/\n**/.dabir/build/\n**/.dabir/index/\n**/.dabir/context/\n"
+        );
+        // A repository excluded before the context copies existed gains only the new rule.
+        let old = "# mine\n*.log\n**/.dabir/worktrees/\n**/.dabir/build/\n**/.dabir/index/";
+        assert_eq!(
+            git::with_excludes(old),
+            format!("{old}\n**/.dabir/context/\n")
+        );
+        assert_eq!(git::with_excludes(&out), out);
     }
 
     #[test]
@@ -4243,7 +4556,7 @@ mod tests {
         }
         let dest = std::env::temp_dir().join(format!("dabir-import-{}", std::process::id()));
         let out = import_overleaf_zip(zip, Some(dest.to_string_lossy().to_string())).unwrap();
-        let p = open_project(out).unwrap();
+        let p = open_project(out, None).unwrap();
         assert!(p.main_tex.is_some(), "main.tex should be detected");
         assert!(dest.join(".gitignore").exists());
         let _ = fs::remove_dir_all(dest);

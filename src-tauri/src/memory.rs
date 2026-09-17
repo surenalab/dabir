@@ -723,6 +723,8 @@ pub fn setup(root: &Path, main_tex: Option<&Path>) -> Result<Vec<String>, String
     fs::create_dir_all(dabir.join("skills")).map_err(|e| e.to_string())?;
     let mut written = vec![];
     let det = detect_env(root);
+    // A Word manuscript is read through word::summary; there is no preamble, class or macro to find.
+    let word_main = main_tex.filter(|m| crate::word::is_docx(m));
 
     // dabir.toml: add [env] when missing so provenance commands and agents share one interpreter.
     let toml_path = root.join("dabir.toml");
@@ -732,11 +734,16 @@ pub fn setup(root: &Path, main_tex: Option<&Path>) -> Result<Vec<String>, String
         let block = format!("{}{}\n[env]\n# Prepended to every provenance command and suggested to agents. Examples: \"conda run -n myenv\", \"uv run\", \".venv/bin/python -m\".\nprefix = \"{}\"\n\n# Where the code runs when not on this machine. Uncomment to run recorded commands and the\n# terminal's remote shell over ssh; artefacts are copied back with scp after each run.\n# [remote]\n# host = \"gpu-box\"        # a name from ~/.ssh/config, or user@host\n# dir = \"~/work/paper\"    # the repository's path on that host\n\n# Tools the agents may not use here. Unset means Dabir's default (no Git inspection, no tree walks:\n# the prompt already carries the map). Rules in Claude Code form; an empty list denies nothing.\n# [agents]\n# deny = [\"Bash(git log*)\", \"WebSearch\"]\n", existing_toml, if existing_toml.is_empty() || existing_toml.ends_with('\n') { "" } else { "\n" }, prefix);
         let header = if existing_toml.is_empty() {
             format!(
-                "[paper]\nmain = \"{}\"\nengine = \"tectonic\"\n",
+                "[paper]\nmain = \"{}\"\nengine = \"{}\"\n",
                 main_tex
                     .and_then(|m| m.file_name())
                     .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or("main.tex".into())
+                    .unwrap_or("main.tex".into()),
+                if word_main.is_some() {
+                    "word"
+                } else {
+                    "tectonic"
+                }
             )
         } else {
             String::new()
@@ -749,8 +756,10 @@ pub fn setup(root: &Path, main_tex: Option<&Path>) -> Result<Vec<String>, String
     let brief = dabir.join("PROJECT.md");
     if !brief.exists() {
         let src = main_tex
+            .filter(|_| word_main.is_none())
             .and_then(|m| fs::read_to_string(m).ok())
             .unwrap_or_default();
+        let doc = word_main.map(crate::word::summary);
         let cap = |cmd: &str| -> Option<String> {
             let i = src.find(&format!("\\{}", cmd))?;
             let mut rest = &src[i + cmd.len() + 1..];
@@ -761,7 +770,11 @@ pub fn setup(root: &Path, main_tex: Option<&Path>) -> Result<Vec<String>, String
             let j = rest.find('}')?;
             Some(rest[..j].trim().to_string())
         };
-        let title = cap("title").unwrap_or_else(|| "Untitled paper".into());
+        let title = doc
+            .as_ref()
+            .and_then(|d| d.title.clone())
+            .or_else(|| cap("title"))
+            .unwrap_or_else(|| "Untitled paper".into());
         let class = cap("documentclass").unwrap_or_else(|| "unknown".into());
         let abstract_ = src
             .find("\\begin{abstract}")
@@ -771,7 +784,11 @@ pub fn setup(root: &Path, main_tex: Option<&Path>) -> Result<Vec<String>, String
                     .map(|j| r[..j].trim().replace('\n', " "))
             })
             .unwrap_or_default();
-        let sections: Vec<String> = src
+        let abstract_ = doc
+            .as_ref()
+            .and_then(|d| d.abstract_.clone())
+            .unwrap_or(abstract_);
+        let mut sections: Vec<String> = src
             .lines()
             .filter_map(|l| {
                 l.trim()
@@ -779,6 +796,14 @@ pub fn setup(root: &Path, main_tex: Option<&Path>) -> Result<Vec<String>, String
                     .map(|s| s.trim_end_matches('}').to_string())
             })
             .collect();
+        if let Some(d) = &doc {
+            sections = d
+                .headings
+                .iter()
+                .filter(|(l, _)| *l == 1)
+                .map(|(_, t)| t.clone())
+                .collect();
+        }
         let macros: Vec<String> = src
             .lines()
             .filter(|l| l.trim_start().starts_with("\\newcommand"))
@@ -832,14 +857,13 @@ Read this first. It is the paper's identity, its conventions and how its code ru
 ## Identity
 {abstract_short}
 
-Document class `{class}`. Main file `{main}`. Structure: {sections}.
+{kind}. Structure: {sections}.
 
 ## Claims and key numbers
 (One line per claim with the number that supports it and the artefact it comes from.)
 
 ## Conventions
-Notation and macros that must not be redefined:
-{macros}
+{conventions}
 
 ## Repo map
 {repo_map}
@@ -856,16 +880,28 @@ Never hand-edit these or numbers copied from them. Rerun the command (skill: rer
 
 ## Working rules
 - Smallest change that does the job. One concern per run.
-- Compile before you finish (skill: compile-and-fix).
+{finish}
 - Record durable decisions as one fact per file in `.dabir/memory/`, with `name` and `description` frontmatter.
 - Skills for the recurring jobs are in `.dabir/skills/`.
 ",
             title = title,
             abstract_short = if abstract_.is_empty() { "(One paragraph: what the paper claims and why it matters.)".to_string() } else { abstract_.chars().take(600).collect::<String>() },
-            class = class,
-            main = main_name,
+            kind = if word_main.is_some() {
+                format!("A Word document: main file `{}`, edited in Dabir's Word view", main_name)
+            } else {
+                format!("Document class `{}`. Main file `{}`", class, main_name)
+            },
+            conventions = if word_main.is_some() {
+                "Styles in the Word document (Title, Heading 1-3, Caption, Bibliography) carry the structure; keep to them.".to_string()
+            } else {
+                format!("Notation and macros that must not be redefined:\n{}", if macros.is_empty() { "- (none found in the preamble)".to_string() } else { macros.join("\n") })
+            },
+            finish = if word_main.is_some() {
+                format!("- The manuscript is a Word document: never open or edit it as text. Each run gets a read-only Markdown copy under `.dabir/context/`; propose wording in the reply, the author applies it in `{}`.", main_name)
+            } else {
+                "- Compile before you finish (skill: compile-and-fix).".to_string()
+            },
             sections = if sections.is_empty() { "(no sections found)".into() } else { sections.join(" · ") },
-            macros = if macros.is_empty() { "- (none found in the preamble)".to_string() } else { macros.join("\n") },
             repo_map = { let m = repo_map(root); if m.is_empty() { "- (no code files found)".to_string() } else { m.join("\n") } },
             how = how,
             prefix_line = match &prefix { Some(p) => format!("Environment prefix for every command: `{}` (from `dabir.toml [env]`). Example: `{} python code/script.py`.", p, p), None => "No environment prefix set in `dabir.toml [env]`; commands run as written, for example `python code/script.py`.".to_string() },

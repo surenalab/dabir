@@ -761,6 +761,7 @@ dependencies = [
  "futures-util",
  "git2",
  "portable-pty",
+ "quick-xml",
  "serde",
  "serde_json",
  "tauri",
