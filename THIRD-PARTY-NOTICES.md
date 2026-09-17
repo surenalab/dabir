@@ -8,6 +8,9 @@ Dabir is licensed under the AGPL-3.0 (see LICENSE). It bundles or depends on the
 - **PDF.js**: Apache License 2.0, copyright Mozilla Foundation.
 - **KaTeX**: MIT licence, copyright Khan Academy.
 - **CodeMirror 6**: MIT licence, copyright Marijn Haverbeke and contributors.
+- **docx-editor** (the Word view's engine: `@eigenpal/docx-editor-react`, `-core`, `-i18n` and `-agents` 1.9.0): Apache License 2.0, copyright EigenPal. https://github.com/eigenpal/docx-editor. The project's later `@docx-editor.dev/pro` and `@docx-editor.dev/editor-api` packages are under the proprietary EigenPal Pro licence; Dabir does not use them.
+- **ProseMirror** (under the Word view): MIT licence, copyright Marijn Haverbeke and contributors.
+- **JSZip**: MIT or GPL-3.0-or-later, used under MIT. **pako**: MIT and Zlib. **sax** (read by xml-js inside the Word view): Blue Oak Model License 1.0.0, a permissive licence.
 - **codemirror-lang-latex**: AGPL-3.0-or-later. This package is the reason Dabir cannot be relicensed more permissively without replacing it.
 - **Yjs and y-protocols**: MIT licence, copyright Kevin Jahns.
 - **Lucide icons**: ISC licence.
@@ -35,6 +38,14 @@ Dabir is licensed under the AGPL-3.0 (see LICENSE). It bundles or depends on the
 | @codemirror/search | 6.7.2 | MIT |
 | @codemirror/state | 6.7.4 | MIT |
 | @codemirror/view | 6.43.11 | MIT |
+| @eigenpal/docx-editor-agents | 1.9.0 | Apache-2.0 |
+| @eigenpal/docx-editor-core | 1.9.0 | Apache-2.0 |
+| @eigenpal/docx-editor-i18n | 1.9.0 | Apache-2.0 |
+| @eigenpal/docx-editor-react | 1.9.0 | Apache-2.0 |
+| @floating-ui/core | 1.8.0 | MIT |
+| @floating-ui/dom | 1.8.0 | MIT |
+| @floating-ui/react-dom | 2.1.9 | MIT |
+| @floating-ui/utils | 0.2.12 | MIT |
 | @fontsource/ibm-plex-mono | 5.3.0 | OFL-1.1 |
 | @fontsource/stix-two-text | 5.3.0 | OFL-1.1 |
 | @lezer/common | 1.5.2 | MIT |
@@ -63,6 +74,32 @@ Dabir is licensed under the AGPL-3.0 (see LICENSE). It bundles or depends on the
 | @napi-rs/canvas-linux-x64-musl | 1.0.9 | MIT |
 | @napi-rs/canvas-win32-arm64-msvc | 1.0.9 | MIT |
 | @napi-rs/canvas-win32-x64-msvc | 1.0.9 | MIT |
+| @radix-ui/number | 1.1.3 | MIT |
+| @radix-ui/primitive | 1.1.7 | MIT |
+| @radix-ui/react-arrow | 1.1.15 | MIT |
+| @radix-ui/react-collection | 1.1.15 | MIT |
+| @radix-ui/react-compose-refs | 1.1.5 | MIT |
+| @radix-ui/react-context | 1.2.2 | MIT |
+| @radix-ui/react-direction | 1.1.4 | MIT |
+| @radix-ui/react-dismissable-layer | 1.1.19 | MIT |
+| @radix-ui/react-focus-guards | 1.1.6 | MIT |
+| @radix-ui/react-focus-scope | 1.1.16 | MIT |
+| @radix-ui/react-id | 1.1.4 | MIT |
+| @radix-ui/react-popper | 1.3.7 | MIT |
+| @radix-ui/react-portal | 1.1.17 | MIT |
+| @radix-ui/react-presence | 1.1.10 | MIT |
+| @radix-ui/react-primitive | 2.1.10 | MIT |
+| @radix-ui/react-select | 2.3.7 | MIT |
+| @radix-ui/react-slot | 1.3.3 | MIT |
+| @radix-ui/react-use-callback-ref | 1.1.4 | MIT |
+| @radix-ui/react-use-controllable-state | 1.2.6 | MIT |
+| @radix-ui/react-use-effect-event | 0.0.5 | MIT |
+| @radix-ui/react-use-layout-effect | 1.1.4 | MIT |
+| @radix-ui/react-use-previous | 1.1.4 | MIT |
+| @radix-ui/react-use-rect | 1.1.4 | MIT |
+| @radix-ui/react-use-size | 1.1.4 | MIT |
+| @radix-ui/react-visually-hidden | 1.2.11 | MIT |
+| @radix-ui/rect | 1.1.3 | MIT |
 | @replit/codemirror-indentation-markers | 6.5.3 | MIT |
 | @replit/codemirror-vim | 6.4.0 | MIT |
 | @replit/codemirror-vim-core | 0.1.0 | MIT |
@@ -73,44 +110,84 @@ Dabir is licensed under the AGPL-3.0 (see LICENSE). It bundles or depends on the
 | @tauri-apps/plugin-process | 2.3.1 | MIT OR Apache-2.0 |
 | @tauri-apps/plugin-shell | 2.3.6 | MIT OR Apache-2.0 |
 | @tauri-apps/plugin-updater | 2.11.0 | MIT OR Apache-2.0 |
+| @xmldom/xmldom | 0.9.12 | MIT |
 | @xterm/addon-fit | 0.11.0 | MIT |
 | @xterm/xterm | 6.0.0 | MIT |
+| aria-hidden | 1.2.6 | MIT |
 | base64-js | 1.5.1 | MIT |
 | buffer | 6.0.3 | MIT |
+| clsx | 2.1.1 | MIT |
 | codemirror-lang-latex | 0.6.1 | AGPL-3.0-or-later |
 | codemirror-lang-typst | 0.6.0 | Apache-2.0 |
 | commander | 15.0.0 | MIT |
+| core-util-is | 1.0.3 | MIT |
 | crelt | 1.0.7 | MIT |
 | debug | 4.4.3 | MIT |
+| detect-node-es | 1.1.0 | MIT |
 | diff | 9.0.0 | BSD-3-Clause |
+| docxtemplater | 3.70.0 | MIT |
+| dompurify | 3.4.15 | (MPL-2.0 OR Apache-2.0) |
 | err-code | 3.0.1 | MIT |
 | get-browser-rtc | 1.1.0 | MIT |
+| get-nonce | 1.0.1 | MIT |
 | hunspell-wasm | 0.3.0 | (LGPL-2.0 OR GPL-2.0 OR MPL-1.1) |
 | ieee754 | 1.2.1 | BSD-3-Clause |
+| immediate | 3.0.6 | MIT |
 | inherits | 2.0.4 | ISC |
+| isarray | 1.0.0 | MIT |
 | isomorphic.js | 0.2.5 | MIT |
+| jszip | 3.10.2 | (MIT OR GPL-3.0-or-later) |
 | katex | 0.18.7 | MIT |
 | lib0 | 0.2.117 | MIT |
+| lie | 3.3.0 | MIT |
 | lucide-react | 1.45.0 | ISC |
 | marked | 15.0.12 | MIT |
 | ms | 2.1.3 | MIT |
+| orderedmap | 2.1.1 | MIT |
+| pako | 1.0.11 | (MIT AND Zlib) |
+| pako | 2.2.0 | (MIT AND Zlib) |
 | pdfjs-dist | 6.3.289 | Apache-2.0 |
+| pizzip | 3.2.0 | (MIT OR GPL-3.0) |
+| process-nextick-args | 2.0.1 | MIT |
+| prosemirror-commands | 1.7.2 | MIT |
+| prosemirror-dropcursor | 1.8.3 | MIT |
+| prosemirror-history | 1.5.0 | MIT |
+| prosemirror-keymap | 1.2.3 | MIT |
+| prosemirror-model | 1.25.11 | MIT |
+| prosemirror-state | 1.4.4 | MIT |
+| prosemirror-tables | 1.8.5 | MIT |
+| prosemirror-transform | 1.12.1 | MIT |
+| prosemirror-view | 1.42.3 | MIT |
 | queue-microtask | 1.2.3 | MIT |
 | randombytes | 2.1.0 | MIT |
 | react | 19.3.0 | MIT |
 | react-dom | 19.3.0 | MIT |
+| react-remove-scroll | 2.7.2 | MIT |
+| react-remove-scroll-bar | 2.3.8 | MIT |
+| react-style-singleton | 2.2.3 | MIT |
+| readable-stream | 2.3.8 | MIT |
 | readable-stream | 3.6.2 | MIT |
+| rope-sequence | 1.3.4 | MIT |
+| safe-buffer | 5.1.2 | MIT |
 | safe-buffer | 5.2.1 | MIT |
+| sax | 1.6.1 | BlueOak-1.0.0 |
 | scheduler | 0.28.0 | MIT |
+| setimmediate | 1.0.5 | MIT |
 | simple-peer | 9.11.1 | MIT |
+| sonner | 2.0.8 | MIT |
+| string_decoder | 1.1.1 | MIT |
 | string_decoder | 1.3.0 | MIT |
 | style-mod | 4.1.3 | MIT |
+| tslib | 2.8.1 | 0BSD |
+| use-callback-ref | 1.3.3 | MIT |
+| use-sidecar | 1.1.3 | MIT |
 | util-deprecate | 1.0.2 | MIT |
 | vscode-jsonrpc | 9.0.2 | MIT |
 | vscode-languageserver-protocol | 3.18.3 | MIT |
 | vscode-languageserver-types | 3.18.3 | MIT |
 | w3c-keyname | 2.2.8 | MIT |
 | ws | 8.21.3 | MIT |
+| xml-js | 1.6.11 | MIT |
 | y-codemirror.next | 0.3.6 | MIT |
 | y-indexeddb | 9.0.12 | MIT |
 | y-protocols | 1.0.7 | MIT |
