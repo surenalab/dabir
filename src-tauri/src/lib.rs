@@ -3001,6 +3001,48 @@ mod tests {
 
     use super::*;
 
+    /// A paper imported from Word keeps the .docx it came from beside main.tex. The folder must still
+    /// open on the LaTeX manuscript: the Word file is the paper's provenance, not the paper.
+    #[test]
+    fn latex_wins_over_a_docx_beside_it() {
+        let dir = std::env::temp_dir().join(format!("dabir-main-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("main.tex"), "\\documentclass{article}\n").unwrap();
+        fs::write(dir.join("Draft v3.docx"), b"PK\x03\x04").unwrap();
+        assert_eq!(find_main_tex(&dir), Some(dir.join("main.tex")));
+        // With no LaTeX file the same folder opens on its Word document.
+        fs::remove_file(dir.join("main.tex")).unwrap();
+        assert_eq!(find_main_tex(&dir), Some(dir.join("Draft v3.docx")));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// The .docx the importer kept is committed with the paper: the scaffold's first commit has it, and
+    /// nothing in .gitignore holds it back.
+    #[test]
+    fn the_word_file_is_in_the_first_commit() {
+        let dir = std::env::temp_dir().join(format!("dabir-scaffold-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("main.tex"), "\\documentclass{article}\n").unwrap();
+        fs::write(dir.join("Draft v3.docx"), b"PK\x03\x04").unwrap();
+        scaffold_paper(&dir, "New paper from Draft v3.docx").unwrap();
+        let repo = git2::Repository::open(&dir).unwrap();
+        let tree = repo
+            .head()
+            .unwrap()
+            .peel_to_commit()
+            .unwrap()
+            .tree()
+            .unwrap();
+        assert!(
+            tree.get_name("Draft v3.docx").is_some(),
+            "the .docx is committed"
+        );
+        assert!(tree.get_name("main.tex").is_some());
+        let ignore = fs::read_to_string(dir.join(".gitignore")).unwrap();
+        assert!(!ignore.contains("docx"), "{ignore}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn parses_tectonic_diagnostics() {
         let log = "note: generating format\nerror: main.tex:36: Unable to load picture or PDF file 'figures/x.pdf'\nwarning: main.tex:40: Citation `foo' undefined\nerror: something bad happened inside XeTeX; its output follows:\n";
