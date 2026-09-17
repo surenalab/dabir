@@ -1884,7 +1884,18 @@ fn write_paper(pandoc: &Path, docx: &Path, dest: &Path, inv: &Inventory) -> Resu
         fs::write(dest.join("refs.bib"), b)
             .map_err(|e| format!("Could not write refs.bib: {}", e))?;
     }
-    // What to check, most important first.
+    // The Word file itself stays beside the paper, under its own name: it is where the paper came from
+    // and the basis of the round trip back to a coauthor who writes in Word. It is written before the
+    // scaffold's first commit, so it is committed with the paper, and it is not in .gitignore.
+    fs::copy(&source, dest.join(&source_name))
+        .map_err(|e| format!("Could not keep {} beside the paper: {}", source_name, e))?;
+
+    // What to check, most important first; the Word file is first because it is what to check against.
+    // The name is left out of the sentence: a .docx from a coauthor usually has spaces in it, and the
+    // sheet sets file names in code by a pattern that stops at the first space.
+    notes.push(
+        "The Word file is kept beside main.tex under its own name; open it in Dabir to compare the two side by side.".to_string(),
+    );
     if untitled {
         notes.push("Word had no Title paragraph, so the title is the file name; change \\title in main.tex.".into());
     }
@@ -2905,6 +2916,18 @@ mod tests {
             r.notes
         );
         assert_eq!(r.title, "Score Anchors for Low-Dose CT");
+
+        // The Word file is kept beside main.tex, under its own name, byte for byte.
+        let kept = dest.join("Draft v3.docx");
+        assert!(kept.is_file(), "the .docx is kept beside the paper");
+        assert_eq!(fs::read(&kept).unwrap(), fs::read(&docx).unwrap());
+        assert!(
+            r.notes
+                .iter()
+                .any(|n| n.contains("The Word file is kept beside main.tex")),
+            "{:?}",
+            r.notes
+        );
 
         // Nothing outside the folder, and the folder is not taken twice.
         let beside: Vec<_> = fs::read_dir(&parent)
