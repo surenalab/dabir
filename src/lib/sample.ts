@@ -1,7 +1,7 @@
 // Bundled sample so the shell renders in a plain browser (no Tauri).
 // Mirrors examples/score-anchor in the repo.
 
-import type { Project } from "./backend";
+import type { Entry, Project } from "./backend";
 
 const root = "/examples/score-anchor";
 
@@ -259,3 +259,38 @@ export const SAMPLE_PROJECT: Project = {
     { name: "refs.bib", path: `${root}/refs.bib`, kind: "bib", children: [] },
   ],
 };
+
+// The browser preview's Word paper (`?open=sample-word`): a biologist's folder with the manuscript as a .docx, the R
+// script behind its table and the data. The document's bytes come from the dev server (scripts/vite-word-preview.mjs);
+// `?docx=name.docx` opens another file from DABIR_SAMPLE_DOCX_DIR in its place.
+export const SAMPLE_WORD_ROOT = "/examples/buffer-strips";
+const wordRoot = SAMPLE_WORD_ROOT;
+Object.assign(SAMPLE_FILES, {
+  [`${wordRoot}/code/removal.R`]: `# Nitrate removal per buffer: one minus bank over field-edge concentration, averaged per site.
+library(readr)
+library(dplyr)
+
+samples <- read_csv("data/nitrate.csv")
+removal <- samples |>
+  group_by(buffer, width_m) |>
+  summarise(nitrate_in = mean(field_edge), removal = 100 * (1 - mean(bank / field_edge)), .groups = "drop")
+write_csv(removal, "tables/removal.csv")
+`,
+  [`${wordRoot}/data/nitrate.csv`]: "site,buffer,width_m,month,field_edge,bank\nN01,grass,10,2024-03,8.6,5.9\nN02,willow,10,2024-03,8.2,3.4\nN03,woodland,25,2024-03,7.8,2.1\n",
+  [`${wordRoot}/dabir.toml`]: `[paper]\nmain = "manuscript.docx"\nengine = "word"\n\n[provenance]\n"tables/removal.csv" = "Rscript code/removal.R"\n`,
+});
+export function sampleWordProject(main = "manuscript.docx"): Project {
+  const doc = (name: string): Entry => ({ name, path: `${wordRoot}/${name}`, kind: "word", children: [] });
+  const tree: Entry[] = [
+    { name: "code", path: `${wordRoot}/code`, kind: "dir", children: [
+      { name: "removal.R", path: `${wordRoot}/code/removal.R`, kind: "code", children: [] },
+    ]},
+    { name: "data", path: `${wordRoot}/data`, kind: "dir", children: [
+      { name: "nitrate.csv", path: `${wordRoot}/data/nitrate.csv`, kind: "data", children: [] },
+    ]},
+    { name: "dabir.toml", path: `${wordRoot}/dabir.toml`, kind: "data", children: [] },
+    ...(main === "manuscript.docx" ? [] : [doc("manuscript.docx")]),
+    doc(main),
+  ];
+  return { root: wordRoot, name: "buffer-strips", mainTex: `${wordRoot}/${main}`, hasGit: true, hasMemory: true, tree };
+}

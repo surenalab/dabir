@@ -5,6 +5,7 @@ import { native, onTemplateProgress, templatesList, type Template, type Template
 
 /** The venue's own kit, or a starter Dabir wrote on a class the engine fetches from CTAN. */
 function sourceLine(t: Template): string {
+  if (t.engine === "word") return "Bundled with Dabir. Opens in the Word editor: nothing to compile, and the file stays a .docx.";
   if (!t.kit) return t.engine === "typst" ? "Bundled with Dabir. The Typst package is fetched by the compiler on first use." : "Bundled with Dabir.";
   if (t.cached) return `Official kit from ${t.kit}, already on this Mac.`;
   return `Official kit, fetched from ${t.kit} when you create the paper.`;
@@ -96,7 +97,7 @@ export function NewPaperSheet({ onClose, onCreate, onWord, initial }: { onClose:
                 </div>
                 <span className="marks">
                   {t.official && <span className="mark official">Official</span>}
-                  <span className="mark">{t.engine === "typst" ? "Typst" : "LaTeX"}</span>
+                  <span className="mark">{t.engine === "typst" ? "Typst" : t.engine === "word" ? "Word" : "LaTeX"}</span>
                 </span>
               </div>
             ))}
@@ -124,7 +125,7 @@ export function NewPaperSheet({ onClose, onCreate, onWord, initial }: { onClose:
           </aside>
         </div>
         <footer>
-          <button className="btn" onClick={onWord} disabled={!!busy} title="Start from a .docx a coauthor sent: it becomes a LaTeX paper">From Word Document…</button>
+          <button className="btn" onClick={onWord} disabled={!!busy} title="Turn a .docx a coauthor sent into a LaTeX paper. To keep writing in Word, choose Word document here, or File › Open Word Document…">Convert Word to LaTeX…</button>
           {busy ? <span className="progress" role="status" aria-live="polite">{progress ?? "Working…"}</span> : error ? <span className="progress error" role="alert">{error}</span> : <span className="progress">Create… opens a save panel to name and place the paper's folder. Git and the memory scaffold are set up inside it.</span>}
           <button className="btn" onClick={onClose} disabled={!!busy}>Cancel</button>
           <button className="btn primary" onClick={go} disabled={!current || !!busy} autoFocus>{busy ? "Creating…" : "Create…"}</button>

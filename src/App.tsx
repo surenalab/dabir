@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Toolbar, type ViewMode } from "./components/Toolbar";
+import { Toolbar, type ViewMode, type WordExport } from "./components/Toolbar";
 import { Navigator } from "./components/Navigator";
-import { Document, type DocReview } from "./components/Document";
+import { Document, type DocReview, type WordPane } from "./components/Document";
+import type { WordHandle, WordStats } from "./components/WordView";
 import { Inspector, type ReviewHandle, type Tab as InspectorTab } from "./components/Inspector";
 import { Tour, type TourStep } from "./components/Tour";
 import { marksFromPatch } from "./lib/review";
@@ -29,7 +30,8 @@ import { safeColor, type Change, type ChangeRange } from "./lib/changes";
 import { proseWords } from "./lib/spell";
 import {
   agentComplete, checkForUpdates, projectSnapshot, sessionMaterialize, checkpoint, checkpoints, checkpointRestore, checkpointUndo, gitDiscard, type Checkpoint, newPaper, compile as runCompile, compileCancel, gitClone, gitPull, gitPush, gitRemoteAdd, gitRemoteUrl, isMac, onCompileProgress, relayStart, relayStop, gitCommit, gitInit, gitStatus, importOverleaf, native, onMenu, onWindowFocus,
-  openProject, pickFolder, pickNewPaperPath, readText, setWindowTitle, synctexForward, synctexInverse, writeText, openSample, openGuide, onDeepLink,
+  openProject, pickFolder, pickNewPaperPath, readText, authorName, setWindowTitle, synctexForward, synctexInverse, writeText, openSample, openGuide, onDeepLink,
+  writeBinary, wordMarkdown, pickWordToOpen, pickSavePath,
   type CompileResult, type GitStatus, type PdfPos, type Project, type Focus, paperMap, type PaperMap, gitHeadText, type WordImport } from "./lib/backend";
 import { runRecipe, replCommand, formattersFor, formatText } from "./lib/code-tools";
 import { serversFor } from "./lib/lsp";
@@ -37,6 +39,11 @@ import { fileKind } from "./lib/languages";
 import { parseBib, type BibEntry, type OutlineItem } from "./lib/latex";
 import { relTo } from "./lib/path";
 import { chord, RUN_FILE } from "./lib/keys";
+import { isWordPath, latexFolderFor, parentFolder, stepWordZoom, wordStem, type WordMode, type WordOutlineRow, type WordZoom } from "./lib/word";
+import { SAMPLE_WORD_ROOT } from "./lib/sample";
+
+/** The manuscript can be compiled: a Word paper has nothing to compile. */
+const compilable = (main: string | null | undefined): main is string => !!main && /\.(tex|typ)$/i.test(main);
 
 export type CompileState =
   | { status: "idle" }
@@ -135,7 +142,9 @@ export default function App() {
   const openNew = useCallback((template?: string) => { setNewTemplate(template ?? null); setSheet("new"); }, []);
   // Word import opens the file panel at once from File › Import Word Document… and from New Paper.
   const [wordPick, setWordPick] = useState(false);
-  const openWordImport = useCallback((pick: boolean) => { setWordPick(pick); setSheet("word"); }, []);
+  // The Word document a Convert to LaTeX Paper… sheet works on; null for File › Import Word Document….
+  const [convertFrom, setConvertFrom] = useState<{ docx: string; folder: string } | null>(null);
+  const openWordImport = useCallback((pick: boolean) => { setConvertFrom(null); setWordPick(pick); setSheet("word"); }, []);
   const settings = useSettings();
   const [grammar, setGrammar] = useState<GrammarMatch[]>([]);
   const [localComments, setLocalComments] = useState<Comment[]>([]);
@@ -146,6 +155,23 @@ export default function App() {
   const [pdfFindRequest, setPdfFindRequest] = useState(0);
   const [splitRatio, setSplitRatio] = useState(0.55);
   const editorRef = useRef<EditorApi | null>(null);
+  // The open Word document, when the file is a .docx: its editor handle (which saves only to its own path), the
+  // editing mode, zoom, what the status bar shows, the selection the agent sees, and a stamp that reloads it from disk.
+  const wordRef = useRef<WordHandle | null>(null);
+  const wordExportRef = useRef<(k: WordExport) => void>(() => {});
+  // Suggesting is one idea across the app, so Editing and Suggesting are the shared setting; Viewing is Word's own.
+  const [wordViewing, setWordViewing] = useState(false);
+  const wordMode: WordMode = wordViewing ? "viewing" : settings.suggesting ? "suggesting" : "editing";
+  const setWordMode = useCallback((m: WordMode) => {
+    setWordViewing(m === "viewing");
+    if (m !== "viewing" && (m === "suggesting") !== getSettings().suggesting) updateSettings({ suggesting: m === "suggesting" });
+  }, []);
+  const [wordZoom, setWordZoom] = useState<WordZoom>("fit");
+  const [wordStats, setWordStats] = useState<WordStats | null>(null);
+  const [wordReload, setWordReload] = useState(0);
+  const [wordFocus, setWordFocus] = useState<{ selection: string; paragraph: string } | null>(null);
+  // The name a Word document's tracked changes and comments carry: the one set in Share, else Git's user.name.
+  const [gitAuthor, setGitAuthor] = useState<string | null>(null);
   const addCommentRef = useRef<(text: string, at?: { from: number; to: number }) => void>(() => {});
   const [directPeers, setDirectPeers] = useState(0);
   const [session, setSession] = useState<Session | null>(null);
@@ -201,7 +227,9 @@ export default function App() {
   const selectFile = useCallback(async (path: string) => {
     try {
       await flushRef.current();   // an edit made in the last second must not be lost to the switch
-      const text = await readText(path);
+      // A Word document is not text: the Word view reads its bytes itself.
+      const text = isWordPath(path) ? null : await readText(path);
+      if (isWordPath(path)) { setWordStats(null); setOutline([]); }
       setFile(path); setSource(text); setDirty(false); setJumpLine(null);
       setOpenFiles((o) => (o.includes(path) ? o : [...o, path]));
       if (mode === "pdf") setMode("visual");
@@ -244,16 +272,17 @@ export default function App() {
   }, [project, map]);
   const paperWordsNow = project && map && map.files.length > 1 && paperWords?.root === project.root ? paperWords.words : null;
 
-  const openFolder = useCallback(async (folder: string) => {
+  const openFolder = useCallback(async (folder: string, main?: string | null) => {
     stopLanguageServers();
-    const p = await openProject(folder);
+    const p = await openProject(folder, main ?? null);
     setProject(p); setCompileState({ status: "idle" }); setError(null); setPdfTarget(null);
     setOpenFiles([]);
-    try { localStorage.setItem("dabir.lastPaper", p.root); } catch { /* private mode */ }
+    try { localStorage.setItem("dabir.lastPaper", p.root); if (p.mainTex) localStorage.setItem("dabir.lastMain", p.mainTex); else localStorage.removeItem("dabir.lastMain"); } catch { /* private mode */ }
     setWindowTitle(p.name);
     loadBib(p);
     loadMap(p.root);
     refreshGit(p);
+    authorName(p.root).then(setGitAuthor).catch(() => setGitAuthor(null));
     gitRemoteUrl(p.root, "overleaf").then(setOverleafUrl).catch(() => setOverleafUrl(null));
     // Files shared through the repository are as untrusted as peers: colours are validated before they reach a style.
     readText(`${p.root}/.dabir/comments.json`).then((t) => setLocalComments(t ? (JSON.parse(t) as Comment[]).map((c) => ({ ...c, color: safeColor(c.color), replies: c.replies?.map((r) => ({ ...r, color: safeColor(r.color) })) })) : [])).catch(() => setLocalComments([]));
@@ -272,7 +301,7 @@ export default function App() {
     setProject(null); setFile(null); setSource(null); setOpenFiles([]); setDirty(false);
     setCompileState({ status: "idle" }); setPdfTarget(null); setError(null);
     setTerminal({ open: false, focusStamp: 0, run: null });
-    try { localStorage.removeItem("dabir.lastPaper"); } catch { /* private mode */ }
+    try { localStorage.removeItem("dabir.lastPaper"); localStorage.removeItem("dabir.lastMain"); } catch { /* private mode */ }
     setWindowTitle("Dabir");
   }, []);
 
@@ -287,10 +316,15 @@ export default function App() {
   useEffect(() => {
     if (native) return;
     const q = new URLSearchParams(location.search);
-    if (q.get("open") !== "sample") return;
+    const which = q.get("open");
+    if (which !== "sample" && which !== "sample-word") return;
     (async () => {
-      const folder = await pickFolder(); if (!folder) return;
+      // sample-word: the Word paper, with ?word=suggesting|viewing and ?zoom=page|1 for its state.
+      const folder = which === "sample-word" ? SAMPLE_WORD_ROOT : await pickFolder(); if (!folder) return;
       await openFolder(folder);
+      const wm = q.get("word"); if (wm === "viewing") setWordViewing(true); else if (wm === "suggesting" || wm === "editing") updateSettings({ suggesting: wm === "suggesting" });
+      const wz = q.get("zoom"); if (wz === "page" || wz === "fit") setWordZoom(wz); else if (wz && Number(wz) > 0) setWordZoom(Number(wz));
+      const sh = q.get("sheet"); if (sh === "export" || sh === "new") setSheet(sh);
       const v = q.get("view"); if (v === "visual" || v === "source" || v === "pdf" || v === "split") setMode(v);
       if (q.get("inspector") === "1") setInspectorOpen(true);
       if (q.get("nav") === "0") setNavOpen(false);
@@ -307,7 +341,9 @@ export default function App() {
     if (!native) return;
     const last = (() => { try { return localStorage.getItem("dabir.lastPaper"); } catch { return null; } })();
     if (!last) return;
-    const t = window.setTimeout(() => { openFolder(last).catch(() => { try { localStorage.removeItem("dabir.lastPaper"); } catch { /* ignore */ } }); }, 0);
+    // A Word document opened on its own is the main document of its folder only because it was chosen; keep the choice.
+    const lastMain = (() => { try { return localStorage.getItem("dabir.lastMain"); } catch { return null; } })();
+    const t = window.setTimeout(() => { openFolder(last, lastMain && isWordPath(lastMain) ? lastMain : null).catch(() => { try { localStorage.removeItem("dabir.lastPaper"); } catch { /* ignore */ } }); }, 0);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -323,7 +359,8 @@ export default function App() {
   // The save panel names and places the folder in one step; null means the author cancelled.
   const chooseNewPaperFolder = useCallback(async (suggested: string): Promise<{ parent: string; name: string } | null> => {
     const last = localStorage.getItem("dabir.papersDir");
-    const path = await pickNewPaperPath(last ? `${last}/${suggested}` : suggested);
+    // A full path (a LaTeX copy beside a Word paper) is offered as it is; a bare name goes where the last paper went.
+    const path = await pickNewPaperPath(/[\\/]/.test(suggested) ? suggested : last ? `${last}/${suggested}` : suggested);
     if (!path) return null;
     const cut = path.replace(/[\\/]+$/, "").lastIndexOf(path.includes("\\") && !path.includes("/") ? "\\" : "/");
     const parent = path.slice(0, cut);
@@ -340,6 +377,13 @@ export default function App() {
     setNote("New paper created with Git and memory set up.");
     return true;
   }, [openFolder, chooseNewPaperFolder]);
+  // File › Open Word Document…: the document's folder opens as the paper, with that document as its manuscript.
+  const openWordFile = useCallback(async () => {
+    try { const path = await pickWordToOpen(); if (path) await openFolder(parentFolder(path), path); } catch (e) { setError(String(e)); }
+  }, [openFolder]);
+  const newWordPaper = useCallback(async () => {
+    try { await createPaper("word-manuscript", "word-paper"); } catch (e) { setError(String(e)); }
+  }, [createPaper]);
   const openImportedPaper = useCallback(async (r: WordImport, parent: string) => {
     localStorage.setItem("dabir.papersDir", parent);
     await openFolder(r.path);
@@ -366,6 +410,12 @@ export default function App() {
     if (/\.bib$/.test(rel)) loadBib(project);
   }, [project, loadMap, loadBib]);
   const save = useCallback(async () => {
+    // A Word document saves through its own editor, to its own path; the step is recorded when the write lands.
+    if (isWordPath(fileRef.current)) {
+      const w = wordRef.current;
+      if (w && w.path === fileRef.current) { try { await w.flush(); } catch (e) { setError(String(e)); } }
+      return;
+    }
     const path = fileRef.current, text = sourceRef.current;
     if (!path || text == null) return;
     try { await writeText(path, text); if (fileRef.current === path) setDirty(false); refreshGit(); recordStep(path); if (compileOnSave) compileRef.current(); }
@@ -373,10 +423,10 @@ export default function App() {
   }, [refreshGit, compileOnSave, recordStep]);
 
   const compile = useCallback(async () => {
-    if (!project?.mainTex || compileState.status === "running") return;
+    if (!compilable(project?.mainTex) || compileState.status === "running") return;
     // While reading the agent's version, compile that version from its worktree; nothing lands in the checkout.
     const agentBuild = review && reviewShowing && !session;
-    const mainTex = agentBuild ? `${review.worktree}/${project.mainTex.slice(project.root.length + 1)}` : project.mainTex;
+    const mainTex = agentBuild ? `${review.worktree}/${project!.mainTex!.slice(project!.root.length + 1)}` : project!.mainTex!;
     if (!agentBuild && dirtyRef.current) { try { await flushRef.current(); } catch (e) { setError(String(e)); return; } }
     setCompileState({ status: "running", startedAt: Date.now() });
     try {
@@ -390,12 +440,12 @@ export default function App() {
   compileRef.current = compile;
   /** For Export: the checked-in paper's PDF exists, compiling it now if it does not. */
   const ensurePdf = useCallback(async (): Promise<boolean> => {
-    if (!project?.mainTex) return false;
+    if (!project || !compilable(project.mainTex)) return false;
     if (compileState.status === "done" && compileState.result.pdf && !compileState.agent) return true;
     if (dirty && sourceRef.current != null && file) { try { await writeText(file, sourceRef.current); setDirty(false); } catch (e) { setError(String(e)); return false; } }
     setCompileState({ status: "running", startedAt: Date.now() });
     try {
-      const result = await runCompile(project.mainTex);
+      const result = await runCompile(project.mainTex!);
       setCompileState({ status: "done", result, at: Date.now() });
       return result.ok && !!result.pdf;
     } catch (e) {
@@ -406,7 +456,7 @@ export default function App() {
   const toggleCompileOnSave = useCallback(() => updateSettings({ compileOnSave: !settings.compileOnSave }), [settings.compileOnSave]);
 
   const showInPdf = useCallback(async () => {
-    if (!project?.mainTex || !file) return;
+    if (!compilable(project?.mainTex) || !file || isWordPath(file)) return;
     if (compileState.status !== "done" || !compileState.result.pdf) { setNote(chord("Compile first (⌘B), then Show Line in PDF.")); return; }
     try {
       const pos = await synctexForward(project.mainTex, file, cursorLine);
@@ -467,13 +517,15 @@ export default function App() {
   const agentFocus = useMemo<Focus | null>(() => {
     const f = rel(file);
     if (!f) return null;
+    // A Word document has no lines: the paragraph and the selection say where the author is.
+    if (isWordPath(file)) return { file: f, line: 0, selection: wordFocus?.selection || undefined, paragraph: wordFocus?.paragraph || undefined };
     if (source != null && selection.to > selection.from) {
       const line = source.slice(0, selection.from).split("\n").length;
       const endLine = source.slice(0, selection.to).split("\n").length;
       return { file: f, line, endLine, selection: source.slice(selection.from, selection.to).slice(0, 1200) };
     }
     return { file: f, line: cursorLine };
-  }, [file, rel, selection, source, cursorLine]);
+  }, [file, rel, selection, source, cursorLine, wordFocus]);
 
   const attachSession = useCallback((sess: Session) => {
     setSession(sess);
@@ -832,7 +884,7 @@ export default function App() {
     if (!project) return;
     await gitRemoteAdd(project.root, "overleaf", url); setOverleafUrl(url); setNote("Overleaf remote saved.");
   }, [project]);
-  const pullOverleaf = useCallback(async () => { if (!project) return; setLiveBusy("pull"); try { setNote(await gitPull(project.root, "overleaf")); await reloadProject(); if (file) setSource(await readText(file)); } finally { setLiveBusy(null); } }, [project, file, reloadProject]);
+  const pullOverleaf = useCallback(async () => { if (!project) return; setLiveBusy("pull"); try { setNote(await gitPull(project.root, "overleaf")); await reloadProject(); if (file && isWordPath(file)) setWordReload((n) => n + 1); else if (file) setSource(await readText(file)); } finally { setLiveBusy(null); } }, [project, file, reloadProject]);
   const pushOverleaf = useCallback(async () => { if (!project) return; setLiveBusy("push"); try { setNote(await gitPush(project.root, "overleaf")); } finally { setLiveBusy(null); } }, [project]);
 
   const toggleNav = useCallback(() => { setAnimating(true); setNavOpen((v) => !v); }, []);
@@ -946,7 +998,34 @@ export default function App() {
     const now = performance.now();
     if (lastCommand.current.id === id && now - lastCommand.current.at < 150) return;
     lastCommand.current = { id, at: now };
+    // In a Word document the chords that mean something else in Word go to the editor (⌘B is Bold there, not
+    // Compile), the view and LaTeX commands step aside, and zoom and export act on the document.
+    const word = fileKind(file) === "word" ? wordRef.current : null;
+    if (word) {
+      const latexOnly = "is for LaTeX and Typst files; this is a Word document.";
+      switch (id) {
+        case "compile": case "fmt-bold": word.key("b"); return;
+        case "fmt-italic": case "fmt-emph": word.key("i"); return;
+        case "fmt-link": word.key("k"); return;
+        case "find": word.key("f"); return;
+        case "zoom-in": setWordZoom(stepWordZoom(wordStats?.scale ?? 1, 1)); return;
+        case "zoom-out": setWordZoom(stepWordZoom(wordStats?.scale ?? 1, -1)); return;
+        case "zoom-fit": setWordZoom((z) => (z === "fit" ? "page" : "fit")); return;
+        // ⌘1–3 choose Editing, Suggesting and Viewing, where they choose the view of a LaTeX file.
+        case "view-visual": setWordMode("editing"); return;
+        case "view-source": setWordMode("suggesting"); return;
+        case "view-pdf": setWordMode("viewing"); return;
+        case "view-split": setNote("A Word document has one view: its pages. Export › Convert to LaTeX Paper… makes a LaTeX copy."); return;
+        case "show-log": case "sync-pdf": case "unicode-tex": case "format-doc": case "check-grammar": case "agent-continue":
+        case "fmt-code": case "fmt-section": case "fmt-subsection": case "fmt-subsubsection": case "fmt-itemize": case "fmt-enumerate":
+        case "fmt-math": case "fmt-equation": case "fmt-figure": case "fmt-table": case "fmt-cite": case "fmt-ref": case "fmt-footnote":
+          setNote(`That command ${latexOnly} Use the Word toolbar above the page.`); return;
+      }
+    }
     switch (id) {
+      case "new-word": void newWordPaper(); break;
+      case "open-word": void openWordFile(); break;
+      case "convert-latex": if (fileKind(file) === "word") wordExportRef.current("latex"); else setNote("Open a Word document first; Convert to LaTeX Paper… makes a LaTeX copy of it."); break;
       case "open": open(); break;
       case "close-paper": if (project) closePaper(); break;
       case "new": setSheet("new"); break;
@@ -1009,7 +1088,7 @@ export default function App() {
         checkForUpdates(async (v, notes) => window.confirm(`Dabir ${v} is available.\n\n${notes}\n\nDownload and restart now?`)).then(setNote).catch((e) => setNote(String(e)));
         break;
     }
-  }, [open, startTour, openSetup, closePaper, importFromOverleaf, openWordImport, save, compile, showInPdf, toggleNav, toggleInspector, toggleTerminal, openFindPaper, toggleFocusMode, inspectorOpen, navOpen, runGrammar, mode, cycleFile, closeFile, file, project, runFile, runSelection, openRepl, formatDocument, settings.formatOnSave]);
+  }, [open, startTour, openSetup, closePaper, importFromOverleaf, openWordImport, newWordPaper, openWordFile, wordStats, setWordMode, save, compile, showInPdf, toggleNav, toggleInspector, toggleTerminal, openFindPaper, toggleFocusMode, inspectorOpen, navOpen, runGrammar, mode, cycleFile, closeFile, file, project, runFile, runSelection, openRepl, formatDocument, settings.formatOnSave]);
 
   useEffect(() => onMenu(command), [command]);
   useEffect(() => onCompileProgress((line) => setProgress(line.length > 90 ? line.slice(0, 87) + "…" : line)), []);
@@ -1024,6 +1103,8 @@ export default function App() {
   useEffect(() => {
     if (native && isMac) return;
     const onKey = (raw: KeyboardEvent) => {
+      // A chord handed to the Word editor (WordHandle.key) is a synthetic event: it must not come back here.
+      if (!raw.isTrusted) return;
       // Handled chords stop here, ahead of the editor (Ctrl+/ is CodeMirror's comment toggle) and text fields.
       const e = new Proxy(raw, { get: (t, k) => k === "preventDefault" ? () => { t.preventDefault(); t.stopPropagation(); } : Reflect.get(t, k) }) as KeyboardEvent;
       const mod = isMac ? e.metaKey : e.ctrlKey;
@@ -1038,6 +1119,8 @@ export default function App() {
       if (e.shiftKey && (e.key === "]" || e.key === "}" || e.code === "BracketRight")) { e.preventDefault(); command("next-file"); return; }
       if (e.shiftKey && (e.key === "[" || e.key === "{" || e.code === "BracketLeft")) { e.preventDefault(); command("prev-file"); return; }
       if (e.altKey && k === "c") { e.preventDefault(); command("commit"); return; }
+      if (e.altKey && !e.shiftKey && (k === "n" || e.code === "KeyN")) { e.preventDefault(); command("new-word"); return; }
+      if (e.altKey && !e.shiftKey && (k === "o" || e.code === "KeyO")) { e.preventDefault(); command("open-word"); return; }
       if (e.altKey && (k === "e" || e.code === "KeyE")) { e.preventDefault(); command("export"); return; }
       if (e.altKey && (k === "r" || e.code === "KeyR")) { e.preventDefault(); command("references"); return; }
       if (k === "=" || k === "+") { e.preventDefault(); command("zoom-in"); return; }
@@ -1078,6 +1161,31 @@ export default function App() {
     return () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
   }, [dragging]);
 
+  // ---- the Word view
+  const onWordEdit = useCallback((path: string) => {
+    if (path !== fileRef.current) return;
+    dirtyRef.current = true; setDirty(true);
+    if (!settings.autosave) return;
+    setSaveState("unsaved");
+    if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+    autosaveTimer.current = window.setTimeout(async () => {
+      setSaveState("saving");
+      try { await saveRef.current(); } catch { setSaveState("unsaved"); }
+    }, 900);
+  }, [settings.autosave]);
+  const onWordSaved = useCallback((path: string, err: string | null) => {
+    const here = path === fileRef.current;
+    if (err) { setError(`${path.split(/[\\/]/).pop()} was not saved: ${err}`); if (here) setSaveState("unsaved"); return; }
+    if (here && !wordRef.current?.dirty()) { dirtyRef.current = false; setDirty(false); setSaveState("saved"); }
+    refreshGit();
+    recordStep(path);
+  }, [refreshGit, recordStep]);
+  const onWordOutline = useCallback((rows: WordOutlineRow[]) => setOutline(rows), []);
+  const onWordError = useCallback((message: string) => {
+    const name = fileRef.current?.split(/[\\/]/).pop() ?? "the document";
+    setError(`Could not show ${name}: ${message}`);
+  }, []);
+
   const onSourceChange = useCallback((text: string) => {
     sourceRef.current = text; dirtyRef.current = true;
     setSource(text); setDirty(true);
@@ -1099,17 +1207,50 @@ export default function App() {
   // Put the open buffer on disk if it is dirty, and drop any pending autosave, so runs and Accept see what the author sees.
   const flush = useCallback(async () => {
     if (autosaveTimer.current) { clearTimeout(autosaveTimer.current); autosaveTimer.current = 0; }
+    // The Word document writes itself, to the path it was opened with; the step is recorded in onWordSaved.
+    const w = wordRef.current;
+    if (w?.dirty()) await w.flush();
     const path = fileRef.current, text = sourceRef.current;
     if (dirtyRef.current && path && text != null) { dirtyRef.current = false; await writeText(path, text); if (fileRef.current === path) { setDirty(false); setSaveState("saved"); } recordStep(path); }
   }, [recordStep]);
   useEffect(() => { flushRef.current = flush; }, [flush]);
+  // Export for a Word document: a copy, the pages as PDF, the text as Markdown, or a LaTeX paper beside it.
+  const wordExport = useCallback(async (kind: WordExport) => {
+    const w = wordRef.current, path = fileRef.current;
+    if (!project || !w || !path || w.path !== path) return;
+    const name = path.split(/[\\/]/).pop() ?? path;
+    try {
+      if (kind === "docx") {
+        const dest = await pickSavePath(`${wordStem(path)} copy.docx`, "Word document", ["docx"]);
+        if (!dest) return;
+        const bytes = await w.bytes();
+        if (!bytes) throw new Error("The editor could not produce the document.");
+        await writeBinary(dest, bytes);
+        setNote(`Saved a copy of ${name} as ${dest.split(/[\\/]/).pop()}.`);
+      } else if (kind === "pdf") {
+        await w.print();
+      } else if (kind === "md") {
+        const dest = await pickSavePath(`${wordStem(path)}.md`, "Markdown", ["md"]);
+        if (!dest) return;
+        await flush();
+        await writeText(dest, await wordMarkdown(path));
+        setNote(`Exported the text of ${name} to ${dest.split(/[\\/]/).pop()}.`);
+      } else {
+        await flush();
+        setConvertFrom({ docx: path, folder: `${parentFolder(project.root)}/${latexFolderFor(path)}` });
+        setWordPick(true); setSheet("word");
+      }
+    } catch (e) { setError(String(e).replace(/^Error:\s*/, "")); }
+  }, [project, flush, setConvertFrom]);
+  useEffect(() => { wordExportRef.current = (k) => void wordExport(k); }, [wordExport]);
   const [historyBusy, setHistoryBusy] = useState(false);
   const [historyFocus, setHistoryFocus] = useState<{ at: number; id: string | null }>({ at: 0, id: null });
   // Reload the open file and the project after history moved the working tree.
   const afterHistory = useCallback(async () => {
     if (!project) return;
     await reloadProject();
-    if (file) { const t = await readText(file); setSource(t); setDirty(false); setSaveState("saved"); }
+    if (file && isWordPath(file)) { setWordReload((n) => n + 1); setDirty(false); setSaveState("saved"); }
+    else if (file) { const t = await readText(file); setSource(t); setDirty(false); setSaveState("saved"); }
     refreshGit(); refreshVersions(project.root);
   }, [project, reloadProject, file, refreshGit, refreshVersions]);
   const restoreVersion = useCallback(async (id: string) => {
@@ -1163,7 +1304,8 @@ export default function App() {
     refreshGit();
     reloadProject();
     if (project) refreshVersions(project.root);
-    if (file) {
+    if (file && isWordPath(file)) { setWordReload((n) => n + 1); setDirty(false); setSaveState("saved"); }
+    else if (file) {
       readText(file).then((t) => { setSource(t); setDirty(false); setSaveState("saved"); }).catch(() => {});
     }
   }, [refreshGit, reloadProject, file, project, refreshVersions]);
@@ -1214,14 +1356,21 @@ export default function App() {
     };
   }, [review, project, file, rel, reviewText, reviewShowing, session, selectFile]);
 
+  const isWord = fileKind(file) === "word";
+  const wordPane = useMemo<WordPane | null>(() => (isWord ? {
+    mode: wordMode, zoom: wordZoom, stats: wordStats, author: userName() || gitAuthor || "Author", reload: wordReload,
+    onZoom: setWordZoom, onEdit: onWordEdit, onSaved: onWordSaved, onStats: setWordStats, onOutline: onWordOutline, onMode: setWordMode, onFocus: setWordFocus, onError: onWordError,
+  } : null), [isWord, wordMode, wordZoom, wordStats, gitAuthor, wordReload, onWordEdit, onWordSaved, onWordOutline, onWordError, setWordMode, sheet]); // eslint-disable-line react-hooks/exhaustive-deps -- the Share sheet is where the name is set
+  const wordBar = useMemo(() => (isWord ? { mode: wordMode, onMode: setWordMode, onExport: (k: WordExport) => wordExportRef.current(k) } : null), [isWord, wordMode, setWordMode]);
+
   const cls = ["app", native ? "native" : "", isMac ? "mac" : "", navOpen ? "" : "nav-hidden", inspectorOpen ? "" : "inspector-hidden", animating ? "animating" : "", focused ? "" : "inactive", settings.focusMode ? "focus-mode" : ""].join(" ").trim();
 
   return (
     <div className={cls} style={{ "--nav-w": `${navW}px`, "--inspector-w": `${inspW}px` } as React.CSSProperties}>
       <Toolbar project={project} file={file} dirty={dirty} saveLabel={settings.autosave ? (saveState === "saving" ? "Saving…" : saveState === "unsaved" ? "Unsaved" : saveState === "saved" ? "Saved" : null) : null} mode={mode} navOpen={navOpen} inspectorOpen={inspectorOpen}
         compiling={compileState.status === "running"} onMode={setMode} onToggleNav={toggleNav} onToggleInspector={toggleInspector} onOpen={open} onCompile={compile} onCancelCompile={() => compileCancel()}
-        onShare={() => setSheet("share")} live={!!live} peers={peers} following={followId} onJumpPeer={jumpToPeer} terminalOpen={terminal.open} onToggleTerminal={() => command("show-terminal")} run={runRecipeNow} onRun={() => command("run-file")} />
-      <Navigator project={project} current={file} outline={fileKind(file) === "code" || /\.(md|markdown)$/i.test(file ?? "") ? outline : paperOutline(map) ?? outline} git={git} commitFocus={commitFocus} busy={gitBusy || historyBusy} draftMessage={commitDraft} onDiscard={discardChange} onHistory={(id) => { if (!inspectorOpen) toggleInspector(); setHistoryFocus({ at: Date.now(), id: id ?? null }); }} history={versions}
+        onShare={() => setSheet("share")} live={!!live} peers={peers} following={followId} onJumpPeer={jumpToPeer} terminalOpen={terminal.open} onToggleTerminal={() => command("show-terminal")} run={runRecipeNow} onRun={() => command("run-file")} word={wordBar} />
+      <Navigator project={project} current={file} outline={isWord || fileKind(file) === "code" || /\.(md|markdown)$/i.test(file ?? "") ? outline : paperOutline(map) ?? outline} git={git} commitFocus={commitFocus} busy={gitBusy || historyBusy} draftMessage={commitDraft} onDiscard={discardChange} onHistory={(id) => { if (!inspectorOpen) toggleInspector(); setHistoryFocus({ at: Date.now(), id: id ?? null }); }} history={versions}
         onSelect={selectFile} onJump={(l, f) => (f ? jumpToFile(f, l) : jumpTo(l))} onInitGit={initGit} onCommit={commitAll} find={findPaper} onCloseFind={closeFindPaper} />
       <Document project={project} onSetup={(f) => openSetup(f ?? null)} file={file} source={source} bib={bib} paperWords={paperWordsNow} openFiles={openFiles} dirty={dirty} onCloseFile={closeFile} headText={headText} code={codeState} mode={mode} jumpLine={jumpLine} jumpStamp={jumpStamp}
         compileState={compileState} progress={progress} showLog={showLog} onToggleLog={() => setShowLog((v) => !v)} terminal={terminal} onToggleTerminal={toggleTerminal} findRequest={findRequest}
@@ -1235,7 +1384,7 @@ export default function App() {
         settings={settings} grammar={grammar} pins={pins} pdfZoom={pdfZoom} onPdfZoom={setPdfZoom} onOpenSettings={() => setSheet("settings")}
         onPdfComment={onPdfComment} pdfFindRequest={pdfFindRequest} editorRef={editorRef} onFind={() => command("find")} onCommentSelection={() => { if (!inspectorOpen) toggleInspector(); setAskFocus(0); setNote("Type the comment in the People tab; it attaches to your selection."); }} hasSelection={selection.to > selection.from}
         review={docReview} dictionary={dictionary} onAddWord={addWord} onContinue={continueWithAgent} splitRatio={splitRatio} onSplitRatio={setSplitRatio} onPin={(id) => { const c = allComments.find((x) => x.id === id); if (c) jumpToComment(c); }}
-        assist={assist} />
+        assist={assist} word={wordPane} wordRef={wordRef} />
       <Inspector project={project} onSetup={() => openSetup("agents")} gitRepo={!!git?.isRepo} askFocus={askFocus} prefill={prefill} tabRequest={tabRequest} onProviderReady={setAgentReady} onChanged={onChanged} onBeforeRun={flush} onOpenFile={selectFile} history={versions} historyBusy={historyBusy} onRestoreStep={restoreVersion} onUndoStep={undoVersion} historyFocus={historyFocus} onNote={setNote} autoRun={autoRun} onReview={setReview}
         live={!!live} peers={peers} following={followId} onJumpPeer={jumpToPeer} onFollowPeer={followPeer} comments={allComments} currentFile={rel(file)} hasSelection={selection.to > selection.from} focus={agentFocus}
         changes={changeItems} suggesting={settings.suggesting} onToggleSuggesting={toggleSuggesting} onResolveChanges={resolveChange} onJumpChange={jumpToChange}
@@ -1250,9 +1399,9 @@ export default function App() {
           onReferences={() => setSheet("refs")} onExport={() => setSheet("export")} signalingUrl={settings.signalingUrl} direct={directApi} />
       )}
       {sheet === "refs" && project && <ReferencesSheet project={project} sync={refSync} bibCount={Object.keys(bib).length} onClose={() => setSheet(null)} onChanged={onRefsChanged} agentReady={agentReady} onCheck={checkReferences} />}
-      {sheet === "export" && project && <ExportSheet project={project} onClose={() => setSheet(null)} ensurePdf={ensurePdf} onNote={setNote} onSetup={() => openSetup("pandoc")} />}
+      {sheet === "export" && project && <ExportSheet project={project} onClose={() => setSheet(null)} ensurePdf={ensurePdf} onNote={setNote} onSetup={() => openSetup("pandoc")} word={isWord && file ? { name: file.split(/[\\/]/).pop() ?? file, onExport: (k) => wordExportRef.current(k) } : null} />}
       {sheet === "new" && <NewPaperSheet onClose={() => setSheet(null)} onCreate={createPaper} onWord={() => openWordImport(true)} initial={newTemplate} />}
-      {sheet === "word" && <WordImportSheet autoPick={wordPick} onClose={() => setSheet(null)} chooseFolder={chooseNewPaperFolder} onImported={openImportedPaper} onSetup={() => openSetup("pandoc")} />}
+      {sheet === "word" && <WordImportSheet key={convertFrom?.docx ?? "import"} autoPick={wordPick} convert={convertFrom} onClose={() => { setSheet(null); setConvertFrom(null); }} chooseFolder={chooseNewPaperFolder} onImported={openImportedPaper} onSetup={() => openSetup("pandoc")} />}
       {sheet === "settings" && <SettingsSheet onClose={() => setSheet(null)} onSetup={() => openSetup()} />}
       {sheet === "setup" && <SetupSheet firstRun={firstRun} onClose={closeSetup} focus={setupFocus} />}
       {tour != null && <Tour steps={tourSteps} step={tour} onStep={setTour} onClose={() => setTour(null)} />}

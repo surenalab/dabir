@@ -1493,3 +1493,119 @@ input[type="range"] { accent-color: var(--accent); width: 140px; }
 .sheet.word-import footer .progress { margin-right: auto; font-size: var(--text-xs); color: var(--ink-3); }
 .sheet.chooser footer .btn { flex: none; white-space: nowrap; }
 .sheet.chooser footer .progress { margin-left: var(--space-2); }
+
+/* ---------- Word view ---------- */
+/* The engine (docx-editor) brings its own toolbar and page layout; here it is sized to the document column and
+   dressed in Dabir's tokens. The engine nests .ep-root and darkens it with .dark; the selectors below outrank both.
+   Pages stay white paper with black type in the dark theme too (the engine would invert them, photographs
+   included): the page is what gets printed. */
+.word-document .panes { flex: 1; min-height: 0; display: flex; }
+.word-pane { overflow: hidden; display: flex; flex-direction: column; }
+.word-view, .word-host { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* The engine's own layers (z-index up to 50) stay inside the document column, under the title bar's menus. */
+.word-host { isolation: isolate; }
+.word-host > .ep-root { flex: 1; min-height: 0; }
+.word-loading { flex: 1; display: grid; place-items: center; font-size: var(--text-sm); color: var(--ink-3); }
+.word-view .ep-root, .word-view .ep-root.dark, .word-view .ep-root .ep-root, .word-view .ep-root.dark .ep-root {
+  font-family: var(--font-ui);
+  --doc-page-bg: var(--page);
+  --doc-page-text: var(--page-ink);
+  --doc-caret: var(--page-ink);
+  --doc-surface: var(--raised);
+  --doc-card: var(--raised);
+  --doc-bg: var(--paper-2);
+  --doc-bg-subtle: var(--paper-2);
+  --doc-bg-hover: var(--wash-hover);
+  --doc-bg-input: var(--raised);
+  --doc-primary: var(--accent);
+  --doc-primary-hover: var(--accent-hover);
+  --doc-primary-light: var(--accent-wash);
+  --doc-accent: var(--accent);
+  --doc-accent-bg: var(--accent-wash);
+  --doc-on-primary: var(--accent-ink);
+  --doc-toggle-active-bg: var(--seg-on);
+  --doc-toggle-active-fg: var(--ink);
+  --doc-text: var(--ink);
+  --doc-text-muted: var(--ink-3);
+  --doc-text-subtle: var(--ink-4);
+  --doc-text-placeholder: var(--ink-4);
+  --doc-border: var(--line);
+  --doc-border-light: var(--line);
+  --doc-border-dark: var(--line-strong);
+  --doc-border-input: var(--line-strong);
+  --doc-error: var(--diff-del);
+  --doc-error-bg: var(--diff-del-wash);
+  --doc-success: var(--ok);
+  --doc-success-bg: var(--ok-wash);
+  --doc-warning: var(--warn);
+  --doc-warning-bg: var(--warn-wash);
+  --doc-warning-text: var(--warn);
+  --doc-selection: var(--selection);
+  --doc-shadow: var(--selection-inactive);
+  --doc-card-shadow: var(--shadow-raised);
+  --doc-card-shadow-strong: var(--shadow-popover);
+  --doc-shadow-lg: var(--shadow-popover);
+  --background: var(--hsl-raised);
+  --foreground: var(--hsl-ink);
+  --card: var(--hsl-raised);
+  --card-foreground: var(--hsl-ink);
+  --popover: var(--hsl-raised);
+  --popover-foreground: var(--hsl-ink);
+  --primary: var(--hsl-accent);
+  --primary-foreground: var(--hsl-accent-ink);
+  --secondary: var(--hsl-paper-2);
+  --secondary-foreground: var(--hsl-ink);
+  --muted: var(--hsl-paper-2);
+  --muted-foreground: var(--hsl-ink-3);
+  --accent: var(--hsl-paper-2);
+  --accent-foreground: var(--hsl-ink);
+  --border: var(--hsl-line);
+  --input: var(--hsl-line);
+  --ring: var(--hsl-accent);
+  --radius: var(--radius-md);
+}
+.app.native .word-view .ep-root, .app.native .word-view .ep-root.dark .ep-root { --doc-bg: transparent; }
+.word-view .ep-root.dark .layout-page, .word-view .ep-root.dark .layout-page img, .word-view .ep-root.dark .layout-page canvas, .word-view .ep-root.dark .layout-page svg, .word-view .ep-root.dark .layout-page video { filter: none; }
+/* The engine's menu and formatting rows read as one band, like the LaTeX formatting bar: paper-2, a hairline under
+   it, no pill, no scroll bar (the bar still scrolls sideways when the column is narrow). */
+.word-view .ep-root .bg-doc-surface.shadow-sm { background: var(--paper-2); box-shadow: none; border-bottom: 1px solid var(--line); }
+.word-view .ep-root .bg-doc-surface.shadow-sm > .bg-doc-surface { background: transparent; padding-top: 2px; padding-bottom: 0; }
+.word-view .ep-root .bg-muted.rounded-full.overflow-x-auto { background: transparent; border-radius: 0; margin: 0 var(--space-1) 2px; min-height: 34px; scrollbar-width: none; }
+.word-view .ep-root .bg-muted.rounded-full.overflow-x-auto::-webkit-scrollbar { display: none; }
+.app.native .word-view .ep-root .bg-doc-surface.shadow-sm { background: transparent; }
+/* The title bar's Editing · Suggesting · Viewing control stands in for the engine's own. */
+.word-view .ep-root div:has(> button[title$="(Ctrl+Shift+E)"]) { display: none; }
+
+.status .word-zoom { display: inline-flex; align-items: center; gap: 2px; }
+.status .word-zoom button.icon { width: 20px; height: 20px; display: inline-grid; place-items: center; border-radius: var(--radius-sm); color: var(--ink-3); text-decoration: none; }
+.status .word-zoom button.icon:hover { background: var(--wash-hover); color: var(--ink); }
+.status .word-zoom svg { width: 12px; height: 12px; }
+.status .word-zoom .zoomsel { height: 18px; padding: 0 6px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: transparent; color: var(--ink-2); font: inherit; font-variant-numeric: tabular-nums; }
+/* Suggesting is a mode, shown in the accent as the LaTeX formatting bar shows it; not a warning. */
+.status .state.suggesting { color: var(--accent); }
+/* A Word document in Changes and History is a kind of file, not a count. */
+.nav-section .kind, .timeline .files .kind { color: var(--ink-3); }
+
+/* Export, as a pull-down in the title bar, which stacks above the document column while it is open. */
+.titlebar:has(.tb-menu .menu) { position: relative; z-index: 10; }
+.tb-menu { position: relative; display: inline-flex; }
+.tb-menu .tb-btn .chev { width: 12px; height: 12px; margin-left: -2px; color: var(--ink-3); }
+.tb-menu .menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 30; width: 300px; padding: var(--space-1); display: flex; flex-direction: column; background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius-md); box-shadow: var(--shadow-popover); -webkit-app-region: no-drag; }
+.tb-menu .menu button { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 6px var(--space-2); border-radius: var(--radius-sm); text-align: left; color: var(--ink); }
+.tb-menu .menu button:hover, .tb-menu .menu button:focus-visible { background: var(--accent); color: var(--accent-ink); outline: none; }
+.tb-menu .menu:focus { outline: none; }
+.tb-menu .menu .menu-sep { height: 1px; margin: var(--space-1) var(--space-2); background: var(--line); }
+.tb-menu .menu .label { font-size: var(--text-md); }
+.tb-menu .menu .hint { font-size: var(--text-xs); color: var(--ink-3); }
+.tb-menu .menu button:hover .hint, .tb-menu .menu button:focus-visible .hint { color: inherit; opacity: .85; }
+
+/* Printing a Word document: only its pages, one per sheet, at their own size. */
+@media screen { #word-print { display: none; } }
+@media print {
+  html.printing-word, html.printing-word body { background: var(--page); height: auto; overflow: visible; }
+  html.printing-word body > :not(#word-print) { display: none !important; }
+  html.printing-word #word-print { display: block; }
+  #word-print .layout-page { break-after: page; }
+  #word-print .layout-page:last-child { break-after: auto; }
+  @page { margin: 0; size: auto; }
+}

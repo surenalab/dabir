@@ -245,7 +245,7 @@ function HistoryTab({ project, steps, busy, onRestore, onUndo, onOpenFile, focus
                 <span className="text">
                   <span className="msg">{s.message}</span>
                   <span className="files">
-                    {shown.map((f) => <span key={f.path} className="f"><span className="name">{f.path}</span>{f.binary ? <span className="add">binary</span> : <><span className="add">+{f.add}</span><span className="del">−{f.del}</span></>}</span>)}
+                    {shown.map((f) => <span key={f.path} className="f"><span className="name">{f.path}</span>{f.binary ? <span className={/\.docx$/i.test(f.path) ? "kind" : "add"}>{/\.docx$/i.test(f.path) ? "document" : "binary"}</span> : <><span className="add">+{f.add}</span><span className="del">−{f.del}</span></>}</span>)}
                     {s.files.length > 2 && <span className="more">and {s.files.length - 2} more</span>}
                   </span>
                 </span>
