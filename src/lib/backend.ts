@@ -246,12 +246,54 @@ export async function newPaper(parent: string, name: string, template: string): 
   }
   return invoke<string>("new_paper", { parent, name, template });
 }
+// ---------------------------------------------------------------- Word import
+
+/** What a Word import converted, and what to check against the Word file. */
+export interface WordImport {
+  path: string; main: string; source: string; title: string;
+  /** One sentence: what was converted. */
+  summary: string;
+  sections: number; figures: number; tables: number; equations: number; inlineMath: number;
+  citations: number; references: number; footnotes: number;
+  /** What to check, most important first. */
+  notes: string[];
+  pandoc: string;
+}
+/** The .docx to import; null when the panel is cancelled. */
+export async function pickWordDocument(): Promise<string | null> {
+  if (!native) return "/Users/ada/Downloads/Draft from Maryam.docx";
+  const picked = await openDialog({ multiple: false, title: "Import Word Document", filters: [{ name: "Word document", extensions: ["docx"] }] });
+  return typeof picked === "string" ? picked : null;
+}
+/** Convert `docx` into a new paper at `parent/name` (new or empty), set up with Git and the memory scaffold. */
+export async function importWord(docx: string, parent: string, name: string): Promise<WordImport> {
+  if (!native) {
+    await wait(1100);
+    return {
+      path: SAMPLE_PROJECT.root, main: `${SAMPLE_PROJECT.root}/main.tex`, source: docx.split(/[\\/]/).pop() ?? docx,
+      title: "Score Anchors for Low-Dose CT",
+      summary: "Converted 6 sections, 2 figures, 1 table, 4 equations, 11 inline formulas, 14 citations and 2 footnotes from Draft from Maryam.docx.",
+      sections: 6, figures: 2, tables: 1, equations: 4, inlineMath: 11, citations: 14, references: 12, footnotes: 2,
+      notes: [
+        "9 tracked changes were accepted, as in Word's No Markup view; the .docx still has them.",
+        "3 comments were left out; they stay in the .docx.",
+        "14 citations from Zotero became \\cite commands, with 12 entries in refs.bib listed by \\bibliographystyle{plain}.",
+        "Figures are in figures/ at the width they had on the Word page; LaTeX places captioned ones where they fit.",
+        "Compare the equations with the Word file; displayed ones are numbered, so use equation* where no number is wanted.",
+      ],
+      pandoc: "pandoc 3.11",
+    };
+  }
+  return invoke<WordImport>("import_word", { docx, parent, name });
+}
+
 // ---------------------------------------------------------------- export
 
 export type ExportKind = "pdf" | "arxiv" | "source" | "docx" | "html" | "md";
 export interface ExportReport { path: string; files: number; bytes: number; notes: string[] }
 export async function exportTools(): Promise<{ pandoc: string | null }> {
-  if (!native) return { pandoc: null };
+  // Browser preview: ?pandoc=1 shows the sheets as they are with pandoc installed, for screenshots.
+  if (!native) return { pandoc: new URLSearchParams(location.search).get("pandoc") === "1" ? "pandoc 3.11" : null };
   return invoke("export_tools");
 }
 export async function exportPaper(root: string, main: string, dest: string, kind: ExportKind): Promise<ExportReport> {

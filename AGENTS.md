@@ -4,7 +4,7 @@ New session? If `.notes/HANDOFF.md` exists in the checkout, read it first: one p
 
 Read PRODUCT.md and DESIGN.md before touching UI. Tokens live in src/styles/tokens.css; never hard-code a colour, face or spacing value in a component.
 
-- Front end: React 19 + TypeScript in src/. Rust core in src-tauri/src/ (`lib.rs` holds the commands; logic lives in modules: `git`, `github`, `agents`, `memory`, `paper`, `lsp`, `terminal`, `templates`, `export`, `relay`, `setup`). Commands are the only bridge, reached from `src/lib/backend.ts`.
+- Front end: React 19 + TypeScript in src/. Rust core in src-tauri/src/ (`lib.rs` holds the commands; logic lives in modules: `git`, `github`, `agents`, `memory`, `paper`, `lsp`, `terminal`, `templates`, `export`, `import`, `relay`, `setup`). Commands are the only bridge, reached from `src/lib/backend.ts`.
 - Run: `npm run tauri dev`. Browser-only preview: `npm run dev` (uses src/lib/sample.ts; native commands are stubbed).
 - Check before commit: `npm run check` (scripts/check.sh: types, lint, build, fmt, clippy, Rust tests, script tests, design detector). `SKIP_RUST=1` for the front-end half.
 - UI changes: run `/impeccable critique` on the screen and consult Apple's HIG for the matching article (the `apple-design-skill` from NutshellEngineering/apple-design-skill, if installed under the gitignored `.agents/skills/`, has it offline).

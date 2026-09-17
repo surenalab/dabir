@@ -1472,3 +1472,24 @@ input[type="range"] { accent-color: var(--accent); width: 140px; }
 .nb-md p { margin: 0 0 var(--space-2); }
 .nb-md code { font-family: var(--font-mono); font-size: .85em; background: var(--paper-2); padding: 0 4px; border-radius: 3px; }
 .nb-md pre { font-family: var(--font-mono); font-size: 13px; background: var(--paper-2); padding: 8px 12px; border-radius: var(--radius-md); overflow: auto; }
+
+/* ---------- Word import sheet ---------- */
+.sheet.word-import { width: 520px; }
+.word-lede { margin: 0 0 var(--space-3); font-size: var(--text-md); color: var(--ink-2); line-height: 1.5; }
+.sheet .word-carry { grid-template-columns: max-content minmax(0, 1fr); gap: var(--space-2) var(--space-4); padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--paper-2); }
+.sheet .word-carry dt { font-size: var(--text-sm); font-weight: 600; color: var(--ink); }
+.sheet .word-carry dd { font-size: var(--text-sm); color: var(--ink-2); line-height: 1.45; text-align: left; }
+.word-import code { font-family: var(--font-mono); font-size: var(--text-xs); background: var(--paper-2); padding: 0 var(--space-1); border-radius: var(--radius-sm); user-select: text; }
+.word-carry code { background: var(--raised); }
+.word-import .link { color: var(--accent); font-size: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.word-hint { margin: var(--space-3) 0 0; font-size: var(--text-xs); color: var(--ink-3); line-height: 1.5; }
+.word-error { margin: var(--space-3) 0 0; font-size: var(--text-sm); color: var(--diff-del); line-height: 1.5; user-select: text; }
+.word-summary { display: flex; gap: var(--space-2); align-items: flex-start; margin: 0; font-size: var(--text-md); color: var(--ink); line-height: 1.5; }
+.word-summary svg { width: 14px; height: 14px; color: var(--ok); flex: none; margin-top: 3px; }
+.word-summary .link { margin-left: var(--space-1); }
+.word-done h3 { margin: var(--space-4) 0 var(--space-2); font-size: var(--text-sm); font-weight: 600; color: var(--ink-2); }
+.word-notes { margin: 0; padding-left: var(--space-4); display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--text-sm); color: var(--ink-2); line-height: 1.45; user-select: text; }
+.sheet.word-import footer { align-items: center; }
+.sheet.word-import footer .progress { margin-right: auto; font-size: var(--text-xs); color: var(--ink-3); }
+.sheet.chooser footer .btn { flex: none; white-space: nowrap; }
+.sheet.chooser footer .progress { margin-left: var(--space-2); }
