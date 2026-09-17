@@ -22,7 +22,7 @@ function suggestedFolder(t: Template): string {
  * New Paper: a chooser in the manner of a document template picker. Groups on the left, the group's
  * templates in the middle, the chosen one explained on the right. Create opens the save panel, where
  * the folder is named and placed in one step; `onCreate` resolves false when that panel is cancelled.
- * From Word Document… leaves the chooser for the Word import, which starts from a coauthor's .docx.
+ * Convert Word to LaTeX… leaves the chooser for the Word import, which starts from a coauthor's .docx.
  */
 export function NewPaperSheet({ onClose, onCreate, onWord, initial }: { onClose: () => void; onCreate: (template: string, suggested: string) => Promise<boolean>; onWord: () => void; initial?: string | null }) {
   const [listing, setListing] = useState<TemplateListing | null>(null);
