@@ -26,6 +26,7 @@ import { proseWords } from "../lib/spell";
 import type { ChangeRange } from "../lib/changes";
 import type { ReviewMarks } from "../lib/review";
 import { chord } from "../lib/keys";
+import { clampSplit, SPLIT_DEFAULT, SPLIT_MAX, SPLIT_MIN } from "../lib/pdf-layout";
 
 const PdfView = lazy(() => import("./PdfView").then((m) => ({ default: m.PdfView })));
 
@@ -134,6 +135,8 @@ interface Props {
   onPin: (id: string) => void;
   pdfZoom: PdfZoom;
   onPdfZoom: (z: PdfZoom) => void;
+  /** The PDF's scale on screen, for the zoom commands to step from when the zoom is a fit mode. */
+  onPdfScale?: (scale: number) => void;
   onOpenSettings: () => void;
   onPdfComment: (page: number, x: number, y: number) => void;
   pdfFindRequest: number;
@@ -166,17 +169,29 @@ export interface DocReview {
 }
 
 export function Document(p: Props) {
-  const { project, source, mode, compileState, showLog, error, terminal, onToggleTerminal, paperWords, file, openFiles, dirty: fileDirty, onCloseFile, onSelectFile, headText, code } = p;
+  const { project, source, mode, compileState, showLog, error, terminal, onToggleTerminal, paperWords, file, openFiles, dirty: fileDirty, onCloseFile, onSelectFile, headText, code, splitRatio } = p;
   const macros = useMemo(() => (source ? collectMacros(source) : {}), [source]);
   const [dragging, setDragging] = useState(false);
   const splitRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!dragging) return;
-    const move = (e: PointerEvent) => { const r = splitRef.current?.getBoundingClientRect(); if (r) p.onSplitRatio(Math.min(0.8, Math.max(0.2, (e.clientX - r.left) / r.width))); };
-    const up = () => setDragging(false);
-    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
-    return () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
-  }, [dragging, p]);
+  /** Set the editor's share of the split, keeping both panes at their minimum width (tokens.css) when there is room. */
+  const splitTo = (ratio: number) => {
+    const el = splitRef.current;
+    if (!el) return;
+    const css = getComputedStyle(el), px = (name: string) => parseFloat(css.getPropertyValue(name)) || 0;
+    p.onSplitRatio(clampSplit(ratio, el.clientWidth, px("--split-editor-min"), px("--split-pdf-min")));
+  };
+  const onDividerKey = (e: React.KeyboardEvent) => {
+    const step = e.shiftKey ? 0.1 : 0.02;
+    const to = e.key === "ArrowLeft" ? splitRatio - step : e.key === "ArrowRight" ? splitRatio + step
+      : e.key === "Home" ? SPLIT_MIN : e.key === "End" ? SPLIT_MAX : e.key === "Enter" ? SPLIT_DEFAULT : null;
+    if (to == null) return;
+    e.preventDefault();
+    splitTo(to);
+  };
+  // The PDF on screen: the last build stays up while the next one compiles, so the reader keeps their place.
+  const [shownPdf, setShownPdf] = useState<{ path: string | null; at: number }>({ path: null, at: 0 });
+  if (compileState.status === "done" && compileState.at !== shownPdf.at) setShownPdf({ path: compileState.result.pdf, at: compileState.at });
+  else if (compileState.status === "idle" && shownPdf.at !== 0) setShownPdf({ path: null, at: 0 });
 
   useEffect(() => {
     setVisualContext({
@@ -296,7 +311,7 @@ export function Document(p: Props) {
   ) : source != null ? <div className="doc-empty"><div className="card"><p>This file type is not editable in Dabir yet.</p></div></div> : null;
   const pdf = showPdf ? (
     <Suspense fallback={<div className="doc-empty"><div className="card"><p>Loading PDF…</p></div></div>}>
-      <PdfView path={result?.pdf ?? null} stamp={compileState.status === "done" ? compileState.at : 0} target={p.pdfTarget} onJump={p.onPdfClick} onComment={p.onPdfComment} pins={p.pins} onPin={p.onPin} zoom={p.pdfZoom} onZoom={p.onPdfZoom} findRequest={p.pdfFindRequest} />
+      <PdfView path={shownPdf.path} stamp={shownPdf.at} target={p.pdfTarget} onJump={p.onPdfClick} onComment={p.onPdfComment} pins={p.pins} onPin={p.onPin} zoom={p.pdfZoom} onZoom={p.onPdfZoom} onScale={p.onPdfScale} findRequest={p.pdfFindRequest} />
     </Suspense>
   ) : null;
 
@@ -330,9 +345,17 @@ export function Document(p: Props) {
       {project && <FileTabs root={project.root} files={openFiles} active={file} dirty={fileDirty} onSelect={onSelectFile} onClose={onCloseFile} />}
       {showEditor && !isProse && !previewing && file && project && fileKind(file) !== "notebook" && <CodeBar rel={relTo(project.root, file)} state={code} onRun={code.onRun} onRunSelection={() => code.onRunSelection()} onRepl={code.onRepl} onFormat={code.onFormat} onNextProblem={() => p.editorRef.current?.nextDiagnostic()} />}
       {showEditor && isProse && !previewing && <FormatBar api={p.editorRef.current} lang={markupLang} onFind={p.onFind} onComment={p.onCommentSelection} canComment={p.hasSelection} suggesting={p.settings.suggesting} onToggleSuggesting={p.onToggleSuggesting} pending={p.changes.length} />}
-      <div className={`panes ${mode === "split" ? "split" : ""}`} ref={splitRef} style={mode === "split" ? { "--split": `${Math.round(p.splitRatio * 100)}%` } as React.CSSProperties : undefined}>
+      <div className={`panes ${mode === "split" ? "split" : ""}`} ref={splitRef} style={mode === "split" ? { "--split": `${Math.round(splitRatio * 100)}%` } as React.CSSProperties : undefined}>
         <div className="scroll" hidden={!showEditor}>{editor}</div>
-        {mode === "split" && <div className={`vdivider ${dragging ? "dragging" : ""}`} onPointerDown={() => setDragging(true)} role="separator" aria-orientation="vertical" aria-label="Resize editor and PDF" />}
+        {mode === "split" && (
+          <div className={`vdivider ${dragging ? "dragging" : ""}`} role="separator" aria-orientation="vertical" aria-label="Resize editor and PDF" tabIndex={0}
+            aria-valuemin={Math.round(SPLIT_MIN * 100)} aria-valuemax={Math.round(SPLIT_MAX * 100)} aria-valuenow={Math.round(splitRatio * 100)} aria-valuetext={`Editor ${Math.round(splitRatio * 100)} percent`}
+            title="Drag to resize, double-click to reset"
+            onPointerDown={(e) => { if (e.button !== 0) return; e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); setDragging(true); }}
+            onPointerMove={(e) => { if (!dragging) return; const r = splitRef.current?.getBoundingClientRect(); if (r) splitTo((e.clientX - r.left) / r.width); }}
+            onPointerUp={() => setDragging(false)} onLostPointerCapture={() => setDragging(false)}
+            onDoubleClick={() => splitTo(SPLIT_DEFAULT)} onKeyDown={onDividerKey} />
+        )}
         {showPdf && <div className="scroll pdfpane">{pdf}</div>}
       </div>
 

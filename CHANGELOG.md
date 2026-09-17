@@ -4,6 +4,8 @@ Newest first. Every merged pull request adds a line under Unreleased; a release 
 
 ## Unreleased
 
+- PDF view: Fit width and Fit page follow the pane as it changes (the Split divider, the window, the sidebar and inspector), and the reader's place holds through a resize, a zoom and a recompile instead of jumping to the top; the last build stays on screen while the next one compiles. Only pages near the view are drawn, so a long paper at 300 % stays light. ⌘-scroll and pinch zoom around the pointer. Split keeps its own zoom, stays in Split after a compile, and its divider resets on double-click, moves with the arrow keys and leaves both panes a usable width. Pages wider than the pane scroll from their left edge, the PDF toolbar stays put, the page number follows the scroll, and find highlights and text selection line up with the text.
+
 ## 0.1.10
 
 - Jump and Follow to a coauthor leave PDF-only view so the caret is on screen, including when the editor was unmounted. Follow no longer re-scrolls when they have not moved. Removing a GitHub collaborator asks first. The People list no longer waits on `gh` on the UI thread, and a lookup failure is shown instead of spinning forever.

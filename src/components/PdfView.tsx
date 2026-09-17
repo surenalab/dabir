@@ -1,13 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import * as pdfjs from "pdfjs-dist";
 import { ChevronLeft, ChevronRight, Maximize2, Minus, Plus, Search, X } from "lucide-react";
 import { readBinary, type PdfPos } from "../lib/backend";
 import { chord } from "../lib/keys";
+import { stepZoom, type Anchor, type PdfZoom } from "../lib/pdf-layout";
+import { PdfPages, type PdfHits, type PdfPin } from "../lib/pdf-pages";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
 
-export interface PdfPin { id: string; page: number; y: number; color: string; n: number; resolved: boolean; title: string }
-export type PdfZoom = number | "fit" | "page";
+export type { PdfPin, PdfZoom };
 
 interface Props {
   path: string | null;
@@ -16,6 +17,8 @@ interface Props {
   pins: PdfPin[];
   zoom: PdfZoom;
   onZoom: (z: PdfZoom) => void;
+  /** The first page's scale on screen, whenever it changes (fit modes included). */
+  onScale?: (scale: number) => void;
   onJump: (page: number, xPt: number, yPt: number) => void;      // double-click: go to source
   onComment: (page: number, xPt: number, yPt: number) => void;   // Option-click: comment here
   onPin: (id: string) => void;
@@ -24,192 +27,98 @@ interface Props {
 
 const PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
 
-export function PdfView({ path, stamp, target, pins, zoom, onZoom, onJump, onComment, onPin, findRequest }: Props) {
+/** Where the reader was when the view last closed: switching to Visual and back mounts it afresh. */
+let lastPlace: { path: string; place: Anchor } | null = null;
+
+export function PdfView({ path, stamp, target, pins, zoom, onZoom, onScale, onJump, onComment, onPin, findRequest }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const outer = useRef<HTMLDivElement>(null);
+  const viewer = useRef<PdfPages | null>(null);
+  const loaded = useRef<{ task: pdfjs.PDFDocumentLoadingTask; path: string } | null>(null);
+  const handlers = useRef({ onZoom, onScale, onPin });
+  useEffect(() => { handlers.current = { onZoom, onScale, onPin }; });
   const [note, setNote] = useState<string | null>(null);
-  const [pages, setPages] = useState(0);
   const [total, setTotal] = useState(0);
   const [current, setCurrent] = useState(1);
-  const docRef = useRef<pdfjs.PDFDocumentProxy | null>(null);
-  const taskRef = useRef<pdfjs.PDFDocumentLoadingTask | null>(null);
-  const [docStamp, setDocStamp] = useState(0);
+  const [docKey, setDocKey] = useState(0);
   const [findOpen, setFindOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [hits, setHits] = useState<{ page: number; count: number }[]>([]);
+  const [hits, setHits] = useState<PdfHits[]>([]);
   const findInput = useRef<HTMLInputElement>(null);
 
-  // Load the document once per compile.
+  // The page stack lives outside React (src/lib/pdf-pages.ts); this component owns the toolbar and the props.
+  useLayoutEffect(() => {
+    const v = new PdfPages(outer.current!, host.current!, {
+      page: setCurrent,
+      scale: (s) => handlers.current.onScale?.(s),
+      commit: (z) => handlers.current.onZoom(z),
+    });
+    viewer.current = v;
+    return () => {
+      const l = loaded.current;
+      if (l && v.where) lastPlace = { path: l.path, place: v.where };
+      v.destroy();
+      l?.task.destroy().catch(() => {});
+      viewer.current = null; loaded.current = null;
+    };
+  }, []);
+
+  useEffect(() => { viewer.current?.setZoom(zoom); }, [zoom]);
+
+  // Load each build. The previous one stays on screen until the new one is laid out, and the reader keeps their place.
   useEffect(() => {
+    const v = viewer.current;
+    if (!v) return;
+    const drop = (message: string) => {
+      v.clear(); setTotal(0); setNote(message);
+      loaded.current?.task.destroy().catch(() => {}); loaded.current = null;
+    };
+    if (!path) { drop(chord("Compile the paper (⌘B) to see its PDF here. Select text to copy it, double-click to go to the source line, Option-click to comment there.")); return; }
     let cancelled = false;
-    taskRef.current?.destroy().catch(() => {});
-    taskRef.current = null; docRef.current = null;
-    setPages(0); setTotal(0);
-    if (!path) { setNote(chord("Compile the paper (⌘B) to see its PDF here. Select text to copy it, double-click to go to the source line, Option-click to comment there.")); host.current?.replaceChildren(); return; }
-    setNote(null);
+    let task: pdfjs.PDFDocumentLoadingTask | null = null;
     (async () => {
       try {
         const bytes = await readBinary(path);
-        if (bytes.length === 0) { setNote("The compiled PDF is only available in the desktop app."); return; }
-        const task = pdfjs.getDocument({ data: bytes });
+        if (cancelled) return;
+        if (bytes.length === 0) { drop("The compiled PDF is only available in the desktop app."); return; }
+        task = pdfjs.getDocument({ data: bytes });
         const doc = await task.promise;
-        if (cancelled) { task.destroy(); return; }
-        taskRef.current = task; docRef.current = doc;
-        setTotal(doc.numPages);
-        setDocStamp(Date.now());
-      } catch (e) { if (!cancelled) setNote(`Could not render the PDF: ${String(e)}`); }
+        // Every page's size first (cheap), so the whole document is laid out before anything is drawn.
+        const proxies = await Promise.all(Array.from({ length: doc.numPages }, (_, i) => doc.getPage(i + 1)));
+        if (cancelled || viewer.current !== v) return;
+        const place = v.count ? v.where : lastPlace?.path === path ? lastPlace.place : null;
+        v.show(proxies, place);
+        const previous = loaded.current;
+        loaded.current = { task, path };
+        task = null;
+        previous?.task.destroy().catch(() => {});
+        setNote(null); setTotal(doc.numPages); setDocKey((k) => k + 1);
+      } catch (e) { if (!cancelled) drop(`Could not render the PDF: ${String(e)}`); }
     })();
-    return () => { cancelled = true; };
+    return () => { cancelled = true; task?.destroy().catch(() => {}); };
   }, [path, stamp]);
 
-  // Render pages at the current zoom, with a selectable text layer on each.
-  useEffect(() => {
-    const doc = docRef.current, el = host.current;
-    if (!doc || !el) return;
-    let cancelled = false;
-    const keepScroll = outer.current ? outer.current.scrollTop / Math.max(1, outer.current.scrollHeight) : 0;
-    el.replaceChildren();
-    (async () => {
-      const availW = (outer.current?.clientWidth ?? 800) - 32;
-      const availH = (outer.current?.clientHeight ?? 800) - 24;
-      const dpr = window.devicePixelRatio || 1;
-      for (let n = 1; n <= doc.numPages; n++) {
-        const page = await doc.getPage(n);
-        if (cancelled) return;
-        const base = page.getViewport({ scale: 1 });
-        const scale = zoom === "fit" ? Math.max(0.3, Math.min(availW, 1600) / base.width)
-          : zoom === "page" ? Math.max(0.3, Math.min(availW / base.width, availH / base.height))
-          : zoom;
-        const viewport = page.getViewport({ scale });
-        const wrap = document.createElement("div");
-        wrap.className = "pdf-page";
-        wrap.dataset.page = String(n);
-        wrap.dataset.scale = String(scale);
-        wrap.style.width = `${viewport.width}px`;
-        wrap.style.height = `${viewport.height}px`;
-        const canvas = document.createElement("canvas");
-        const hi = page.getViewport({ scale: scale * dpr });
-        canvas.width = hi.width; canvas.height = hi.height;
-        canvas.style.width = "100%"; canvas.style.height = "100%";
-        canvas.setAttribute("aria-label", `Page ${n} of ${doc.numPages}`);
-        wrap.appendChild(canvas);
-        const text = document.createElement("div");
-        text.className = "textLayer";
-        wrap.appendChild(text);
-        el.appendChild(wrap);
-        await page.render({ canvas, canvasContext: canvas.getContext("2d")!, viewport: hi }).promise;
-        if (cancelled) return;
-        try {
-          const layer = new pdfjs.TextLayer({ textContentSource: page.streamTextContent(), container: text, viewport });
-          await layer.render();
-        } catch { /* text layer is a convenience; the page still shows */ }
-        if (!cancelled) setPages(n);
-      }
-      if (outer.current && keepScroll) outer.current.scrollTop = keepScroll * outer.current.scrollHeight;
-    })();
-    return () => { cancelled = true; };
-  }, [docStamp, zoom]);
-
-  // Track the page in view.
-  useEffect(() => {
-    const el = outer.current;
-    if (!el) return;
-    const onScroll = () => {
-      const mid = el.scrollTop + el.clientHeight / 3;
-      let best = 1;
-      el.querySelectorAll<HTMLElement>(".pdf-page").forEach((p) => { if (p.offsetTop <= mid) best = Number(p.dataset.page); });
-      setCurrent(best);
-    };
-    el.addEventListener("scroll", onScroll, { passive: true });
-    return () => el.removeEventListener("scroll", onScroll);
-  }, [pages]);
-
-  const goto = useCallback((n: number) => {
-    const page = host.current?.querySelector<HTMLElement>(`.pdf-page[data-page="${Math.max(1, Math.min(total, n))}"]`);
-    page?.scrollIntoView({ block: "start", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
-  }, [total]);
-
-  // Forward sync: scroll to the page and draw a marker at the line's position.
-  useEffect(() => {
-    if (!target || !host.current) return;
-    const page = host.current.querySelector<HTMLElement>(`.pdf-page[data-page="${target.page}"]`);
-    if (!page) return;
-    host.current.querySelectorAll(".pdf-marker").forEach((m) => m.remove());
-    const scale = Number(page.dataset.scale || 1);
-    const marker = document.createElement("div");
-    marker.className = "pdf-marker";
-    marker.style.top = `${target.y * scale - 10}px`;
-    page.appendChild(marker);
-    const r = page.getBoundingClientRect(), o = outer.current!.getBoundingClientRect();
-    const y = page.offsetTop + target.y * scale;
-    if (y < outer.current!.scrollTop + 40 || y > outer.current!.scrollTop + o.height - 40 || r.top > o.bottom || r.bottom < o.top) {
-      outer.current!.scrollTo({ top: y - o.height / 2, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
-    }
-    const t = setTimeout(() => marker.classList.add("fade"), 1800);
-    return () => clearTimeout(t);
-  }, [target, pages]);
+  // Forward sync: mark the line and bring it into view.
+  useEffect(() => { if (target) viewer.current?.mark(target); }, [target]);
 
   // Comment pins.
-  useEffect(() => {
-    const el = host.current;
-    if (!el) return;
-    el.querySelectorAll(".pdf-pin").forEach((p) => p.remove());
-    for (const pin of pins) {
-      const page = el.querySelector<HTMLElement>(`.pdf-page[data-page="${pin.page}"]`);
-      if (!page) continue;
-      const scale = Number(page.dataset.scale || 1);
-      const d = document.createElement("button");
-      d.className = `pdf-pin ${pin.resolved ? "resolved" : ""}`;
-      d.style.top = `${pin.y * scale - 11}px`;
-      d.style.setProperty("--pin-color", pin.color);
-      d.title = pin.title;
-      d.setAttribute("aria-label", `Comment ${pin.n}: ${pin.title}`);
-      d.innerHTML = `<span>${pin.n}</span>`;
-      d.onclick = (e) => { e.stopPropagation(); onPin(pin.id); };
-      page.appendChild(d);
-    }
-  }, [pins, pages, onPin]);
+  useEffect(() => { viewer.current?.setPins(pins, (id) => handlers.current.onPin(id)); }, [pins]);
 
-  // ⌘-wheel and pinch zoom.
-  useEffect(() => {
-    const el = outer.current;
-    if (!el) return;
-    const onWheel = (e: WheelEvent) => {
-      if (!e.ctrlKey && !e.metaKey) return;
-      e.preventDefault();
-      const cur = typeof zoom === "number" ? zoom : Number(host.current?.querySelector<HTMLElement>(".pdf-page")?.dataset.scale || 1);
-      onZoom(Math.min(4, Math.max(0.3, cur * (e.deltaY < 0 ? 1.08 : 0.92))));
-    };
-    el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
-  }, [zoom, onZoom]);
-
-  // Find in the PDF text: highlight matching spans, count per page.
+  // Find in the PDF text: highlight matching spans on drawn pages, count on all of them.
   useEffect(() => { if (findRequest) { setFindOpen(true); setTimeout(() => findInput.current?.focus(), 50); } }, [findRequest]);
+  // A new query scrolls to its first hit; a new build keeps the reader where they are.
+  const searched = useRef("");
   useEffect(() => {
-    const el = host.current;
-    if (!el) return;
-    el.querySelectorAll(".textLayer span.hit").forEach((s) => s.classList.remove("hit"));
-    if (!query.trim()) { setHits([]); return; }
-    const q = query.toLowerCase();
-    const counts: { page: number; count: number }[] = [];
-    el.querySelectorAll<HTMLElement>(".pdf-page").forEach((p) => {
-      let n = 0;
-      p.querySelectorAll<HTMLElement>(".textLayer span").forEach((s) => { if (s.textContent && s.textContent.toLowerCase().includes(q)) { s.classList.add("hit"); n++; } });
-      if (n) counts.push({ page: Number(p.dataset.page), count: n });
-    });
-    setHits(counts);
-    const first = el.querySelector<HTMLElement>(".textLayer span.hit");
-    first?.scrollIntoView({ block: "center" });
-  }, [query, pages]);
+    let alive = true;
+    const reveal = query !== searched.current;
+    searched.current = query;
+    viewer.current?.search(query, reveal).then((h) => { if (alive && h) setHits(h); });
+    return () => { alive = false; };
+  }, [query, docKey]);
 
-  const at = (e: React.MouseEvent) => {
-    const page = (e.target as HTMLElement).closest<HTMLElement>(".pdf-page");
-    if (!page) return null;
-    const r = page.getBoundingClientRect();
-    const scale = Number(page.dataset.scale || 1);
-    return { page: Number(page.dataset.page), x: (e.clientX - r.left) / scale, y: (e.clientY - r.top) / scale };
-  };
+  const goto = (n: number) => viewer.current?.goto(n);
+  const shown = () => viewer.current?.scale ?? 1;
+  const at = (e: React.MouseEvent) => viewer.current?.locate(e.target, e.clientX, e.clientY) ?? null;
   const onClick = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest(".pdf-pin, .pdf-bar")) return;
     if (!e.altKey) return; // plain clicks select text; nothing else happens
@@ -220,7 +129,6 @@ export function PdfView({ path, stamp, target, pins, zoom, onZoom, onJump, onCom
     const p = at(e); if (p) { window.getSelection()?.removeAllRanges(); onJump(p.page, p.x, p.y); }
   };
 
-  const shown = typeof zoom === "number" ? zoom : Number(host.current?.querySelector<HTMLElement>(".pdf-page")?.dataset.scale || 1);
   const totalHits = hits.reduce((n, h) => n + h.count, 0);
 
   return (
@@ -233,14 +141,14 @@ export function PdfView({ path, stamp, target, pins, zoom, onZoom, onJump, onCom
             <button className="tb-btn icon" onClick={() => goto(current + 1)} disabled={current >= total} aria-label="Next page"><ChevronRight /></button>
           </div>
           <div className="group">
-            <button className="tb-btn icon" onClick={() => onZoom(Math.max(0.3, shown * 0.85))} aria-label="Zoom out" title={chord("Zoom out (⌘−)")}><Minus /></button>
+            <button className="tb-btn icon" onClick={() => onZoom(stepZoom(shown(), -1))} aria-label="Zoom out" title={chord("Zoom out (⌘−)")}><Minus /></button>
             <select className="zoomsel" value={typeof zoom === "number" ? String(zoom) : zoom} onChange={(e) => { const v = e.target.value; onZoom(v === "fit" || v === "page" ? v : Number(v)); }} aria-label="Zoom level">
               <option value="fit">Fit width</option>
               <option value="page">Fit page</option>
               {PRESETS.map((z) => <option key={z} value={String(z)}>{Math.round(z * 100)}%</option>)}
               {typeof zoom === "number" && !PRESETS.includes(zoom) && <option value={String(zoom)}>{Math.round(zoom * 100)}%</option>}
             </select>
-            <button className="tb-btn icon" onClick={() => onZoom(Math.min(4, shown * 1.18))} aria-label="Zoom in" title={chord("Zoom in (⌘=)")}><Plus /></button>
+            <button className="tb-btn icon" onClick={() => onZoom(stepZoom(shown(), 1))} aria-label="Zoom in" title={chord("Zoom in (⌘=)")}><Plus /></button>
             <button className="tb-btn icon" onClick={() => onZoom(zoom === "fit" ? "page" : "fit")} aria-label="Fit" title={zoom === "fit" ? "Fit page" : chord("Fit width (⌘0)")}><Maximize2 /></button>
           </div>
           <div className="group">
@@ -256,8 +164,8 @@ export function PdfView({ path, stamp, target, pins, zoom, onZoom, onJump, onCom
           </div>
         </div>
       )}
-      <div className="pdf" ref={outer} onClick={onClick} onDoubleClick={onDoubleClick} aria-label={pages ? `${pages} page PDF` : undefined}>
-        <div ref={host} style={{ display: "contents" }} />
+      <div className="pdf" ref={outer} onClick={onClick} onDoubleClick={onDoubleClick} aria-label={total ? `${total} page PDF` : undefined}>
+        <div className="pdf-pages" ref={host} />
         {note && <p className="note">{note}</p>}
       </div>
     </div>

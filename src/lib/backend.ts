@@ -112,8 +112,14 @@ export async function writeText(path: string, contents: string): Promise<void> {
   return invoke("write_text", { path, contents });
 }
 
+/** `npm run dev` only: where the preview's compile says its PDF is. vite.config.ts serves that file at /__sample.pdf. */
+const DEV_PDF = "/.dabir/build/main.pdf";
+async function devSamplePdf(): Promise<Uint8Array> {
+  try { const r = await fetch("/__sample.pdf"); return r.ok ? new Uint8Array(await r.arrayBuffer()) : new Uint8Array(); } catch { return new Uint8Array(); }
+}
+
 export async function readBinary(path: string): Promise<Uint8Array> {
-  if (!native) return new Uint8Array();
+  if (!native) return import.meta.env.DEV && path.endsWith(DEV_PDF) ? devSamplePdf() : new Uint8Array();
   const bytes = await invoke<ArrayBuffer | number[]>("read_binary", { path });
   return bytes instanceof ArrayBuffer ? new Uint8Array(bytes) : Uint8Array.from(bytes);
 }
@@ -156,7 +162,8 @@ export async function checkForUpdates(confirm: (version: string, notes: string) 
 export async function compile(mainTex: string): Promise<CompileResult> {
   if (!native) {
     await wait(900);
-    return { ok: true, pdf: null, engine: "sample", millis: 900, log: "(browser preview: no TeX engine available)",
+    // The dev server has a real PDF to show (see devSamplePdf); a production preview does not.
+    return { ok: true, pdf: import.meta.env.DEV ? mainTex.replace(/\/[^/]*$/, DEV_PDF) : null, engine: "sample", millis: 900, log: "(browser preview: no TeX engine available)",
       diagnostics: [
         { severity: "error", category: "syntax", file: "main.tex", line: 41, message: "Undefined control sequence", context: "! Undefined control sequence.\nl.41 \\section{Results}\\undefinedmacro\n                                     {x}" },
         { severity: "warning", category: "citation", file: "main.tex", line: 51, message: "Citation `chung2023dps' on page 1 undefined", context: "LaTeX Warning: Citation `chung2023dps' on page 1 undefined on input line 51." },
