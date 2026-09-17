@@ -12,6 +12,7 @@ import type { Comment, Peer } from "../lib/collab";
 import { GithubPeople } from "./GithubPeople";
 import { chord } from "../lib/keys";
 import { isMac } from "../lib/backend";
+import { fileKind } from "../lib/languages";
 
 export type Tab = "agent" | "memory" | "people" | "history";
 
@@ -625,7 +626,9 @@ export function Inspector({ project, gitRepo, askFocus, prefill, tabRequest, onP
             <p className="composer-note" role="status">{run.text} <button className="btn" style={{ height: 22, marginLeft: 6 }} onClick={() => setRun({ phase: "idle" })}>OK</button></p>
           )}
           {run.phase === "idle" && project && !finishedRun && (
-            <p className="composer-note">The agent works on a copy of the paper as it is now. When it finishes, the document shows its version with the changes marked and {chord("⌘B")} compiles it; then Accept (lands the change and takes a snapshot), Reject, or open a pull request.{gitRepo ? "" : " This folder is not a Git repository yet; the first run makes it one, with your files left uncommitted."}</p>
+            <p className="composer-note">{fileKind(project.mainTex) === "word"
+              ? "The agent works on a copy of the paper as it is now. It reads the Word document and can change the code and data beside it; it does not edit the .docx itself yet. When it finishes, review its changes, then Accept (lands them and takes a snapshot), Reject, or open a pull request."
+              : <>The agent works on a copy of the paper as it is now. When it finishes, the document shows its version with the changes marked and {chord("⌘B")} compiles it; then Accept (lands the change and takes a snapshot), Reject, or open a pull request.</>}{gitRepo ? "" : " This folder is not a Git repository yet; the first run makes it one, with your files left uncommitted."}</p>
           )}
         </div>
       )}
