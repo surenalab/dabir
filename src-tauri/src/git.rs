@@ -1224,8 +1224,12 @@ fn word_patch(repo: &Repository, path: &Path, old: git2::Oid, new: git2::Oid) ->
             )
         }
     };
+    // The text is the same, but Git listed the file, so something else in the package changed: a picture, a
+    // style, the page setup. Say so rather than leaving the step's detail blank, as for a side that would not read.
     if before == after {
-        return String::new();
+        return format!(
+            "diff --git a/{name} b/{name}\n--- a/{name}\n+++ b/{name}\n@@ -1 +1 @@\n-(the text of the document is unchanged)\n+(a picture, a style or the page setup changed; open it to see)\n"
+        );
     }
     let mut opts = git2::DiffOptions::new();
     opts.context_lines(2);
