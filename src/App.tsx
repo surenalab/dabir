@@ -388,12 +388,17 @@ export default function App() {
     const mainTex = agentBuild ? `${review.worktree}/${project.mainTex.slice(project.root.length + 1)}` : project.mainTex;
     if (!agentBuild && dirtyRef.current) { try { await flushRef.current(); } catch (e) { setError(String(e)); return; } }
     setCompileState({ status: "running", startedAt: Date.now() });
+    // The paper can be swapped while the engine runs; a result for the paper that is gone must not be shown,
+    // or its PDF would sit under the new paper's title with the new paper's pins on it.
+    const from = project.root;
     try {
       const result = await runCompile(mainTex);
+      if (projectRef.current?.root !== from) return;
       setCompileState({ status: "done", result, at: Date.now(), agent: agentBuild ? review.label : undefined });
       // Show the PDF, unless Split already does.
       if (result.ok && result.pdf) setMode((m) => (m === "split" ? m : "pdf"));
     } catch (e) {
+      if (projectRef.current?.root !== from) return;
       setCompileState({ status: "done", at: Date.now(), result: { ok: false, pdf: null, log: String(e), engine: "", millis: 0, diagnostics: [{ severity: "error", category: "other", file: null, line: null, message: String(e), context: null }] } });
     }
   }, [project, compileState.status, review, reviewShowing, session]);
@@ -421,7 +426,7 @@ export default function App() {
     try {
       const pos = await synctexForward(project.mainTex, file, cursorLine);
       if (!pos) { setNote(`No PDF position recorded for line ${cursorLine}.`); return; }
-      setMode("pdf"); setPdfTarget({ ...pos, stamp: Date.now() });
+      setMode((m) => (m === "split" ? m : "pdf")); setPdfTarget({ ...pos, stamp: Date.now() });
     } catch (e) { setNote(String(e)); }
   }, [project, file, cursorLine, shownPdf]);
 
@@ -806,7 +811,7 @@ export default function App() {
   useEffect(() => {
     // The pins belong to the build on screen, so they wait out the compile that replaces it instead of blinking off.
     if (compileState.status === "running") return;
-    if (mode !== "pdf" || !project?.mainTex || !file || source == null || !shownPdf.path) { setPins([]); return; }
+    if ((mode !== "pdf" && mode !== "split") || !project?.mainTex || !file || source == null || !shownPdf.path) { setPins([]); return; }
     let cancelled = false;
     (async () => {
       const out: PdfPin[] = [];

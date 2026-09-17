@@ -184,6 +184,15 @@ export function Document(p: Props) {
     const css = getComputedStyle(el), px = (name: string) => parseFloat(css.getPropertyValue(name)) || 0;
     p.onSplitRatio(clampSplit(ratio, el.clientWidth, px("--split-editor-min"), px("--split-pdf-min")));
   };
+  // What the divider can actually reach in this window, so a screen reader is not told about positions the
+  // pane minimums forbid. Measured from the DOM, so it follows a resize on the next render.
+  const splitRange = (() => {
+    const el = splitRef.current;
+    if (!el) return { min: SPLIT_MIN, max: SPLIT_MAX };
+    const css = getComputedStyle(el), px = (name: string) => parseFloat(css.getPropertyValue(name)) || 0;
+    const w = el.clientWidth, l = px("--split-editor-min"), r = px("--split-pdf-min");
+    return { min: clampSplit(SPLIT_MIN, w, l, r), max: clampSplit(SPLIT_MAX, w, l, r) };
+  })();
   const onDividerKey = (e: React.KeyboardEvent) => {
     const step = e.shiftKey ? 0.1 : 0.02;
     const to = e.key === "ArrowLeft" ? splitRatio - step : e.key === "ArrowRight" ? splitRatio + step
@@ -349,7 +358,7 @@ export function Document(p: Props) {
         <div className="scroll" hidden={!showEditor}>{editor}</div>
         {mode === "split" && (
           <div className={`vdivider ${dragging ? "dragging" : ""}`} role="separator" aria-orientation="vertical" aria-label="Resize editor and PDF" tabIndex={0}
-            aria-valuemin={Math.round(SPLIT_MIN * 100)} aria-valuemax={Math.round(SPLIT_MAX * 100)} aria-valuenow={Math.round(splitRatio * 100)} aria-valuetext={`Editor ${Math.round(splitRatio * 100)} percent`}
+            aria-valuemin={Math.round(splitRange.min * 100)} aria-valuemax={Math.round(splitRange.max * 100)} aria-valuenow={Math.round(splitRatio * 100)} aria-valuetext={`Editor ${Math.round(splitRatio * 100)} percent`}
             title="Drag to resize, double-click to reset"
             // preventDefault keeps the drag from selecting text, which also costs the press its focus: take it back,
             // so the arrow keys move the divider straight after a drag.
