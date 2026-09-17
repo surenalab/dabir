@@ -117,6 +117,12 @@ export function PdfView({ path, stamp, target, pins, zoom, onZoom, onScale, onJu
   }, [query, docKey]);
 
   const goto = (n: number) => viewer.current?.goto(n);
+  /**
+   * A zoom the reader asked for, told to the view as well as to the parent: a pinch leaves the parent's zoom
+   * untouched until it settles, so asking for the value the parent already holds ("Fit width" right after a pinch)
+   * changes no prop and would otherwise reach nothing.
+   */
+  const zoomTo = (z: PdfZoom) => { viewer.current?.setZoom(z); onZoom(z); };
   const shown = () => viewer.current?.scale ?? 1;
   const at = (e: React.MouseEvent) => viewer.current?.locate(e.target, e.clientX, e.clientY) ?? null;
   const onClick = (e: React.MouseEvent) => {
@@ -141,15 +147,15 @@ export function PdfView({ path, stamp, target, pins, zoom, onZoom, onScale, onJu
             <button className="tb-btn icon" onClick={() => goto(current + 1)} disabled={current >= total} aria-label="Next page"><ChevronRight /></button>
           </div>
           <div className="group">
-            <button className="tb-btn icon" onClick={() => onZoom(stepZoom(shown(), -1))} aria-label="Zoom out" title={chord("Zoom out (⌘−)")}><Minus /></button>
-            <select className="zoomsel" value={typeof zoom === "number" ? String(zoom) : zoom} onChange={(e) => { const v = e.target.value; onZoom(v === "fit" || v === "page" ? v : Number(v)); }} aria-label="Zoom level">
+            <button className="tb-btn icon" onClick={() => zoomTo(stepZoom(shown(), -1))} aria-label="Zoom out" title={chord("Zoom out (⌘−)")}><Minus /></button>
+            <select className="zoomsel" value={typeof zoom === "number" ? String(zoom) : zoom} onChange={(e) => { const v = e.target.value; zoomTo(v === "fit" || v === "page" ? v : Number(v)); }} aria-label="Zoom level">
               <option value="fit">Fit width</option>
               <option value="page">Fit page</option>
               {PRESETS.map((z) => <option key={z} value={String(z)}>{Math.round(z * 100)}%</option>)}
               {typeof zoom === "number" && !PRESETS.includes(zoom) && <option value={String(zoom)}>{Math.round(zoom * 100)}%</option>}
             </select>
-            <button className="tb-btn icon" onClick={() => onZoom(stepZoom(shown(), 1))} aria-label="Zoom in" title={chord("Zoom in (⌘=)")}><Plus /></button>
-            <button className="tb-btn icon" onClick={() => onZoom(zoom === "fit" ? "page" : "fit")} aria-label="Fit" title={zoom === "fit" ? "Fit page" : chord("Fit width (⌘0)")}><Maximize2 /></button>
+            <button className="tb-btn icon" onClick={() => zoomTo(stepZoom(shown(), 1))} aria-label="Zoom in" title={chord("Zoom in (⌘=)")}><Plus /></button>
+            <button className="tb-btn icon" onClick={() => zoomTo(zoom === "fit" ? "page" : "fit")} aria-label="Fit" title={zoom === "fit" ? "Fit page" : chord("Fit width (⌘0)")}><Maximize2 /></button>
           </div>
           <div className="group">
             <button className={`tb-btn icon ${findOpen ? "active" : ""}`} onClick={() => { setFindOpen((v) => !v); setTimeout(() => findInput.current?.focus(), 50); }} aria-label="Find in PDF" title={chord("Find in PDF (⌘F)")} aria-pressed={findOpen}><Search /></button>
