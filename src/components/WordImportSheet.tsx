@@ -95,7 +95,7 @@ export function WordImportSheet({ onClose, chooseFolder, onImported, onSetup, au
           </div>
         ) : (
           <>
-            <p className="word-lede">{convert ? "A LaTeX copy of the document goes in a new folder beside this paper, with Git and the memory scaffold set up as for any new paper, and opens when it is ready. The Word document is not changed and stays a paper of its own." : "The document becomes a LaTeX paper in a new folder, with Git and the memory scaffold set up as for any new paper. The Word file itself is not changed."}</p>
+            <p className="word-lede">{convert ? "A LaTeX copy of the document goes in a new folder beside this paper, with Git and the memory scaffold set up as for any new paper, and opens when it is ready. The Word document is not changed and stays a paper of its own; a copy of it goes into the new folder beside main.tex." : "The document becomes a LaTeX paper in a new folder, with Git and the memory scaffold set up as for any new paper. The Word file itself is not changed, and a copy of it is kept in the new folder beside main.tex."}</p>
             <dl className="word-carry">
               <dt>Comes across</dt>
               <dd>Title, authors and abstract; headings, text, lists, footnotes and links; tables, equations and images; citations inserted with Zotero, Mendeley or EndNote, with their references in <code>refs.bib</code>.</dd>
