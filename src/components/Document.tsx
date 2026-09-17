@@ -26,7 +26,7 @@ import { proseWords } from "../lib/spell";
 import type { ChangeRange } from "../lib/changes";
 import type { ReviewMarks } from "../lib/review";
 import { chord } from "../lib/keys";
-import { clampSplit, shownBuild, SPLIT_DEFAULT, SPLIT_MAX, SPLIT_MIN, type ShownPdf } from "../lib/pdf-layout";
+import { clampSplit, SPLIT_DEFAULT, SPLIT_MAX, SPLIT_MIN, type ShownPdf } from "../lib/pdf-layout";
 
 const PdfView = lazy(() => import("./PdfView").then((m) => ({ default: m.PdfView })));
 
@@ -133,6 +133,8 @@ interface Props {
   assist: AssistSources;
   pins: PdfPin[];
   onPin: (id: string) => void;
+  /** The build to show: the last one that produced a file, which outlives the compile that replaces it. */
+  shownPdf: ShownPdf;
   pdfZoom: PdfZoom;
   onPdfZoom: (z: PdfZoom) => void;
   /** The PDF's scale on screen, for the zoom commands to step from when the zoom is a fit mode. */
@@ -190,11 +192,6 @@ export function Document(p: Props) {
     e.preventDefault();
     splitTo(to);
   };
-  // The PDF on screen: the last build stays up while the next one compiles, and when one ends without a file, so
-  // the reader keeps their place and a failed compile does not empty the pane (shownBuild in lib/pdf-layout.ts).
-  const [shownPdf, setShownPdf] = useState<ShownPdf>({ path: null, at: 0 });
-  const nextPdf = shownBuild(shownPdf, compileState.status === "done" ? { status: "done", pdf: compileState.result.pdf, at: compileState.at } : { status: compileState.status });
-  if (nextPdf !== shownPdf) setShownPdf(nextPdf);
 
   useEffect(() => {
     setVisualContext({
@@ -314,7 +311,7 @@ export function Document(p: Props) {
   ) : source != null ? <div className="doc-empty"><div className="card"><p>This file type is not editable in Dabir yet.</p></div></div> : null;
   const pdf = showPdf ? (
     <Suspense fallback={<div className="doc-empty"><div className="card"><p>Loading PDF…</p></div></div>}>
-      <PdfView path={shownPdf.path} stamp={shownPdf.at} target={p.pdfTarget} onJump={p.onPdfClick} onComment={p.onPdfComment} pins={p.pins} onPin={p.onPin} zoom={p.pdfZoom} onZoom={p.onPdfZoom} onScale={p.onPdfScale} findRequest={p.pdfFindRequest} />
+      <PdfView path={p.shownPdf.path} stamp={p.shownPdf.at} target={p.pdfTarget} onJump={p.onPdfClick} onComment={p.onPdfComment} pins={p.pins} onPin={p.onPin} zoom={p.pdfZoom} onZoom={p.onPdfZoom} onScale={p.onPdfScale} findRequest={p.pdfFindRequest} />
     </Suspense>
   ) : null;
 

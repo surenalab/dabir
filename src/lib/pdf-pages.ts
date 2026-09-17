@@ -152,7 +152,8 @@ export class PdfPages {
 
   /** The zoom asked for by the toolbar, the menu or a finished gesture. The centre of the viewport stays put. */
   setZoom(zoom: PdfZoom) {
-    if (this.commitTimer) { this.zoom = zoom; return; }
+    // A zoom asked for by name wins over a gesture that is still settling: its commit would put the pinch back.
+    if (this.commitTimer) { clearTimeout(this.commitTimer); this.commitTimer = 0; }
     this.zoom = zoom;
     this.markFitted();
     if (!this.pages.length) return;
@@ -328,7 +329,9 @@ export class PdfPages {
       this.events.commit(this.factor);
     }, COMMIT_MS);
     this.markFitted();
-    this.apply(next, null, this.capture(vx, vy));
+    // A gesture ends at one number for every page, so the per-page fits go now, with the first step, rather than
+    // at the commit a fifth of a second after the fingers stop, where a landscape page would jump on its own.
+    this.apply(next, this.pages.map(() => 1), this.capture(vx, vy));
     this.place = this.capture();
   }
 

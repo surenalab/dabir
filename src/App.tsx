@@ -21,7 +21,7 @@ import { checkGrammar, type GrammarMatch } from "./lib/grammar";
 import { paperSymbols, paperOutline, flattenFiles, type AssistSources } from "./lib/assist";
 import { stopLanguageServers } from "./lib/lsp";
 import type { PdfPin, PdfZoom } from "./components/PdfView";
-import { SPLIT_DEFAULT, stepZoom } from "./lib/pdf-layout";
+import { shownBuild, SPLIT_DEFAULT, stepZoom, type ShownPdf } from "./lib/pdf-layout";
 import type { ManualProvider } from "./lib/manual";
 import { addComment as yAddComment, connect as yConnect, cursorIndex, decodeRange, disconnect as yDisconnect, encodeRange, peers as yPeers, randomRoom, removeComment as yRemoveComment, resolveComment as yResolveComment, setCurrentFile, textFor, whenSynced, signalUrl, iceServers, parseShareLink, type Comment, type Peer, type Session, type Transport, replyComment as yReplyComment, userName, colorFor, markHost, hostPresent, publishProject, republishChanged, awaitSnapshot, sharedTexts, persist, setFileChanges, seedLiveFiles } from "./lib/collab";
 import type { CommentRange } from "./components/SourceEditor";
@@ -139,6 +139,12 @@ export default function App() {
   const [localChanges, setLocalChanges] = useState<Change[]>([]);
   const [sessChanges, setSessChanges] = useState<Change[]>([]);
   const [pins, setPins] = useState<PdfPin[]>([]);
+  // The build the PDF view is showing. It outlives the compile that replaces it — while that one runs, and when that
+  // one ends without a file — so what is drawn over the PDF (the comment pins, the cursor's line, Show Line in PDF)
+  // follows this rather than the last compile, and a failed recompile does not strip the paper that is still there.
+  const [shownPdf, setShownPdf] = useState<ShownPdf>({ path: null, at: 0 });
+  const nextPdf = shownBuild(shownPdf, compileState.status === "done" ? { status: "done", pdf: compileState.result.pdf, at: compileState.at } : { status: compileState.status });
+  if (nextPdf !== shownPdf) setShownPdf(nextPdf);
   // PDF-only and Split keep their own zoom: 200 % reads well full width and not beside the editor. Split stays fitted.
   const [pdfZoom, setPdfZoom] = useState<PdfZoom>("fit");
   const [splitZoom, setSplitZoom] = useState<PdfZoom>("fit");
@@ -411,13 +417,13 @@ export default function App() {
 
   const showInPdf = useCallback(async () => {
     if (!project?.mainTex || !file) return;
-    if (compileState.status !== "done" || !compileState.result.pdf) { setNote(chord("Compile first (⌘B), then Show Line in PDF.")); return; }
+    if (!shownPdf.path) { setNote(chord("Compile first (⌘B), then Show Line in PDF.")); return; }
     try {
       const pos = await synctexForward(project.mainTex, file, cursorLine);
       if (!pos) { setNote(`No PDF position recorded for line ${cursorLine}.`); return; }
       setMode("pdf"); setPdfTarget({ ...pos, stamp: Date.now() });
     } catch (e) { setNote(String(e)); }
-  }, [project, file, cursorLine, compileState]);
+  }, [project, file, cursorLine, shownPdf]);
 
   const onPdfClick = useCallback(async (page: number, x: number, y: number, alt = false) => {
     if (!project?.mainTex) return;
@@ -445,12 +451,12 @@ export default function App() {
 
   // Split view: the PDF follows the cursor line (debounced), without stealing focus.
   useEffect(() => {
-    if (mode !== "split" || !project?.mainTex || !file || compileState.status !== "done" || !compileState.result.pdf) return;
+    if (mode !== "split" || !project?.mainTex || !file || !shownPdf.path) return;
     const t = setTimeout(async () => {
       try { const pos = await synctexForward(project.mainTex!, file, cursorLine); if (pos) setPdfTarget({ ...pos, stamp: Date.now() }); } catch { /* no synctex yet */ }
     }, 350);
     return () => clearTimeout(t);
-  }, [mode, project, file, cursorLine, compileState]);
+  }, [mode, project, file, cursorLine, shownPdf]);
 
   const initGit = useCallback(async () => {
     if (!project) return;
@@ -798,9 +804,9 @@ export default function App() {
 
   // PDF pins: map each comment's line to a page position through SyncTeX.
   useEffect(() => {
-    // The build on screen outlives the compile that replaces it, so its pins stay with it until that one lands.
+    // The pins belong to the build on screen, so they wait out the compile that replaces it instead of blinking off.
     if (compileState.status === "running") return;
-    if (mode !== "pdf" || !project?.mainTex || !file || source == null || compileState.status !== "done" || !compileState.result.pdf) { setPins([]); return; }
+    if (mode !== "pdf" || !project?.mainTex || !file || source == null || !shownPdf.path) { setPins([]); return; }
     let cancelled = false;
     (async () => {
       const out: PdfPin[] = [];
@@ -814,7 +820,7 @@ export default function App() {
       if (!cancelled) setPins(out);
     })();
     return () => { cancelled = true; };
-  }, [mode, project, file, source, compileState, allComments, rel, rangeOf]);
+  }, [mode, project, file, source, compileState.status, shownPdf, allComments, rel, rangeOf]);
 
   // Grammar: check the selection, or the paragraph around the cursor, through LanguageTool.
   const runGrammar = useCallback(async () => {
@@ -1238,7 +1244,7 @@ export default function App() {
         agentReady={agentReady} onJumpFile={jumpToFile} onFix={fixWithAgent}
         collab={collab} comments={commentRanges} onSelection={(from, to) => setSelection({ from, to })} jumpOffset={jumpOffset} followOffset={followOffset} onLocalEdit={stopFollow}
         changes={changeRanges} author={me} onChanges={onEditorChanges} onToggleSuggesting={toggleSuggesting}
-        settings={settings} grammar={grammar} pins={pins} pdfZoom={mode === "split" ? splitZoom : pdfZoom} onPdfZoom={mode === "split" ? setSplitZoom : setPdfZoom} onPdfScale={(s) => { pdfScale.current[mode === "split" ? "split" : "pdf"] = s; }} onOpenSettings={() => setSheet("settings")}
+        settings={settings} grammar={grammar} pins={pins} shownPdf={shownPdf} pdfZoom={mode === "split" ? splitZoom : pdfZoom} onPdfZoom={mode === "split" ? setSplitZoom : setPdfZoom} onPdfScale={(s) => { pdfScale.current[mode === "split" ? "split" : "pdf"] = s; }} onOpenSettings={() => setSheet("settings")}
         onPdfComment={onPdfComment} pdfFindRequest={pdfFindRequest} editorRef={editorRef} onFind={() => command("find")} onCommentSelection={() => { if (!inspectorOpen) toggleInspector(); setAskFocus(0); setNote("Type the comment in the People tab; it attaches to your selection."); }} hasSelection={selection.to > selection.from}
         review={docReview} dictionary={dictionary} onAddWord={addWord} onContinue={continueWithAgent} splitRatio={splitRatio} onSplitRatio={setSplitRatio} onPin={(id) => { const c = allComments.find((x) => x.id === id); if (c) jumpToComment(c); }}
         assist={assist} />
