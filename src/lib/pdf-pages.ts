@@ -103,6 +103,8 @@ export class PdfPages {
   clear() {
     for (const p of this.pages) { this.release(p); this.io.unobserve(p.el); }
     this.pages = []; this.visible.clear(); this.place = null;
+    // The marker and the pins belong to the paper that is going; a new build must not inherit them.
+    clearTimeout(this.marker?.timer); this.marker = null; this.pinList = [];
     this.stack.replaceChildren();
   }
 
