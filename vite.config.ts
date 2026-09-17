@@ -71,7 +71,10 @@ export default defineConfig(() => ({
     rollupOptions: {
       output: {
         manualChunks(id: string) {
-          if (id.includes("node_modules/pdfjs-dist")) return "pdfjs";
+          // No entry for pdfjs-dist on purpose: naming its chunk made the bundler put Vite's preload helper in it,
+          // which the entry imports, so the entry then depended on 430 kB of pdf.js and index.html preloaded it at
+          // startup. Unnamed, pdf.js is only reached through the two dynamic imports (PdfView, loadFigure) and stays
+          // its own chunk, fetched when the PDF view opens. scripts/bundle.test.mjs holds this.
           if (id.includes("node_modules/katex")) return "katex";
           if (id.includes("node_modules/yjs") || id.includes("node_modules/y-") || id.includes("node_modules/lib0")) return "yjs";
           if (id.includes("node_modules/@codemirror") || id.includes("node_modules/codemirror-lang-latex") || id.includes("node_modules/@lezer") || id.includes("node_modules/style-mod") || id.includes("node_modules/w3c-keyname")) return "codemirror";

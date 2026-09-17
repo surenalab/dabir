@@ -26,7 +26,7 @@ import { proseWords } from "../lib/spell";
 import type { ChangeRange } from "../lib/changes";
 import type { ReviewMarks } from "../lib/review";
 import { chord } from "../lib/keys";
-import { clampSplit, SPLIT_DEFAULT, SPLIT_MAX, SPLIT_MIN } from "../lib/pdf-layout";
+import { clampSplit, shownBuild, SPLIT_DEFAULT, SPLIT_MAX, SPLIT_MIN, type ShownPdf } from "../lib/pdf-layout";
 
 const PdfView = lazy(() => import("./PdfView").then((m) => ({ default: m.PdfView })));
 
@@ -172,6 +172,8 @@ export function Document(p: Props) {
   const { project, source, mode, compileState, showLog, error, terminal, onToggleTerminal, paperWords, file, openFiles, dirty: fileDirty, onCloseFile, onSelectFile, headText, code, splitRatio } = p;
   const macros = useMemo(() => (source ? collectMacros(source) : {}), [source]);
   const [dragging, setDragging] = useState(false);
+  // Leaving Split takes the divider away mid-drag; nothing is being dragged once it is gone.
+  if (dragging && mode !== "split") setDragging(false);
   const splitRef = useRef<HTMLDivElement>(null);
   /** Set the editor's share of the split, keeping both panes at their minimum width (tokens.css) when there is room. */
   const splitTo = (ratio: number) => {
@@ -188,10 +190,11 @@ export function Document(p: Props) {
     e.preventDefault();
     splitTo(to);
   };
-  // The PDF on screen: the last build stays up while the next one compiles, so the reader keeps their place.
-  const [shownPdf, setShownPdf] = useState<{ path: string | null; at: number }>({ path: null, at: 0 });
-  if (compileState.status === "done" && compileState.at !== shownPdf.at) setShownPdf({ path: compileState.result.pdf, at: compileState.at });
-  else if (compileState.status === "idle" && shownPdf.at !== 0) setShownPdf({ path: null, at: 0 });
+  // The PDF on screen: the last build stays up while the next one compiles, and when one ends without a file, so
+  // the reader keeps their place and a failed compile does not empty the pane (shownBuild in lib/pdf-layout.ts).
+  const [shownPdf, setShownPdf] = useState<ShownPdf>({ path: null, at: 0 });
+  const nextPdf = shownBuild(shownPdf, compileState.status === "done" ? { status: "done", pdf: compileState.result.pdf, at: compileState.at } : { status: compileState.status });
+  if (nextPdf !== shownPdf) setShownPdf(nextPdf);
 
   useEffect(() => {
     setVisualContext({
@@ -351,8 +354,12 @@ export function Document(p: Props) {
           <div className={`vdivider ${dragging ? "dragging" : ""}`} role="separator" aria-orientation="vertical" aria-label="Resize editor and PDF" tabIndex={0}
             aria-valuemin={Math.round(SPLIT_MIN * 100)} aria-valuemax={Math.round(SPLIT_MAX * 100)} aria-valuenow={Math.round(splitRatio * 100)} aria-valuetext={`Editor ${Math.round(splitRatio * 100)} percent`}
             title="Drag to resize, double-click to reset"
-            onPointerDown={(e) => { if (e.button !== 0) return; e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); setDragging(true); }}
-            onPointerMove={(e) => { if (!dragging) return; const r = splitRef.current?.getBoundingClientRect(); if (r) splitTo((e.clientX - r.left) / r.width); }}
+            // preventDefault keeps the drag from selecting text, which also costs the press its focus: take it back,
+            // so the arrow keys move the divider straight after a drag.
+            onPointerDown={(e) => { if (e.button !== 0) return; e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); e.currentTarget.focus(); setDragging(true); }}
+            // A capture lost where React cannot hear it (this pane unmounted mid-drag) would leave the drag on and
+            // the divider following an unpressed pointer; the button not being held any more ends it.
+            onPointerMove={(e) => { if (!dragging) return; if (!(e.buttons & 1)) { setDragging(false); return; } const r = splitRef.current?.getBoundingClientRect(); if (r) splitTo((e.clientX - r.left) / r.width); }}
             onPointerUp={() => setDragging(false)} onLostPointerCapture={() => setDragging(false)}
             onDoubleClick={() => splitTo(SPLIT_DEFAULT)} onKeyDown={onDividerKey} />
         )}
