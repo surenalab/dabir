@@ -514,9 +514,11 @@ export default function App() {
   const commitAll = useCallback(async (message: string) => {
     if (!project) return;
     setGitBusy(true);
-    try { if (dirty) await save(); const id = await gitCommit(project.root, message); setNote(`Committed ${id}.`); await refreshGit(); }
+    // flush, not save: it reports a failed write by throwing, so a commit cannot record the previous bytes of a
+    // document whose save just failed. (save() reports through the banner and returns, for the autosave path.)
+    try { await flushRef.current(); const id = await gitCommit(project.root, message); setNote(`Committed ${id}.`); await refreshGit(); }
     catch (e) { setError(String(e)); } finally { setGitBusy(false); }
-  }, [project, dirty, save, refreshGit]);
+  }, [project, refreshGit]);
 
   // ---- live sessions
   const rel = useCallback((path: string | null) => (path && project ? relTo(project.root, path) : null), [project]);
@@ -1317,10 +1319,13 @@ export default function App() {
     // A Word document is different: the agent is told never to touch a .docx, so nothing in it is the agent's
     // to keep, and the remount below reads the file again. Typing between Accept and this callback would
     // otherwise be dropped, so the document goes to disk first — and the remount then reads what it wrote.
-    if (word?.dirty()) { try { await word.flush(); } catch (e) { setError(String(e)); } }
+    let onDisk = true;
+    if (word?.dirty()) { try { await word.flush(); } catch (e) { setError(String(e)); onDisk = false; } }
     refreshGit();
     reloadProject();
     if (project) refreshVersions(project.root);
+    // The save failed, so the editor holds the only copy of those edits: leave it mounted, dirty, and saying so.
+    if (!onDisk) return;
     if (file && isWordPath(file)) { setWordReload((n) => n + 1); setDirty(false); setSaveState("saved"); }
     else if (file) {
       readText(file).then((t) => { setSource(t); setDirty(false); setSaveState("saved"); }).catch(() => {});

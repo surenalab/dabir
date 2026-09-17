@@ -289,7 +289,7 @@ const WordDocument = forwardRef<WordHandle, Props & { dark: boolean; onRetry: ()
           <p>{failed}</p>
           <div className="actions">
             <button className="btn" onClick={p.onRetry}>Try Again</button>
-            <button className="btn" onClick={() => void revealPath(path)}>Reveal in Finder</button>
+            <button className="btn" onClick={() => void revealPath(path)}>Reveal</button>
           </div>
         </div>
       </div>
