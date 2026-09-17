@@ -308,7 +308,7 @@ export function Document(p: Props) {
         <div className="doc-empty">
           <div className="card">
             <h1>No manuscript in {project.name}</h1>
-            <p>Dabir looked for <code>main.tex</code>, <code>main.typ</code> or a <code>.tex</code> file with <code>\documentclass</code>, here and one folder down, and found none.{project.treeTruncated ? " This folder is large; the sidebar lists its first few thousand files." : ""}</p>
+            <p>Dabir looked for <code>main.tex</code>, <code>main.typ</code> or a <code>.tex</code> file with <code>\documentclass</code>, here and one folder down, and for a Word document here (<code>main.docx</code>, <code>manuscript.docx</code> or <code>paper.docx</code>, otherwise the newest one), and found none.{project.treeTruncated ? " This folder is large; the sidebar lists its first few thousand files." : ""}</p>
             <div className="actions">
               <button className="btn primary" onClick={p.onOpen}><FolderOpen /> Open the Paper's Folder…</button>
               <button className="btn" onClick={() => p.onNew()} title="Start from a journal template"><FilePlus /> New Paper…</button>
