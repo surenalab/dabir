@@ -142,7 +142,9 @@ export default function App() {
   // PDF-only and Split keep their own zoom: 200 % reads well full width and not beside the editor. Split stays fitted.
   const [pdfZoom, setPdfZoom] = useState<PdfZoom>("fit");
   const [splitZoom, setSplitZoom] = useState<PdfZoom>("fit");
-  const pdfScale = useRef(1);
+  // The scale each of the two views last had on screen, so a zoom command steps from its own view's fit, not the
+  // other's: Split's pane is half as wide, so its fit is nowhere near PDF-only's.
+  const pdfScale = useRef({ pdf: 1, split: 1 });
   const [pdfFindRequest, setPdfFindRequest] = useState(0);
   const [splitRatio, setSplitRatio] = useState(SPLIT_DEFAULT);
   const editorRef = useRef<EditorApi | null>(null);
@@ -796,6 +798,8 @@ export default function App() {
 
   // PDF pins: map each comment's line to a page position through SyncTeX.
   useEffect(() => {
+    // The build on screen outlives the compile that replaces it, so its pins stay with it until that one lands.
+    if (compileState.status === "running") return;
     if (mode !== "pdf" || !project?.mainTex || !file || source == null || compileState.status !== "done" || !compileState.result.pdf) { setPins([]); return; }
     let cancelled = false;
     (async () => {
@@ -1001,9 +1005,9 @@ export default function App() {
       case "tour": startTour(); break;
       case "setup": openSetup(); break;
       case "guide": openGuide().catch((e) => setNote(String(e))); break;
-      // A fit mode steps from the scale on screen, not from 100 %.
-      case "zoom-in": (mode === "split" ? setSplitZoom : setPdfZoom)((z) => stepZoom(typeof z === "number" ? z : pdfScale.current, 1)); if (mode !== "pdf" && mode !== "split") setMode("pdf"); break;
-      case "zoom-out": (mode === "split" ? setSplitZoom : setPdfZoom)((z) => stepZoom(typeof z === "number" ? z : pdfScale.current, -1)); break;
+      // A fit mode steps from the scale that view last had on screen, not from 100 % and not from the other view's.
+      case "zoom-in": (mode === "split" ? setSplitZoom : setPdfZoom)((z) => stepZoom(typeof z === "number" ? z : pdfScale.current[mode === "split" ? "split" : "pdf"], 1)); if (mode !== "pdf" && mode !== "split") setMode("pdf"); break;
+      case "zoom-out": (mode === "split" ? setSplitZoom : setPdfZoom)((z) => stepZoom(typeof z === "number" ? z : pdfScale.current[mode === "split" ? "split" : "pdf"], -1)); break;
       case "zoom-fit": (mode === "split" ? setSplitZoom : setPdfZoom)("fit"); break;
       case "check-grammar": runGrammar(); break;
       case "unicode-tex": { const n = editorRef.current?.unicodeToTex() ?? 0; setNote(n ? `Rewrote ${n} symbol${n === 1 ? "" : "s"} as LaTeX.` : "Nothing to rewrite: no curly quotes, dashes or symbols LaTeX has a name for."); break; }
@@ -1234,7 +1238,7 @@ export default function App() {
         agentReady={agentReady} onJumpFile={jumpToFile} onFix={fixWithAgent}
         collab={collab} comments={commentRanges} onSelection={(from, to) => setSelection({ from, to })} jumpOffset={jumpOffset} followOffset={followOffset} onLocalEdit={stopFollow}
         changes={changeRanges} author={me} onChanges={onEditorChanges} onToggleSuggesting={toggleSuggesting}
-        settings={settings} grammar={grammar} pins={pins} pdfZoom={mode === "split" ? splitZoom : pdfZoom} onPdfZoom={mode === "split" ? setSplitZoom : setPdfZoom} onPdfScale={(s) => { pdfScale.current = s; }} onOpenSettings={() => setSheet("settings")}
+        settings={settings} grammar={grammar} pins={pins} pdfZoom={mode === "split" ? splitZoom : pdfZoom} onPdfZoom={mode === "split" ? setSplitZoom : setPdfZoom} onPdfScale={(s) => { pdfScale.current[mode === "split" ? "split" : "pdf"] = s; }} onOpenSettings={() => setSheet("settings")}
         onPdfComment={onPdfComment} pdfFindRequest={pdfFindRequest} editorRef={editorRef} onFind={() => command("find")} onCommentSelection={() => { if (!inspectorOpen) toggleInspector(); setAskFocus(0); setNote("Type the comment in the People tab; it attaches to your selection."); }} hasSelection={selection.to > selection.from}
         review={docReview} dictionary={dictionary} onAddWord={addWord} onContinue={continueWithAgent} splitRatio={splitRatio} onSplitRatio={setSplitRatio} onPin={(id) => { const c = allComments.find((x) => x.id === id); if (c) jumpToComment(c); }}
         assist={assist} />

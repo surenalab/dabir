@@ -1,8 +1,8 @@
-// The PDF view's geometry (src/lib/pdf-layout.ts). The module has only erasable TypeScript, which Node 22.18 and
-// later run directly, so the test imports the source rather than a copy of it.
+// The PDF view's pure decisions (src/lib/pdf-layout.ts). The module has only erasable TypeScript, which Node 22.18
+// and later run directly, so the test imports the source rather than a copy of it.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { anchorIn, clampSplit, clampZoom, keepRange, outputScale, pageAt, pageScales, scrollFor, stepZoom, wheelFactor, FIT_MAX_WIDTH, MAX_CANVAS_PIXELS, SPLIT_MAX, SPLIT_MIN, ZOOM_MAX, ZOOM_MIN } from "../src/lib/pdf-layout.ts";
+import { anchorIn, clampSplit, clampZoom, keepRange, outputScale, pageAt, pageScales, scrollFor, shownBuild, stepZoom, wheelFactor, FIT_MAX_WIDTH, MAX_CANVAS_PIXELS, SPLIT_MAX, SPLIT_MIN, ZOOM_MAX, ZOOM_MIN } from "../src/lib/pdf-layout.ts";
 
 const letter = { w: 612, h: 792 };
 const landscape = { w: 792, h: 612 };
@@ -121,4 +121,19 @@ test("the split ratio stays inside its range and leaves both panes a usable widt
   assert.equal(clampSplit(0.5, 1000, 280, 240), 0.5);
   // A window too small for both minimums keeps the plain range; CSS gives the editor its minimum first.
   assert.equal(clampSplit(0.2, 400, 280, 240), 0.2);
+});
+
+test("a compile that produced no PDF leaves the last build on screen", () => {
+  const none = { path: null, at: 0 };
+  const first = shownBuild(none, { status: "done", pdf: "/p/.dabir/build/main.pdf", at: 100 });
+  assert.deepEqual(first, { path: "/p/.dabir/build/main.pdf", at: 100 });
+  // Compiling: the build on screen stays, and the same build is never re-shown (that would reload it).
+  assert.equal(shownBuild(first, { status: "running" }), first);
+  assert.equal(shownBuild(first, { status: "done", pdf: first.path, at: 100 }), first);
+  // A LaTeX error or a cancelled run finishes with no file: keep the last paper rather than emptying the pane.
+  assert.equal(shownBuild(first, { status: "done", pdf: null, at: 200 }), first);
+  // A later build that did produce a file replaces it, and closing the paper clears it once.
+  assert.deepEqual(shownBuild(first, { status: "done", pdf: "/p/.dabir/build/main.pdf", at: 300 }), { path: "/p/.dabir/build/main.pdf", at: 300 });
+  assert.deepEqual(shownBuild(first, { status: "idle" }), none);
+  assert.equal(shownBuild(none, { status: "idle" }), none);
 });

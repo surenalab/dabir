@@ -1,6 +1,7 @@
-// Geometry for the PDF view, with no DOM and no pdf.js, so node:test runs it as is (scripts/pdf-layout.test.mjs):
-// how large pages are drawn, how many canvas pixels that costs, which pages stay drawn, how the reader's place
-// survives a change of scale, and where the split divider may go.
+// The PDF view's decisions that need neither the DOM nor pdf.js, so node:test runs them as they are
+// (scripts/pdf-layout.test.mjs): how large pages are drawn, how many canvas pixels that costs, which pages stay
+// drawn, how the reader's place survives a change of scale, where the split divider may go, and which build is
+// on screen.
 
 /** A number is a fixed scale (1 = 100 %); "fit" fits each page to the pane's width, "page" fits each page whole. */
 export type PdfZoom = number | "fit" | "page";
@@ -109,4 +110,18 @@ export function clampSplit(ratio: number, width: number, minLeft: number, minRig
   const r = Math.min(SPLIT_MAX, Math.max(SPLIT_MIN, ratio));
   if (width <= 0 || width < minLeft + minRight) return r;
   return Math.min(1 - minRight / width, Math.max(minLeft / width, r));
+}
+
+/** The build the PDF view is showing: a file and the compile it came from. `at` is 0 when there is none. */
+export interface ShownPdf { path: string | null; at: number }
+
+/**
+ * Which build to show. A compile that produced a file replaces the one on screen; a compile that produced none
+ * (a LaTeX error, a cancelled run) leaves the last build up rather than emptying the pane, and closing the paper
+ * clears it. Returns the same object when nothing changes, so the caller can compare by identity.
+ */
+export function shownBuild(shown: ShownPdf, compile: { status: "idle" | "running" | "done"; pdf?: string | null; at?: number }): ShownPdf {
+  if (compile.status === "idle") return shown.at === 0 ? shown : { path: null, at: 0 };
+  if (compile.status !== "done" || !compile.pdf || compile.at === shown.at) return shown;
+  return { path: compile.pdf, at: compile.at ?? 0 };
 }
