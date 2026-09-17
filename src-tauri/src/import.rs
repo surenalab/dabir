@@ -7,8 +7,9 @@
 //!
 //! Pandoc reads the document once into its JSON tree (`docx+citations`, tracked changes accepted,
 //! media extracted into `figures/`). The tree is then reshaped here: title, authors, date and a
-//! leading "Abstract" paragraph become the front matter; equations become `$…$` and numbered
-//! `equation`s; tables become booktabs `tabular`s (in a `table` float when Word had a caption);
+//! leading "Abstract" paragraph become the front matter; equations become `$…$` and `equation*`s,
+//! numbered only where the Word author numbered them by hand (`equation_marker`); tables become
+//! booktabs `tabular`s (in a `table` float when Word had a caption);
 //! images are sized as the share of the line they had on the Word page; "Figure 1:" is taken off
 //! captions, since LaTeX numbers them; citations become `\cite` with readable keys. A second pandoc
 //! run writes the LaTeX, and a last pass removes pandoc's scaffolding (`\tightlist`, default list
@@ -960,8 +961,10 @@ fn table_to_latex(table: &Value) -> Option<Value> {
     Some(plain(out))
 }
 
-/// Math as the TeX a researcher writes: `$…$` in the text, a numbered `equation` on its own.
-fn math_to_latex(display: bool, tex: &str) -> Value {
+/// Math as the TeX a researcher writes: `$…$` in the text; on its own an unnumbered `equation*`, or a
+/// numbered `equation` with `label` when the Word author numbered it by hand. Word does not number
+/// equations, so a document that showed no number must not gain one.
+fn math_to_latex(display: bool, tex: &str, label: Option<&str>) -> Value {
     let mut tex = tex.trim().to_string();
     // A comment on the last line would swallow the closing delimiter.
     let last = tex.lines().last().unwrap_or("");
@@ -979,7 +982,191 @@ fn math_to_latex(display: bool, tex: &str) -> Value {
         };
         tex = format!("\\begin{{{env}}}\n{tex}\n\\end{{{env}}}");
     }
-    raw(format!("\\begin{{equation}}\n{}\n\\end{{equation}}", tex))
+    match label {
+        Some(l) => raw(format!(
+            "\\begin{{equation}}\\label{{{}}}\n{}\n\\end{{equation}}",
+            l, tex
+        )),
+        None => raw(format!("\\begin{{equation*}}\n{}\n\\end{{equation*}}", tex)),
+    }
+}
+
+// ------------------------------------------------- equations the author numbered by hand
+
+/// The number in a manual equation marker: `(3)` → `3`, `(3.2)` → `3.2`, `(A.1)` → `A.1`. Anything
+/// else is None, so ordinary text beside an equation is never read as a number. Letters are allowed
+/// for appendix and supplement numbering, but a marker always ends in a digit.
+fn equation_marker(s: &str) -> Option<String> {
+    let inner = s.trim().strip_prefix('(')?.strip_suffix(')')?.trim();
+    let ok = |c: char| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '–' | '—');
+    if inner.is_empty()
+        || !inner.chars().all(ok)
+        || !inner.starts_with(|c: char| c.is_ascii_alphanumeric())
+        || !inner.ends_with(|c: char| c.is_ascii_digit())
+    {
+        return None;
+    }
+    Some(inner.to_string())
+}
+
+/// The `\label` a manual number gets: `3` → `eq:3`, `3.2` → `eq:3-2`.
+fn equation_label(number: &str) -> String {
+    format!("eq:{}", number.replace(['.', '-', '–', '—'], "-"))
+}
+
+/// A Space, a line break, or a Str of nothing but spaces: what separates an equation from its number.
+fn is_blank_inline(v: &Value) -> bool {
+    match kind(v) {
+        "Space" | "SoftBreak" | "LineBreak" => true,
+        "Str" => v["c"].as_str().unwrap_or("x").trim().is_empty(),
+        _ => false,
+    }
+}
+
+/// Does this paragraph hold one displayed equation and nothing else?
+fn is_lone_display_math(v: &Value) -> bool {
+    if !matches!(kind(v), "Para" | "Plain") {
+        return false;
+    }
+    let Some(items) = v["c"].as_array() else {
+        return false;
+    };
+    let mut math = 0;
+    for i in items {
+        if is_blank_inline(i) {
+            continue;
+        }
+        if kind(i) == "Math" && i["c"][0]["t"] == "DisplayMath" {
+            math += 1;
+            continue;
+        }
+        return false;
+    }
+    math == 1
+}
+
+/// The number of a paragraph that holds nothing but a manual equation marker.
+fn lone_equation_marker(v: &Value) -> Option<String> {
+    if !matches!(kind(v), "Para" | "Plain") {
+        return None;
+    }
+    let mut number = None;
+    for i in v["c"].as_array()? {
+        if is_blank_inline(i) {
+            continue;
+        }
+        if kind(i) == "Str" && number.is_none() {
+            number = equation_marker(i["c"].as_str()?);
+            if number.is_some() {
+                continue;
+            }
+        }
+        return None;
+    }
+    number
+}
+
+/// Word's other way of numbering an equation: a one-row invisible table with the equation in one cell
+/// and its number in another (journal templates ship this layout). It becomes the paragraph the author
+/// meant, so the one rule below numbers it. A table with a caption, or with anything else in it, stays
+/// a table.
+fn equation_number_table(v: &Value) -> Option<Value> {
+    if kind(v) != "Table" {
+        return None;
+    }
+    let c = v.get("c")?.as_array()?;
+    if c.len() != 6 || !text_of(&c[1]).trim().is_empty() {
+        return None;
+    }
+    let mut rows: Vec<&Value> = c[3].get(1)?.as_array()?.iter().collect();
+    for b in c[4].as_array()? {
+        rows.extend(b.get(2)?.as_array()?);
+        rows.extend(b.get(3)?.as_array()?);
+    }
+    rows.extend(c[5].get(1)?.as_array()?);
+    let [row] = rows.as_slice() else {
+        return None;
+    };
+    let mut math: Option<Value> = None;
+    let mut number: Option<String> = None;
+    for cell in row.get(1)?.as_array()? {
+        let cell = cell.as_array().filter(|a| a.len() == 5)?;
+        for b in cell[4].as_array()? {
+            if !matches!(kind(b), "Plain" | "Para") {
+                return None;
+            }
+            for i in b["c"].as_array()? {
+                if is_blank_inline(i) {
+                    continue;
+                }
+                if kind(i) == "Math" && i["c"][0]["t"] == "DisplayMath" && math.is_none() {
+                    math = Some(i.clone());
+                    continue;
+                }
+                if kind(i) == "Str" && number.is_none() {
+                    number = equation_marker(i["c"].as_str()?);
+                    if number.is_some() {
+                        continue;
+                    }
+                }
+                return None;
+            }
+        }
+    }
+    Some(
+        json!({"t": "Para", "c": [math?, {"t": "Space"}, {"t": "Str", "c": format!("({})", number?)}]}),
+    )
+}
+
+/// The manual number of a paragraph whose displayed equation is followed by one, taking the marker off
+/// so it is not printed twice. `(3)` after the equation is what a Word author types where LaTeX would
+/// number the line itself.
+fn take_equation_marker(items: &mut Vec<Value>) -> Option<String> {
+    let math = items
+        .iter()
+        .position(|i| kind(i) == "Math" && i["c"][0]["t"] == "DisplayMath")?;
+    if items[..math].iter().any(|i| !is_blank_inline(i)) {
+        return None;
+    }
+    let mut number = None;
+    for i in &items[math + 1..] {
+        if is_blank_inline(i) {
+            continue;
+        }
+        if kind(i) == "Str" && number.is_none() {
+            number = equation_marker(i["c"].as_str()?);
+            if number.is_some() {
+                continue;
+            }
+        }
+        return None;
+    }
+    let number = number?;
+    items.truncate(math + 1);
+    Some(number)
+}
+
+/// Fold the two block-level ways of numbering an equation into the equation's own paragraph, before the
+/// walk reaches it: a one-row table, and the number right-aligned on the line under the equation (pandoc
+/// drops the alignment, so it arrives as a paragraph holding nothing but the marker).
+fn fold_equation_numbers(blocks: &mut Vec<Value>) {
+    for b in blocks.iter_mut() {
+        if let Some(para) = equation_number_table(b) {
+            *b = para;
+        }
+    }
+    let mut i = 1;
+    while i < blocks.len() {
+        if is_lone_display_math(&blocks[i - 1]) && lone_equation_marker(&blocks[i]).is_some() {
+            let number = blocks.remove(i);
+            if let Some(items) = blocks[i - 1].get_mut("c").and_then(Value::as_array_mut) {
+                items.push(json!({"t": "Space"}));
+                items.extend(number["c"].as_array().cloned().unwrap_or_default());
+            }
+            continue;
+        }
+        i += 1;
+    }
 }
 
 /// The walk over the tree: counts what is there and reshapes it on the way.
@@ -1002,11 +1189,18 @@ struct Walk {
     symbols: BTreeSet<char>,
     /// Text that looks like a hand-typed citation: "[3]", "et al.".
     typed_citations: bool,
+    /// The manual number of the paragraph being visited, waiting for its displayed equation.
+    number: Option<String>,
+    /// Every manual equation number and the label it was given: "3" → "eq:3". A later pass could turn
+    /// an in-text "(3)" into `\ref{eq:3}`; that reference rewriting is not built yet, and until it is,
+    /// a reference to a numbered equation stays the literal "(3)" the Word author typed.
+    numbered: HashMap<String, String>,
 }
 
 impl Walk {
     fn visit(&mut self, v: &mut Value, in_table: bool) {
         if let Some(items) = v.as_array_mut() {
+            fold_equation_numbers(items);
             for it in items.iter_mut() {
                 self.visit(it, in_table);
             }
@@ -1035,14 +1229,33 @@ impl Walk {
                 }
                 return;
             }
+            "Para" | "Plain" => {
+                // The paragraph's own manual number, if it carries one, belongs to the equation inside it.
+                let number = v
+                    .get_mut("c")
+                    .and_then(Value::as_array_mut)
+                    .and_then(take_equation_marker);
+                let outer = std::mem::replace(&mut self.number, number);
+                if let Some(c) = v.get_mut("c") {
+                    self.visit(c, in_table);
+                }
+                self.number = outer;
+                return;
+            }
             "Math" => {
                 let display = v["c"][0]["t"] == "DisplayMath";
+                let mut label = None;
                 if display {
                     self.equations += 1;
+                    if let Some(number) = self.number.take() {
+                        let l = equation_label(&number);
+                        self.numbered.insert(number, l.clone());
+                        label = Some(l);
+                    }
                 } else {
                     self.inline_math += 1;
                 }
-                *v = math_to_latex(display, v["c"][1].as_str().unwrap_or(""));
+                *v = math_to_latex(display, v["c"][1].as_str().unwrap_or(""), label.as_deref());
                 return;
             }
             "Cite" => {
@@ -1330,9 +1543,10 @@ fn tidy(body: &str) -> String {
         if line.trim().is_empty() {
             let next = out[idx + 1..].iter().find(|l| !l.trim().is_empty());
             let prev = res.iter().rev().find(|l| !l.trim().is_empty());
-            let before_eq = next.is_some_and(|n| n.starts_with("\\begin{equation}"))
+            let before_eq = next.is_some_and(|n| n.starts_with("\\begin{equation"))
                 && prev.is_some_and(|p| !p.starts_with('\\'));
-            let after_eq = prev.is_some_and(|p| p.trim() == "\\end{equation}")
+            let after_eq = prev
+                .is_some_and(|p| matches!(p.trim(), "\\end{equation}" | "\\end{equation*}"))
                 && next.is_some_and(|n| n.chars().next().is_some_and(char::is_lowercase));
             if before_eq || after_eq {
                 continue;
@@ -1350,7 +1564,8 @@ fn tidy(body: &str) -> String {
 fn packages(text: &str, math: bool) -> Vec<&'static str> {
     let has = |s: &str| text.contains(s);
     let mut p = vec![];
-    if math || has("\\begin{equation}") {
+    // `equation*` is amsmath's, so a displayed equation always needs it.
+    if math || has("\\begin{equation") {
         p.extend(["amsmath", "amssymb"]);
     }
     if has("\\includegraphics") {
@@ -1594,6 +1809,9 @@ fn write_paper(pandoc: &Path, docx: &Path, dest: &Path, inv: &Inventory) -> Resu
         keys,
         ..Default::default()
     };
+    // The document's own block list is walked block by block, so the folds that need two neighbouring
+    // blocks are done here; every nested block list goes through `visit`'s array arm.
+    fold_equation_numbers(&mut all);
     for b in all.iter_mut() {
         walk.visit(b, false);
     }
@@ -1666,7 +1884,6 @@ fn write_paper(pandoc: &Path, docx: &Path, dest: &Path, inv: &Inventory) -> Resu
         fs::write(dest.join("refs.bib"), b)
             .map_err(|e| format!("Could not write refs.bib: {}", e))?;
     }
-
     // What to check, most important first.
     if untitled {
         notes.push("Word had no Title paragraph, so the title is the file name; change \\title in main.tex.".into());
@@ -1723,7 +1940,29 @@ fn write_paper(pandoc: &Path, docx: &Path, dest: &Path, inv: &Inventory) -> Resu
         notes.push("Figures are in figures/ at the width they had on the Word page; LaTeX places captioned ones where they fit.".into());
     }
     if walk.equations + walk.inline_math > 0 {
-        notes.push("Compare the equations with the Word file; displayed ones are numbered, so use equation* where no number is wanted.".into());
+        notes.push("Compare the equations with the Word file; displayed ones are equation*, since Word numbers none of its own. Change one to equation where you want LaTeX to number it.".into());
+    }
+    if !walk.numbered.is_empty() {
+        let mut labels: Vec<String> = walk
+            .numbered
+            .values()
+            .map(|l| format!("\\label{{{}}}", l))
+            .collect();
+        labels.sort();
+        if labels.len() > 3 {
+            labels.truncate(3);
+            labels.push("…".into());
+        }
+        notes.push(format!(
+            "{} numbered by hand in Word kept {} ({}); the typed number is gone, and a sentence that referred to it still names the number rather than \\ref.",
+            plural(walk.numbered.len(), "equation", "equations"),
+            if walk.numbered.len() == 1 {
+                "its number"
+            } else {
+                "their numbers"
+            },
+            join_words(&labels)
+        ));
     }
     if walk.long_tables > 0 {
         notes.push(format!(
@@ -1927,8 +2166,9 @@ mod tests {
     }
 
     /// A small document the way Word writes one: title and author paragraphs, an abstract, a heading,
-    /// bold and italic, a tracked insertion and deletion, a comment, a Zotero citation, a displayed and
-    /// an inline equation, a captioned table, a captioned picture, and an A4 page.
+    /// bold and italic, a tracked insertion and deletion, a comment, a Zotero citation, a displayed
+    /// equation, one the author numbered "(3)" by hand, an inline equation, a captioned table, a
+    /// captioned picture, and an A4 page.
     fn fixture(path: &Path) {
         let zotero = r#"{"citationID":"a1","properties":{"formattedCitation":"(Ho et al., 2020)","plainCitation":"(Ho et al., 2020)","noteIndex":0},"citationItems":[{"id":12,"uris":["http://zotero.org/users/1/items/ABCD"],"itemData":{"id":12,"type":"paper-conference","title":"Denoising diffusion probabilistic models","container-title":"Advances in Neural Information Processing Systems","author":[{"family":"Ho","given":"Jonathan"},{"family":"Jain","given":"Ajay"}],"issued":{"date-parts":[["2020"]]}}}],"schema":"https://github.com/citation-style-language/schema/raw/master/csl-citation.json"}"#;
         let body = [
@@ -1966,6 +2206,16 @@ mod tests {
             para(
                 None,
                 r#"<m:oMathPara><m:oMath><m:r><m:t>E=m</m:t></m:r><m:sSup><m:e><m:r><m:t>c</m:t></m:r></m:e><m:sup><m:r><m:t>2</m:t></m:r></m:sup></m:sSup></m:oMath></m:oMathPara>"#,
+            ),
+            // The same equation numbered by hand, as a Word author numbers one: a tab and "(3)".
+            para(
+                None,
+                &format!(
+                    "{}{}{}",
+                    r#"<m:oMathPara><m:oMath><m:r><m:t>a=b</m:t></m:r></m:oMath></m:oMathPara>"#,
+                    "<w:r><w:tab/></w:r>",
+                    run("(3)", "")
+                ),
             ),
             para(
                 None,
@@ -2378,16 +2628,123 @@ mod tests {
 
     #[test]
     fn math_is_written_the_way_people_write_it() {
-        assert_eq!(math_to_latex(false, " x^{2} ")["c"][1], "$x^{2}$");
+        assert_eq!(math_to_latex(false, " x^{2} ", None)["c"][1], "$x^{2}$");
+        // Word numbers no equation of its own, so an unmarked display must not gain a number.
         assert_eq!(
-            math_to_latex(true, "E = mc^{2}")["c"][1],
-            "\\begin{equation}\nE = mc^{2}\n\\end{equation}"
+            math_to_latex(true, "E = mc^{2}", None)["c"][1],
+            "\\begin{equation*}\nE = mc^{2}\n\\end{equation*}"
         );
         assert_eq!(
-            math_to_latex(true, "a &= b \\\\ c &= d")["c"][1],
-            "\\begin{equation}\n\\begin{aligned}\na &= b \\\\ c &= d\n\\end{aligned}\n\\end{equation}"
+            math_to_latex(true, "E = mc^{2}", Some("eq:3"))["c"][1],
+            "\\begin{equation}\\label{eq:3}\nE = mc^{2}\n\\end{equation}"
         );
-        assert_eq!(math_to_latex(false, "x % note")["c"][1], "$x % note\n$");
+        assert_eq!(
+            math_to_latex(true, "a &= b \\\\ c &= d", None)["c"][1],
+            "\\begin{equation*}\n\\begin{aligned}\na &= b \\\\ c &= d\n\\end{aligned}\n\\end{equation*}"
+        );
+        assert_eq!(
+            math_to_latex(false, "x % note", None)["c"][1],
+            "$x % note\n$"
+        );
+    }
+
+    #[test]
+    fn only_a_number_the_author_typed_is_read_as_one() {
+        for (text, want) in [
+            ("(3)", Some("3")),
+            (" (3) ", Some("3")),
+            ("(3.2)", Some("3.2")),
+            ("(A.1)", Some("A.1")),
+            ("(S3)", Some("S3")),
+        ] {
+            assert_eq!(equation_marker(text).as_deref(), want, "{text}");
+        }
+        // Not numbers: text beside an equation, a citation, an unclosed marker, a bare number.
+        for text in ["(where x is)", "[3]", "(3", "3", "()", "(3.)", "(i)"] {
+            assert_eq!(equation_marker(text), None, "{text}");
+        }
+        assert_eq!(equation_label("3"), "eq:3");
+        assert_eq!(equation_label("3.2"), "eq:3-2");
+        assert_eq!(equation_label("A.1"), "eq:A-1");
+    }
+
+    /// The three places a Word author puts an equation's number: after it in the same paragraph, on the
+    /// line under it, and in the second cell of a one-row invisible table. All three end as one
+    /// paragraph whose marker the walk takes off.
+    #[test]
+    fn a_hand_numbered_equation_keeps_its_number() {
+        let math = |d: &str| json!({"t": "Math", "c": [{"t": d}, "E = mc^{2}"]});
+        let para = |c: Value| json!({"t": "Para", "c": c});
+
+        // In the same paragraph.
+        let mut items = vec![math("DisplayMath"), json!({"t": "Space"}), s("(3)")];
+        assert_eq!(take_equation_marker(&mut items).as_deref(), Some("3"));
+        assert_eq!(items, vec![math("DisplayMath")], "the marker is taken off");
+
+        // No marker, and a paragraph that only looks like one.
+        let mut plain = vec![math("DisplayMath")];
+        assert_eq!(take_equation_marker(&mut plain), None);
+        let mut prose = vec![math("DisplayMath"), sp(), s("where"), sp(), s("(3)")];
+        assert_eq!(take_equation_marker(&mut prose), None);
+        assert_eq!(prose.len(), 5, "a paragraph with words keeps them");
+        // Inline math is never numbered.
+        let mut inline = vec![math("InlineMath"), sp(), s("(4)")];
+        assert_eq!(take_equation_marker(&mut inline), None);
+
+        // On the line under it.
+        let mut blocks = vec![
+            para(json!([math("DisplayMath")])),
+            para(json!([s("(3.2)")])),
+        ];
+        fold_equation_numbers(&mut blocks);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(
+            take_equation_marker(blocks[0]["c"].as_array_mut().unwrap()).as_deref(),
+            Some("3.2")
+        );
+        // A paragraph of prose under an equation is left alone.
+        let mut kept = vec![
+            para(json!([math("DisplayMath")])),
+            para(json!([s("where"), sp(), s("x")])),
+        ];
+        fold_equation_numbers(&mut kept);
+        assert_eq!(kept.len(), 2);
+
+        // In a one-row table, and a captioned table of two cells that is a table.
+        let cell = |blocks: Value| json!([["", [], []], {"t": "AlignDefault"}, 1, 1, blocks]);
+        let table = |caption: Value, cells: Value| {
+            json!({"t": "Table", "c": [
+                ["", [], []], [null, caption],
+                [[{"t": "AlignDefault"}, {"t": "ColWidthDefault"}], [{"t": "AlignDefault"}, {"t": "ColWidthDefault"}]],
+                [["", [], []], []],
+                [[["", [], []], 0, [], [[["", [], []], cells]]]],
+                [["", [], []], []],
+            ]})
+        };
+        let eq_table = table(
+            json!([]),
+            json!([
+                cell(json!([{"t": "Plain", "c": [math("DisplayMath")]}])),
+                cell(json!([{"t": "Plain", "c": [s("(5)")]}])),
+            ]),
+        );
+        let mut blocks = vec![eq_table.clone()];
+        fold_equation_numbers(&mut blocks);
+        assert_eq!(kind(&blocks[0]), "Para", "the table became the paragraph");
+        assert_eq!(
+            take_equation_marker(blocks[0]["c"].as_array_mut().unwrap()).as_deref(),
+            Some("5")
+        );
+        let captioned = table(
+            json!([{"t": "Plain", "c": [s("Results.")]}]),
+            json!([
+                cell(json!([{"t": "Plain", "c": [math("DisplayMath")]}])),
+                cell(json!([{"t": "Plain", "c": [s("(5)")]}])),
+            ]),
+        );
+        let mut blocks = vec![captioned];
+        fold_equation_numbers(&mut blocks);
+        assert_eq!(kind(&blocks[0]), "Table", "a captioned table stays a table");
     }
 
     #[test]
@@ -2467,11 +2824,16 @@ mod tests {
             !tex.contains("Cite the original paper"),
             "comments are left out"
         );
-        // Equations.
+        // Equations: unnumbered unless Word showed a number, and the one that did keeps it with a label.
         assert!(
-            tex.contains("\\begin{equation}\nE = mc^{2}\n\\end{equation}"),
+            tex.contains("\\begin{equation*}\nE = mc^{2}\n\\end{equation*}"),
             "{tex}"
         );
+        assert!(
+            tex.contains("\\begin{equation}\\label{eq:3}\na = b\n\\end{equation}"),
+            "{tex}"
+        );
+        assert!(!tex.contains("(3)"), "the typed number is gone: {tex}");
         assert!(tex.contains("Inline $x^{2}$ math."), "{tex}");
         // The table, with Word's number taken off the caption.
         assert!(tex.contains("\\caption{Reconstruction quality.}"), "{tex}");
@@ -2508,7 +2870,7 @@ mod tests {
                 r.citations,
                 r.references
             ),
-            (1, 1, 1, 1, 1, 1, 1)
+            (1, 1, 1, 2, 1, 1, 1)
         );
         assert!(
             r.summary
@@ -2533,6 +2895,13 @@ mod tests {
                 .iter()
                 .any(|n| n.contains("1 citation from Zotero became a \\cite command")),
             "{:?}",
+            r.notes
+        );
+        assert!(
+            r.notes.iter().any(|n| n
+                .contains("1 equation numbered by hand in Word kept its number")
+                && n.contains("\\label{eq:3}")),
+            "the numbering rule is named only when it applied: {:?}",
             r.notes
         );
         assert_eq!(r.title, "Score Anchors for Low-Dose CT");
