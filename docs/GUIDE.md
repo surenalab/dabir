@@ -23,12 +23,12 @@ Click **Take the tour**. Dabir copies a sample paper into `Documents/Dabir/score
 
 ## 3. Open your paper
 
-A Dabir project is a folder with a `.tex` (or `.typ`) file in it. No import, no project file.
+A Dabir project is a folder with a `.tex` (or `.typ`) file in it, or a Word document (§15). No import, no project file.
 
 - **Open Folder…** (⌘O) opens any folder in place. Dabir finds the main file (the one with `\documentclass`), reads the bibliography and the figures, and shows the Git state if the folder is a repository. If it is not, the sidebar offers to initialise one.
 - **New Paper…** (⌘N) starts from a venue's official kit, fetched from the venue itself: NeurIPS, ICML, ICLR, CVPR, ICCV and ECCV, ACL, TMLR, SIAM, Springer Nature, Nature Portfolio, BMC, PLOS, Frontiers; or from starters for IEEE, ACM, SIGGRAPH, Elsevier, LNCS, AMS, APS and JMLR; or in Typst. Choose the folder in the save panel that follows. Each new paper is a Git repository with its first commit made.
 - **Import from Overleaf…** unpacks the zip Overleaf exports (Menu › Download › Source) into a folder. To keep working with Overleaf afterwards, see §12.
-- **Import Word Document…** (File menu, or *From Word Document…* at the foot of New Paper) turns a .docx a coauthor sent into a new LaTeX paper through pandoc, which Setup installs. Choose the document, then the folder in the save panel; the paper opens with Git and the memory scaffold set up as for any new paper, and the Word file is not changed. `main.tex` uses the plain article layout with only the packages the text needs. The title, authors and abstract, headings, emphasis, lists, footnotes, links, tables (as booktabs tables), equations (`$…$` in the text, numbered `equation`s on their own line) and pictures come across; pictures go to `figures/` at the width they had on the Word page. Citations inserted with Zotero, Mendeley or EndNote become `\cite` commands with their entries in `refs.bib`; citations typed as text stay text. Page layout, fonts and colours stay in Word, comments are left out, and tracked changes are accepted as they stand. The sheet then lists what to check against the Word file. A picture LaTeX cannot place (EMF, WMF, TIFF, SVG) is replaced by a framed note naming the file to save as PDF or PNG.
+- **Import Word Document…** (File menu, or *Convert Word to LaTeX…* at the foot of New Paper) turns a .docx a coauthor sent into a new LaTeX paper through pandoc, which Setup installs. Choose the document, then the folder in the save panel; the paper opens with Git and the memory scaffold set up as for any new paper, and the Word file is not changed. `main.tex` uses the plain article layout with only the packages the text needs. The title, authors and abstract, headings, emphasis, lists, footnotes, links, tables (as booktabs tables), equations (`$…$` in the text, numbered `equation`s on their own line) and pictures come across; pictures go to `figures/` at the width they had on the Word page. Citations inserted with Zotero, Mendeley or EndNote become `\cite` commands with their entries in `refs.bib`; citations typed as text stay text. Page layout, fonts and colours stay in Word, comments are left out, and tracked changes are accepted as they stand. The sheet then lists what to check against the Word file. A picture LaTeX cannot place (EMF, WMF, TIFF, SVG) is replaced by a framed note naming the file to save as PDF or PNG.
 - **Clone from GitHub…** (⇧⌘O) clones a repository with a paper in it.
 
 Dabir remembers the last paper and reopens it at launch. The sidebar lists the folder's files; click one to open it, and the files opened in a session become tabs above the editor (⇧⌘] and ⇧⌘[ cycle through them, × closes, a dot marks unsaved edits).
@@ -38,7 +38,7 @@ Optional: a `dabir.toml` at the root names the main file, the engine and the ven
 ```toml
 [paper]
 main = "main.tex"
-engine = "tectonic"     # typst for a .typ paper
+engine = "tectonic"     # typst for a .typ paper, word for a .docx (main = "manuscript.docx")
 
 [provenance]
 "figures/psnr-vs-noise.pdf" = "python3 code/sweep.py --sigma 0.3"
@@ -166,7 +166,7 @@ Nothing here is Dabir's own format: `git log` shows the same history, and any Gi
 - **GitHub collaborators**: the People tab lists who has access to the paper's GitHub repository and, if you are an admin, invites or removes them. Auth is your `gh` login (the same CLI that opens pull requests). Roles come from GitHub; Dabir has no accounts of its own.
 - **Overleaf**: name the project's Git bridge once, then pull and push from Share while coauthors keep using Overleaf.
 - **Export** (⌥⌘E): the PDF, the sources arXiv needs, a zip for Overleaf or a submission system, or Word and HTML through pandoc.
-- **Word coauthors**: export to Word, and when a .docx comes back, File › Import Word Document… (§3) makes it a new paper to compare with yours. Its tracked changes are accepted on the way in; they do not yet arrive as suggestions.
+- **Word coauthors**: export to Word, and when a .docx comes back, File › Import Word Document… (§3) makes it a new paper to compare with yours. Its tracked changes are accepted on the way in; they do not yet arrive as suggestions. If the paper itself lives in Word, work on the .docx directly instead (§15): coauthors' tracked changes and comments stay in it, and yours travel back the same way.
 
 ## 13. Settings and shortcuts
 
@@ -180,3 +180,18 @@ Settings (⌘,) hold every switch: autosave and format on save, compile on save,
 - **A language server is not used**: Settings › Code files lists the servers Dabir looked for and the install command of each.
 - **Something looks wrong on screen**: script errors are written to `~/Library/Logs/com.surenalab.dabir/ui.log` (or the platform's log folder). Attach it to an issue.
 - **Reporting**: open an issue with the log, the version (Dabir › About), and the smallest paper that shows the problem. [CONTRIBUTING.md](../CONTRIBUTING.md) describes how changes are reviewed.
+
+## 15. Word documents
+
+A paper can live in Word. A .docx is a document of its own in Dabir, not something to convert first: it opens in one page editor, the **Word view**, with the rest of the window around it (files, outline, History, the agent, the terminal, Git).
+
+- **Start one**: File › New Word Document… (⌥⌘N), or *Word document* in New Paper. The template is a research article on Word's own styles: title, authors and affiliations, abstract and keywords, Introduction, Materials and methods, Results, Discussion, captions and a reference list. The folder gets Git and the memory scaffold like any new paper, and `dabir.toml` names the document as the paper's main file.
+- **Open one**: File › Open Word Document… (⌥⌘O) opens the document's folder with that document as the paper. A folder with no LaTeX or Typst file opens on its Word document by itself (`main.docx`, `manuscript.docx` or `paper.docx`, otherwise the newest one). Any .docx in the sidebar opens in the Word view too.
+- **Write**: the pages look as they will in Word, with the document's fonts, styles, tables, pictures, footnotes, headers and footers, equations and fields. The editor's own bar above the page has the paragraph styles, fonts, emphasis, colours, lists, alignment, tables, pictures, page setup and comments. In a Word document ⌘B, ⇧⌘I and ⌘U are bold, italic and underline, ⌘K adds a link and ⌘F finds in the document.
+- **Editing, Suggesting, Viewing**: the control in the title bar, where Visual, Source and PDF are for LaTeX. *Suggesting* records each edit as a tracked change under your name, exactly as Word's Track Changes does, so a coauthor in Word sees it and accepts or rejects it there; tracked changes and comments from Word show in the text and, with the comments button, in a column beside the page, where they are accepted, rejected and answered. The name is the one set in Share, or your Git name. *Viewing* is read-only.
+- **Saving**: autosave writes the document after the usual pause (⌘S at once), rewriting only the paragraphs you changed and leaving everything else in the file as it was. Each save is a step in History, where a Word step reads as a diff of its text.
+- **Outline, pages, zoom**: the sidebar outline lists Headings 1 to 3; click one to go there. The status bar shows the word count, the page, and the zoom: fit width, whole page or 50 to 200 % (⌘=, ⌘−, ⌘0).
+- **Export** (⌥⌘E, or the Export menu in the title bar): a *Word document* copy; *PDF* through the print panel (choose Save as PDF there); *Markdown* (headings, text, lists, tables and footnotes; insertions kept, deletions left out); or *Convert to LaTeX Paper…*, which runs the Word import of §3 into a new folder beside this one and opens it. The Word document is not changed.
+- **Agents**: the Agent tab works as for any paper. Each run gets a read-only Markdown copy of the document under `.dabir/context/`, comments included, and is told never to edit the .docx itself; ask it questions about the paper, to check the numbers against the data, or to change the code, and it answers with any new wording in its reply for you to apply. Edits made by agents straight into the document, arriving as tracked changes, come in a later version.
+
+What Word-first editing does not cover yet: a live session carries LaTeX and text files only (a Word document stays on each machine), citations from `refs.bib` or Zotero are not inserted as Word citation fields, and LaTeX typed into a Word document stays text.
