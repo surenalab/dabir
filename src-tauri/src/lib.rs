@@ -427,11 +427,18 @@ fn write_text(path: String, contents: String) -> Result<(), String> {
     fs::write(&path, contents).map_err(|e| format!("Could not save {}: {}", path, e))
 }
 
+/// Read a binary file (a Word document on the way into the view, a figure for the Visual layer). Spawned for
+/// the same reason as `write_binary`: a thesis .docx with its figures inside the package is tens of megabytes,
+/// and reading it on the main thread would hold the window until the disk answered.
 #[tauri::command]
-fn read_binary(path: String) -> Result<tauri::ipc::Response, String> {
-    fs::read(&path)
-        .map(tauri::ipc::Response::new)
-        .map_err(|e| format!("Could not read {}: {}", path, e))
+async fn read_binary(path: String) -> Result<tauri::ipc::Response, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        fs::read(&path)
+            .map(tauri::ipc::Response::new)
+            .map_err(|e| format!("Could not read {}: {}", path, e))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Replace a binary file (the Word view's saves). The bytes are the raw request body and the path travels

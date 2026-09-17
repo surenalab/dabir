@@ -1308,9 +1308,14 @@ export default function App() {
     fixWithAgent("Check the references: follow the check-references skill. Run its script (python3 .dabir/skills/check-references/scripts/verify_refs.py on every .bib the paper uses), fix the fields of verified entries from the records without changing citation keys, add missing DOIs, and list every mismatch and not-found entry at the top of your report for me to decide on. Also list \\cite keys with no entry and \\ref with no \\label. Do not delete or invent entries.");
   }, [fixWithAgent]);
   const jumpTo = useCallback((line: number, inSource?: boolean) => { if (inSource) setMode("source"); setJumpLine(line); setJumpStamp(Date.now()); }, []);
-  const onChanged = useCallback(() => {
+  const onChanged = useCallback(async () => {
     // Cancel a pending autosave so a dirty buffer cannot overwrite an accepted agent change.
+    const word = wordRef.current;
     if (autosaveTimer.current) { clearTimeout(autosaveTimer.current); autosaveTimer.current = 0; }
+    // A Word document is different: the agent is told never to touch a .docx, so nothing in it is the agent's
+    // to keep, and the remount below reads the file again. Typing between Accept and this callback would
+    // otherwise be dropped, so the document goes to disk first — and the remount then reads what it wrote.
+    if (word?.dirty()) { try { await word.flush(); } catch (e) { setError(String(e)); } }
     refreshGit();
     reloadProject();
     if (project) refreshVersions(project.root);

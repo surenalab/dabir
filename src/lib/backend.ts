@@ -316,7 +316,7 @@ export async function importWord(docx: string, parent: string, name: string): Pr
         "3 comments were left out; they stay in the .docx.",
         "14 citations from Zotero became \\cite commands, with 12 entries in refs.bib listed by \\bibliographystyle{plain}.",
         "Figures are in figures/ at the width they had on the Word page; LaTeX places captioned ones where they fit.",
-        "Compare the equations with the Word file; displayed ones are numbered, so use equation* where no number is wanted.",
+        "Compare the equations with the Word file; displayed ones are equation*, since Word numbers none of its own. Change one to equation where you want LaTeX to number it.",
       ],
       pandoc: "pandoc 3.11",
     };
