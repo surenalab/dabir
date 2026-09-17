@@ -35,6 +35,10 @@
     {
       "id": "typst",
       "label": "Typst"
+    },
+    {
+      "id": "word",
+      "label": "Word documents"
     }
   ],
   "templates": [
@@ -711,6 +715,20 @@
         "kind": "bundled"
       },
       "main": "main.typ"
+    },
+    {
+      "id": "word-manuscript",
+      "label": "Word document",
+      "venue": "A research article as a Word document, for journals and coauthors that work in .docx",
+      "group": "word",
+      "engine": "word",
+      "official": false,
+      "featured": true,
+      "summary": "Title, authors and affiliations, abstract and keywords, IMRaD headings, captions and a reference list, on Word's own styles so a journal's template can restyle it. Opens in Dabir's Word editor with nothing to compile, and stays a .docx for coauthors in Word.",
+      "source": {
+        "kind": "bundled"
+      },
+      "main": "manuscript.docx"
     }
   ]
 }

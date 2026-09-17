@@ -117,6 +117,8 @@ fn host_of(url: &str) -> Option<String> {
 fn main_name(entry: &Entry) -> String {
     match Path::new(&entry.main).extension().and_then(|e| e.to_str()) {
         Some("typ") => "main.typ".into(),
+        // A Word document keeps its own name: `manuscript.docx` reads better in Word's title bar than `main`.
+        Some("docx") => entry.main.clone(),
         _ => "main.tex".into(),
     }
 }
@@ -450,7 +452,7 @@ mod tests {
                 e.id
             );
             assert!(
-                matches!(e.engine.as_str(), "latex" | "typst"),
+                matches!(e.engine.as_str(), "latex" | "typst" | "word"),
                 "{} engine",
                 e.id
             );
@@ -491,6 +493,15 @@ mod tests {
         assert!(dest.join("main.typ").is_file());
         assert!(dest.join("refs.bib").is_file());
         let _ = fs::remove_dir_all(&dest);
+        // The Word manuscript keeps its name and its bytes.
+        let word = std::env::temp_dir().join(format!("dabir-tpl-{}", uuid::Uuid::new_v4()));
+        instantiate(&registry(), &cache, "word-manuscript", &word, &|_| {}).unwrap();
+        assert_eq!(
+            fs::read(word.join("manuscript.docx")).unwrap(),
+            fs::read(registry().join("word-manuscript/manuscript.docx")).unwrap()
+        );
+        assert!(!word.join("main.tex").exists());
+        let _ = fs::remove_dir_all(&word);
     }
 
     #[test]

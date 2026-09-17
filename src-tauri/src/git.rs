@@ -43,6 +43,19 @@ fn sig(repo: &Repository) -> Result<Signature<'static>, String> {
         .map_err(|e| e.to_string())
 }
 
+/// Git's `user.name` for the repository at `root` (its own config, then the global one); None when unset.
+pub fn author_name(root: &Path) -> Option<String> {
+    let config = Repository::discover(root)
+        .ok()
+        .and_then(|r| r.config().ok())
+        .or_else(|| git2::Config::open_default().ok())?;
+    config
+        .get_string("user.name")
+        .ok()
+        .map(|n| n.trim().to_string())
+        .filter(|n| !n.is_empty())
+}
+
 pub fn status(root: &Path) -> Result<GitStatus, String> {
     let repo = match Repository::discover(root) {
         Ok(r) => r,
@@ -377,22 +390,8 @@ pub fn worktree_add(root: &Path, run_id: &str) -> Result<PathBuf, String> {
     if let Ok(git_dir) = repo.path().canonicalize() {
         let exclude = git_dir.join("info").join("exclude");
         let existing = std::fs::read_to_string(&exclude).unwrap_or_default();
-        // `**/` so the rule also covers a paper that lives in a subfolder of the repository.
-        if !existing.contains("**/.dabir/worktrees/") {
-            let _ = std::fs::create_dir_all(exclude.parent().unwrap());
-            let _ = std::fs::write(
-                &exclude,
-                format!(
-                    "{}{}**/.dabir/worktrees/\n**/.dabir/build/\n**/.dabir/index/\n",
-                    existing,
-                    if existing.is_empty() || existing.ends_with('\n') {
-                        ""
-                    } else {
-                        "\n"
-                    }
-                ),
-            );
-        }
+        let _ = std::fs::create_dir_all(exclude.parent().unwrap());
+        let _ = std::fs::write(&exclude, with_excludes(&existing));
     }
     let out = crate::spawn::tool("git")
         .current_dir(root)
@@ -420,6 +419,30 @@ pub fn worktree_add(root: &Path, run_id: &str) -> Result<PathBuf, String> {
     let cwd = dir.join(&prefix);
     let _ = std::fs::create_dir_all(cwd.join(".dabir").join("build"));
     Ok(cwd)
+}
+
+/// Dabir's own folders, kept out of the index: worktrees, build output, the search index, and the read-only
+/// Markdown copies of Word documents an agent run reads (`word::CONTEXT_DIR`). `**/` so the rules also cover a
+/// paper in a subfolder of the repository. Rules already there are not written twice.
+const EXCLUDES: &[&str] = &[
+    "**/.dabir/worktrees/",
+    "**/.dabir/build/",
+    "**/.dabir/index/",
+    "**/.dabir/context/",
+];
+
+pub(crate) fn with_excludes(existing: &str) -> String {
+    let mut out = existing.to_string();
+    for rule in EXCLUDES {
+        if !existing.lines().any(|l| l.trim() == *rule) {
+            if !out.is_empty() && !out.ends_with('\n') {
+                out.push('\n');
+            }
+            out.push_str(rule);
+            out.push('\n');
+        }
+    }
+    out
 }
 
 /// Repository-relative paths that differ between a working tree and a commit: tracked edits and
@@ -931,6 +954,7 @@ fn checkpoint_tree(repo: &Repository, prefix: &str) -> Result<git2::Oid, String>
         if s.contains(".dabir/worktrees")
             || s.contains(".dabir/build")
             || s.contains(".dabir/index")
+            || s.contains(".dabir/context")
         {
             1
         } else {
@@ -1151,7 +1175,16 @@ pub fn checkpoint_patch(root: &Path, id: &str) -> Result<String, String> {
         .diff_tree_to_tree(parent_tree.as_ref(), Some(&tree), Some(&mut opts))
         .map_err(|e| e.to_string())?;
     let mut text = String::new();
-    diff.print(git2::DiffFormat::Patch, |_, _, l| {
+    // A Word document is a zip, so Git sees only "binary"; its step reads as a diff of its text instead.
+    let mut words: Vec<(PathBuf, git2::Oid, git2::Oid)> = vec![];
+    diff.print(git2::DiffFormat::Patch, |d, _, l| {
+        let path = d.new_file().path().or(d.old_file().path());
+        if let Some(p) = path.filter(|p| crate::word::is_docx(p)) {
+            if !words.iter().any(|(q, _, _)| q == p) {
+                words.push((p.to_path_buf(), d.old_file().id(), d.new_file().id()));
+            }
+            return true;
+        }
         let body = String::from_utf8_lossy(l.content());
         match l.origin() {
             '+' | '-' | ' ' => text.push(l.origin()),
@@ -1161,12 +1194,55 @@ pub fn checkpoint_patch(root: &Path, id: &str) -> Result<String, String> {
         true
     })
     .map_err(|e| e.to_string())?;
+    for (path, old, new) in words {
+        text.push_str(&word_patch(&repo, &path, old, new));
+    }
     if !prefix.is_empty() {
         text = text
             .replace(&format!(" a/{}", prefix), " a/")
             .replace(&format!(" b/{}", prefix), " b/");
     }
     Ok(text)
+}
+
+/// The text diff of one Word document between two blobs (a zero id is "no file"), as a unified patch whose
+/// headers name the document. When a side cannot be read as a document the step says so instead.
+fn word_patch(repo: &Repository, path: &Path, old: git2::Oid, new: git2::Oid) -> String {
+    let text_of = |id: git2::Oid| -> Result<String, String> {
+        if id.is_zero() {
+            return Ok(String::new());
+        }
+        let blob = repo.find_blob(id).map_err(|e| e.to_string())?;
+        crate::word::to_markdown(blob.content(), crate::word::Options { comments: true })
+    };
+    let name = path.to_string_lossy().replace('\\', "/");
+    let (before, after) = match (text_of(old), text_of(new)) {
+        (Ok(b), Ok(a)) => (b, a),
+        _ => {
+            return format!(
+                "diff --git a/{name} b/{name}\n--- a/{name}\n+++ b/{name}\n@@ -1 +1 @@\n-(a Word document that could not be read as text)\n+(the Word document changed; open it to see how)\n"
+            )
+        }
+    };
+    if before == after {
+        return String::new();
+    }
+    let mut opts = git2::DiffOptions::new();
+    opts.context_lines(2);
+    let Ok(mut patch) = git2::Patch::from_buffers(
+        before.as_bytes(),
+        Some(path),
+        after.as_bytes(),
+        Some(path),
+        Some(&mut opts),
+    ) else {
+        return String::new();
+    };
+    patch
+        .to_buf()
+        .ok()
+        .and_then(|b| b.as_str().map(|s| s.to_string()).ok())
+        .unwrap_or_default()
 }
 
 /// Take one step out of the working tree: the step's diff is applied in reverse, leaving later edits in
