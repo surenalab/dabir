@@ -25,7 +25,8 @@ const CORE_NAMESPACES: Record<string, string> = {
 
 /** `docProps/core.xml` with every namespace prefix it uses declared. The Word engine adds `<dcterms:modified
  *  xsi:type=…>` on save without declaring `dcterms` and `xsi` when the file did not already, which makes the part
- *  malformed and Word refuse the document; this puts the declarations on the root element. */
+ *  malformed and Word refuse the document; this puts the declarations on the root element. Still needed at
+ *  docx-editor 1.12.0: `updateCoreProperties` in the engine's `docx/rezip.ts` is unchanged since 1.9.0. */
 export function repairCoreProperties(xml: string): string {
   const root = /<cp:coreProperties\b[^>]*>/.exec(xml);
   if (!root) return xml;
@@ -65,7 +66,9 @@ export function paragraphIdMaker(taken: Set<string>): () => string {
 /** Give every paragraph of a part a `w14:paraId`, as Word does on save, and declare the namespace on the part's
  *  root (ignorable for older readers). The Word view saves a document by rewriting only the paragraphs that
  *  changed, and it finds them by these ids; a document from pandoc, Google Docs or another tool has none, and is
- *  then rewritten whole, which loses fields that span paragraphs (a Zotero bibliography). */
+ *  then rewritten whole, which loses fields that span paragraphs (a Zotero bibliography). Still needed at
+ *  docx-editor 1.12.0: the `hasUntrackedChanges` bail-out in the engine's `docx/selectiveSave.ts` is unchanged
+ *  since 1.9.0, and with the injection off a full repack drops the comments part and rewrites the relationships. */
 export function addParagraphIds(xml: string, next: () => string): string {
   if (!lacksParagraphIds(xml)) return xml;
   const numbered = xml.replace(UNNUMBERED_PARAGRAPH, () => `<w:p w14:paraId="${next()}" w14:textId="77777777"`);
