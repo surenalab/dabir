@@ -1161,7 +1161,7 @@ fn scaffold_paper(dest: &Path, message: &str) -> Result<(), String> {
     if !gi.exists() {
         let _ = fs::write(
             &gi,
-            ".dabir/build/\n.dabir/index/\n.dabir/worktrees/\n*.aux\n*.log\n*.bbl\n*.blg\n*.out\n*.synctex.gz\n",
+            ".dabir/build/\n.dabir/index/\n.dabir/worktrees/\n.dabir/context/\n*.aux\n*.log\n*.bbl\n*.blg\n*.out\n*.synctex.gz\n",
         );
     }
     git::init(dest)?;
