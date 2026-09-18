@@ -1507,6 +1507,11 @@ input[type="range"] { accent-color: var(--accent); width: 140px; }
 .word-document .panes { flex: 1; min-height: 0; display: flex; }
 .word-pane { overflow: hidden; display: flex; flex-direction: column; }
 .word-view, .word-host { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* The engine's shadcn aliases redefine --accent on .ep-root as bare HSL channels, and a custom property naming
+   --accent on that same element resolves against that value, not the token, so --doc-primary and --doc-accent came
+   out as "228 7.2% 13.5%". They are mapped through this alias, which nothing redefines, and the declarations stay
+   on .ep-root because the engine's own stylesheet sets them there. */
+.word-view { --word-accent: var(--accent); }
 /* The engine's own layers (z-index up to 50) stay inside the document column, under the title bar's menus. */
 .word-host { isolation: isolate; }
 .word-host > .ep-root { flex: 1; min-height: 0; }
@@ -1524,10 +1529,10 @@ input[type="range"] { accent-color: var(--accent); width: 140px; }
   --doc-bg-subtle: var(--paper-2);
   --doc-bg-hover: var(--wash-hover);
   --doc-bg-input: var(--raised);
-  --doc-primary: var(--accent);
+  --doc-primary: var(--word-accent);
   --doc-primary-hover: var(--accent-hover);
   --doc-primary-light: var(--accent-wash);
-  --doc-accent: var(--accent);
+  --doc-accent: var(--word-accent);
   --doc-accent-bg: var(--accent-wash);
   --doc-on-primary: var(--accent-ink);
   --doc-toggle-active-bg: var(--seg-on);

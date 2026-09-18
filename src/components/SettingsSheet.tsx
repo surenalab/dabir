@@ -140,7 +140,7 @@ export function SettingsSheet({ onClose, onSetup }: { onClose: () => void; onSet
           <Row label={s.autosave ? "Compile after changes settle" : "Compile on save"}>
             <Toggle on={s.compileOnSave} onChange={(v) => updateSettings({ compileOnSave: v })} label="Compile on save" />
           </Row>
-          <Row label="Suggest changes" hint="Track changes for coauthors who do not use Git. Your insertions are underlined and your deletions struck through in your colour until someone accepts or rejects them, from the People tab or by hovering the text. Suggestions are saved in .dabir/changes.json and shared in live sessions. Also in the formatting bar.">
+          <Row label="Suggest changes" hint="Track changes for coauthors who do not use Git. Your insertions are underlined and your deletions struck through in your colour until someone accepts or rejects them, from the People tab or by hovering the text. Suggestions are saved in .dabir/changes.json and shared in live sessions. In a Word document this is Word's own Track Changes, saved in the .docx itself, which Word shows as it does its own. Also in the formatting bar.">
             <Toggle on={s.suggesting} onChange={(v) => updateSettings({ suggesting: v })} label="Suggest changes" />
           </Row>
         </section>
