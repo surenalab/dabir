@@ -822,8 +822,40 @@ fn apply_selection(
         .map_err(|e| e.to_string())?;
     // Keep the patch as bytes: a regenerated figure that Git still treats as text must round-trip exactly.
     let full = full.stdout;
+    // Agents do not edit Word documents. The run's preamble says so, and the Word view is the only thing that
+    // writes a .docx, atomically and after checking it is still a package. A run that touched one anyway must not
+    // reach the author's file through `git apply`, which writes it in place: those paths are left out here, and the
+    // rest of the run still lands. The worktree keeps the change, so nothing the agent did is lost.
+    let changed = crate::spawn::tool("git")
+        .current_dir(&dir)
+        .args(["diff", "--cached", "--name-only", "HEAD"])
+        .output()
+        .map_err(|e| e.to_string())?;
+    let word: Vec<String> = String::from_utf8_lossy(&changed.stdout)
+        .lines()
+        .filter(|l| crate::word::is_docx(Path::new(l)))
+        .map(|l| l.to_string())
+        .collect();
+    let picks = if word.is_empty() {
+        picks
+    } else {
+        let keep: Vec<Pick> = match picks {
+            Some(ps) => ps.into_iter().filter(|p| !word.contains(&p.path)).collect(),
+            None => String::from_utf8_lossy(&changed.stdout)
+                .lines()
+                .filter(|l| !l.is_empty() && !word.contains(&l.to_string()))
+                .map(|l| Pick {
+                    path: l.to_string(),
+                    hunks: None,
+                })
+                .collect(),
+        };
+        Some(keep)
+    };
     let (patch, selected): (Vec<u8>, Vec<String>) = match &picks {
-        Some(ps) if !ps.is_empty() => (
+        // Nothing left to apply: the run touched Word documents and nothing else.
+        Some(ps) if ps.is_empty() => (Vec::new(), Vec::new()),
+        Some(ps) => (
             filter_patch_bytes(&full, ps),
             ps.iter().map(|p| p.path.clone()).collect(),
         ),
