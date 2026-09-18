@@ -10,6 +10,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { DocxEditor, type DocxEditorRef } from "@heyirisai/docx-editor-react";
 import { collectHeadings } from "@heyirisai/docx-editor-core/utils/headingCollector";
+import { setGoogleFontsEnabled } from "@heyirisai/docx-editor-core";
 import { renderAllPagesForPrint } from "@heyirisai/docx-editor-core/layout-painter";
 import editorCss from "@heyirisai/docx-editor-react/styles.css?inline";
 import { printWindow, readBinary, revealPath, writeBinary } from "../lib/backend";
@@ -54,6 +55,12 @@ interface Props {
   onFocus: (f: { selection: string; paragraph: string } | null) => void;
   onError: (message: string) => void;
 }
+
+// Nothing about a document may leave the machine. On every load the engine looks up the fonts a document names
+// and, for any it cannot find locally, fetches a stylesheet from fonts.googleapis.com — which sends the font names
+// out of a document Dabir promised to keep on disk. Its own switch turns that off; missing glyphs then fall back
+// through the CSS stack. Called at module scope, before any document is parsed.
+setGoogleFontsEnabled(false);
 
 // The engine's stylesheet is scoped to `.ep-root` except for a few `[contenteditable=true]` rules, which would
 // reach Dabir's own editors; those are scoped here. Inserted first in <head>, so app.css maps the theme over it.

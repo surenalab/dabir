@@ -3462,6 +3462,62 @@ mod tests {
     }
 
     #[test]
+    fn an_agents_change_to_a_word_document_never_lands() {
+        // The preamble forbids it and nothing in the app writes a .docx except the Word view's own atomic save,
+        // so a run that edited one anyway is left in its worktree while the rest of the run lands.
+        let dir = std::env::temp_dir().join(format!("dabir-word-apply-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let docx = b"PK\x03\x04 the author's manuscript";
+        fs::write(dir.join("manuscript.docx"), docx).unwrap();
+        fs::write(dir.join("notes.tex"), "one\n").unwrap();
+        init_repo(&dir);
+        git::commit(&dir, "init", None).unwrap();
+        let wt = git::worktree_add(&dir, "w1").unwrap();
+        fs::write(
+            wt.join("manuscript.docx"),
+            b"PK\x03\x04 the agent's version",
+        )
+        .unwrap();
+        fs::write(wt.join("notes.tex"), "one\ntwo\n").unwrap();
+        git::worktree_diff(&dir, "w1").unwrap();
+        let applied = git::worktree_apply(&dir, "w1", None).unwrap();
+        assert_eq!(
+            fs::read(dir.join("manuscript.docx")).unwrap(),
+            docx,
+            "the author's Word document is untouched"
+        );
+        assert!(
+            !applied.iter().any(|p| p.ends_with(".docx")),
+            "and is not reported as applied: {applied:?}"
+        );
+        assert_eq!(
+            fs::read_to_string(dir.join("notes.tex")).unwrap(),
+            "one\ntwo\n",
+            "the rest of the run still lands"
+        );
+    }
+
+    #[test]
+    fn a_run_that_only_touched_a_word_document_lands_nothing() {
+        let dir = std::env::temp_dir().join(format!("dabir-word-only-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let docx = b"PK\x03\x04 the author's manuscript";
+        fs::write(dir.join("manuscript.docx"), docx).unwrap();
+        init_repo(&dir);
+        git::commit(&dir, "init", None).unwrap();
+        let wt = git::worktree_add(&dir, "w2").unwrap();
+        fs::write(
+            wt.join("manuscript.docx"),
+            b"PK\x03\x04 the agent's version",
+        )
+        .unwrap();
+        git::worktree_diff(&dir, "w2").unwrap();
+        let applied = git::worktree_apply(&dir, "w2", None).unwrap();
+        assert!(applied.is_empty(), "nothing to apply: {applied:?}");
+        assert_eq!(fs::read(dir.join("manuscript.docx")).unwrap(), docx);
+    }
+
+    #[test]
     fn worktree_starts_from_the_working_copy() {
         // Uncommitted edits and new files are what the agent sees; the run's diff is only its own work,
         // and accepting lands onto the same edits without a conflict.
