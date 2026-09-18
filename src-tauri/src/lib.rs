@@ -4179,6 +4179,140 @@ mod tests {
         let _ = fs::remove_file(&tmp);
     }
 
+    /// The sync the PDF view relies on, against a real compile of the bundled sample with the engine that ships
+    /// with the app: the two clicks a person makes (Show Line in PDF, double-click the page) are these two calls.
+    /// Not part of the gate because it compiles a paper; run with:
+    ///   cargo test synctex_round_trips -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn synctex_round_trips_a_real_compile() {
+        let here = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let engine = here.join("binaries/tectonic-aarch64-apple-darwin");
+        let engine = if engine.exists() {
+            engine
+        } else {
+            PathBuf::from("/opt/homebrew/bin/tectonic")
+        };
+        assert!(
+            engine.exists(),
+            "no engine to compile with: {}",
+            engine.display()
+        );
+        let src = here.join("../examples/score-anchor");
+        let dir = std::env::temp_dir().join(format!("dabir-synctex-live-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("figures")).unwrap();
+        fs::create_dir_all(dir.join("tables")).unwrap();
+        for f in ["main.tex", "refs.bib"] {
+            fs::copy(src.join(f), dir.join(f)).unwrap();
+        }
+        for sub in ["figures", "tables"] {
+            for e in fs::read_dir(src.join(sub)).unwrap().flatten() {
+                fs::copy(e.path(), dir.join(sub).join(e.file_name())).unwrap();
+            }
+        }
+        let out = dir.join(".dabir/build");
+        fs::create_dir_all(&out).unwrap();
+        let run = std::process::Command::new(&engine)
+            .current_dir(&dir)
+            .args(["-X", "compile", "--synctex", "--keep-logs", "--outdir"])
+            .arg(&out)
+            .arg("main.tex")
+            .output()
+            .expect("the engine runs");
+        assert!(
+            out.join("main.pdf").exists(),
+            "the sample compiles: {}",
+            String::from_utf8_lossy(&run.stderr)
+        );
+        let main = dir.join("main.tex");
+        let st =
+            synctex::load(&synctex::synctex_path(&main)).expect("the engine wrote a sync file");
+        // A line deep in the text, so a wrong offset shows up as a wrong page rather than a rounding difference.
+        let text = fs::read_to_string(&main).unwrap();
+        let line = text
+            .lines()
+            .position(|l| l.contains("\\section{Results}"))
+            .expect("the sample has a Results section") as u32
+            + 1;
+        let there = st
+            .forward(&main, line)
+            .unwrap_or_else(|| panic!("no PDF position for line {line}"));
+        assert!(there.page >= 1, "a real page: {there:?}");
+        let back = st
+            .inverse(there.page, there.x, there.y)
+            .expect("a source position for that spot");
+        assert!(
+            back.file.ends_with("main.tex"),
+            "back in the file it came from: {}",
+            back.file
+        );
+        assert!(
+            (back.line as i64 - line as i64).abs() <= 3,
+            "back within a few lines of {line}: {}",
+            back.line
+        );
+        eprintln!(
+            "line {line} -> page {} at ({:.1}, {:.1}) -> line {}",
+            there.page, there.x, there.y, back.line
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Export as a person meets it: the paper out to Word and HTML through pandoc, and a Word document back as
+    /// the Markdown the Export sheet and the History diff show. Needs pandoc; run with:
+    ///   cargo test export_round_trips -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn export_round_trips_through_pandoc() {
+        let here = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let src = here.join("../examples/score-anchor");
+        let dir = std::env::temp_dir().join(format!("dabir-export-live-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("figures")).unwrap();
+        for f in ["main.tex", "refs.bib"] {
+            fs::copy(src.join(f), dir.join(f)).unwrap();
+        }
+        for e in fs::read_dir(src.join("figures")).unwrap().flatten() {
+            fs::copy(e.path(), dir.join("figures").join(e.file_name())).unwrap();
+        }
+        let main = dir.join("main.tex");
+        let docx = dir.join("out.docx");
+        let report =
+            export::via_pandoc(&dir, &main, &docx, "docx").expect("pandoc writes a Word file");
+        assert!(
+            report.bytes > 5_000,
+            "a real document: {} bytes",
+            report.bytes
+        );
+        let bytes = fs::read(&docx).unwrap();
+        assert!(word::looks_like_docx(&bytes), "and it is a package");
+        let html = dir.join("out.html");
+        export::via_pandoc(&dir, &main, &html, "html").expect("pandoc writes HTML");
+        assert!(fs::read_to_string(&html)
+            .unwrap()
+            .contains("Score Anchoring"));
+        // The other direction: the Word file Dabir just wrote, read back the way Export › Markdown reads one.
+        let md =
+            word::markdown_file(&docx, word::Options::default()).expect("the Word file reads back");
+        assert!(
+            md.contains("Score Anchoring"),
+            "the title survives the round trip"
+        );
+        assert!(
+            md.len() > 500,
+            "and so does the text: {} characters",
+            md.len()
+        );
+        eprintln!(
+            "docx {} bytes, markdown {} characters, notes {:?}",
+            report.bytes,
+            md.len(),
+            report.notes
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
     /// Regenerate a project's memory scaffold in place. Run with:
     ///   DABIR_SETUP_DIR=/path/to/paper cargo test setup_dir -- --ignored --nocapture
     #[test]
