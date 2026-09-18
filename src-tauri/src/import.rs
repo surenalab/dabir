@@ -1666,7 +1666,10 @@ fn gather_media(dest: &Path) -> Result<HashMap<String, String>, String> {
     Ok(map)
 }
 
-/// The folder must be new or empty (Finder's `.DS_Store` aside); true when it was created here.
+/// What a file manager leaves in a folder the author thinks is empty, on each platform.
+const CLUTTER: &[&str] = &[".DS_Store", "desktop.ini", "Thumbs.db"];
+
+/// The folder must be new or empty (a file manager's own leavings aside); true when it was created here.
 fn claim(dest: &Path) -> Result<bool, String> {
     if dest.exists() {
         if !dest.is_dir() {
@@ -1676,7 +1679,10 @@ fn claim(dest: &Path) -> Result<bool, String> {
             ));
         }
         let empty = fs::read_dir(dest)
-            .map(|rd| rd.flatten().all(|e| e.file_name() == ".DS_Store"))
+            .map(|rd| {
+                rd.flatten()
+                    .all(|e| CLUTTER.contains(&e.file_name().to_string_lossy().as_ref()))
+            })
             .unwrap_or(false);
         if !empty {
             return Err(format!(
@@ -1701,7 +1707,7 @@ fn release(dest: &Path, created: bool) {
             let p = e.path();
             if p.is_dir() {
                 let _ = fs::remove_dir_all(&p);
-            } else if e.file_name() != ".DS_Store" {
+            } else if !CLUTTER.contains(&e.file_name().to_string_lossy().as_ref()) {
                 let _ = fs::remove_file(&p);
             }
         }

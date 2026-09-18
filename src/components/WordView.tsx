@@ -153,7 +153,9 @@ const WordDocument = forwardRef<WordHandle, Props & { dark: boolean; onRetry: ()
   }, []);
 
   const flush = useCallback(async (): Promise<boolean> => {
-    if (saving.current) await saving.current;
+    // Wait for a save already running, and swallow its failure: it was reported through onSaved, and letting it
+    // throw here would make this call give up without writing at all — ⌘S after a failed autosave has to try again.
+    if (saving.current) { try { await saving.current; } catch { /* reported; this call makes its own attempt */ } }
     if (edits.current === saved.current || !ready.current) return false;
     const upTo = edits.current;
     const run = (async () => {
