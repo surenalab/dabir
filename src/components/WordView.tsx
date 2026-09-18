@@ -13,7 +13,7 @@ import { collectHeadings } from "@heyirisai/docx-editor-core/utils/headingCollec
 import { renderAllPagesForPrint } from "@heyirisai/docx-editor-core/layout-painter";
 import editorCss from "@heyirisai/docx-editor-react/styles.css?inline";
 import { printWindow, readBinary, revealPath, writeBinary } from "../lib/backend";
-import { repaired, withParagraphIds } from "../lib/word-package";
+import { repaired, withoutStyleEchoes, withParagraphIds } from "../lib/word-package";
 import { countWords, looksLikeDocx, markupWidth, pagePixels, wordOutline, wordScale, type WordMode, type WordOutlineRow, type WordZoom } from "../lib/word";
 
 /** What the app asks of the open Word document. */
@@ -123,6 +123,8 @@ const WordDocument = forwardRef<WordHandle, Props & { dark: boolean; onRetry: ()
   const [path] = useState(p.path);
   const [bytes, setBytes] = useState<ArrayBuffer | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
+  // The document as the editor received it: what the author had written directly, as opposed to what a save adds.
+  const asRead = useRef<Uint8Array | null>(null);
   const editor = useRef<DocxEditorRef>(null);
   const host = useRef<HTMLDivElement>(null);
   // Edits count up; a save records the count it wrote, so an edit made while saving keeps the document dirty.
@@ -142,6 +144,7 @@ const WordDocument = forwardRef<WordHandle, Props & { dark: boolean; onRetry: ()
       if (!looksLikeDocx(raw)) { setFailed(`${name} is not a Word document (.docx). An older .doc, or a file renamed to .docx, opens in Word, which can save it as a .docx.`); return; }
       // Paragraph ids let a save rewrite only what changed (a document from another tool has none).
       const b = await withParagraphIds(raw).catch(() => raw);
+      asRead.current = b;
       if (alive) setBytes(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer);
     }).catch((e) => { if (alive) setFailed(String(e).replace(/^Error:\s*/, "")); });
     return () => { alive = false; };
@@ -149,7 +152,11 @@ const WordDocument = forwardRef<WordHandle, Props & { dark: boolean; onRetry: ()
 
   const serialize = useCallback(async (): Promise<Uint8Array | null> => {
     const buf = await editor.current?.save();
-    return buf ? repaired(new Uint8Array(buf)) : null;
+    if (!buf) return null;
+    const fixed = await repaired(new Uint8Array(buf));
+    // The engine writes each edited paragraph's style out as direct formatting on its runs; take that back, or the
+    // text stops following the style and a journal's style sheet no longer reaches it.
+    return withoutStyleEchoes(fixed, asRead.current).catch(() => fixed);
   }, []);
 
   const flush = useCallback(async (): Promise<boolean> => {

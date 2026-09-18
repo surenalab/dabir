@@ -2,7 +2,7 @@
 // erasable TypeScript, which Node 22.18 and later run directly, so the test imports the source.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { countWords, isWordPath, latexFolderFor, looksLikeDocx, markupWidth, pagePixels, parentFolder, stepWordZoom, wordContextPath, wordOutline, wordScale, wordStem, zoomLabel, WORD_MODES, WORD_ZOOM_MAX, WORD_ZOOM_MIN } from "../src/lib/word.ts";
+import { dropStyleEchoes, readWordStyles, resolveRunProps, countWords, isWordPath, latexFolderFor, looksLikeDocx, markupWidth, pagePixels, parentFolder, stepWordZoom, wordContextPath, wordOutline, wordScale, wordStem, zoomLabel, WORD_MODES, WORD_ZOOM_MAX, WORD_ZOOM_MIN } from "../src/lib/word.ts";
 
 const a4 = pagePixels(11906, 16838);
 
@@ -160,4 +160,73 @@ test("the main part is numbered whatever Office called it", async () => {
   zip.file("word/document2.xml", '<w:document xmlns:w="w"><w:body><w:p><w:r><w:t>Hello</w:t></w:r></w:p></w:body></w:document>');
   const read = await JSZip.loadAsync(await withParagraphIds(await zip.generateAsync({ type: "uint8array" })));
   assert.match(await read.file("word/document2.xml").async("string"), /<w:p w14:paraId="[0-9A-F]{8}"/);
+});
+
+// ---- the formatting a save copies out of a paragraph's style (see dropStyleEchoes)
+
+const STYLES = `<w:styles>
+  <w:docDefaults><w:rPrDefault><w:rPr>
+    <w:rFonts w:asciiTheme="minorHAnsi" w:cstheme="minorBidi" w:eastAsiaTheme="minorEastAsia" w:hAnsiTheme="minorHAnsi"/>
+    <w:sz w:val="24"/><w:szCs w:val="24"/>
+  </w:rPr></w:rPrDefault></w:docDefaults>
+  <w:style w:default="1" w:styleId="Normal" w:type="paragraph"><w:name w:val="Normal"/></w:style>
+  <w:style w:styleId="Caption" w:type="paragraph"><w:name w:val="Caption"/><w:basedOn w:val="Normal"/>
+    <w:pPr><w:spacing w:after="120"/></w:pPr><w:rPr><w:i/></w:rPr></w:style>
+  <w:style w:customStyle="1" w:styleId="TableCaption" w:type="paragraph"><w:basedOn w:val="Caption"/>
+    <w:pPr><w:keepNext/></w:pPr></w:style>
+  <w:style w:styleId="Emphasis" w:type="character"><w:rPr><w:b/></w:rPr></w:style>
+</w:styles>`;
+const THEME = `<a:theme><a:fontScheme><a:majorFont><a:latin typeface="Aptos Display"/><a:ea typeface=""/><a:cs typeface=""/></a:majorFont>
+  <a:minorFont><a:latin typeface="Aptos"/><a:ea typeface=""/><a:cs typeface=""/></a:minorFont></a:fontScheme></a:theme>`;
+const sheet = readWordStyles(STYLES, THEME);
+/** A paragraph as the engine saves it: the style's own italic, size and font written onto the run. */
+const echoed = (id, style, extra = "") => `<w:p w14:paraId="${id}"><w:pPr><w:pStyle w:val="${style}"/></w:pPr><w:r><w:rPr>` +
+  `<w:rFonts w:ascii="Aptos" w:hAnsi="Aptos" w:cs="Aptos" w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:eastAsiaTheme="minorEastAsia" w:csTheme="minorBidi"/>` +
+  `<w:i/><w:iCs/><w:sz w:val="24"/><w:szCs w:val="24"/>${extra}</w:rPr><w:t>Reconstruction quality.</w:t></w:r></w:p>`;
+
+test("a style's own formatting is read through the basedOn chain and the theme", () => {
+  const props = resolveRunProps(sheet, "TableCaption", null);
+  assert.equal(props.has("w:i"), true, "italic comes from Caption, two steps up");
+  assert.equal(props.get("w:sz")?.["w:val"], "24", "the size comes from the document defaults");
+  assert.equal(sheet.theme.minorhansi, "Aptos");
+  assert.equal(sheet.theme.minorbidi, "Aptos", "an empty slot in the theme means the latin face");
+  assert.equal(resolveRunProps(sheet, "TableCaption", "Emphasis").has("w:b"), true, "the character style is applied over it");
+});
+
+test("a save that echoes a paragraph's style back onto its runs has it taken away", () => {
+  const before = `<w:document><w:body><w:p w14:paraId="A1"><w:pPr><w:pStyle w:val="TableCaption"/></w:pPr><w:r><w:t>Reconstruction quality.</w:t></w:r></w:p></w:body></w:document>`;
+  const saved = `<w:document><w:body>${echoed("A1", "TableCaption")}</w:body></w:document>`;
+  const out = dropStyleEchoes(saved, before, sheet);
+  assert.equal(/<w:rPr>/.test(out), false, `every property said what the style says, so the run keeps none: ${out}`);
+  assert.match(out, /<w:pStyle w:val="TableCaption"\/>/, "the paragraph still names its style");
+  assert.match(out, /<w:t>Reconstruction quality\.<\/w:t>/, "the text is untouched");
+});
+
+test("only what this save added is taken away, and only where the style already says it", () => {
+  // The author had written the italic and a colour by hand before the edit, and the size differs from the style.
+  const before = `<w:document><w:body><w:p w14:paraId="A1"><w:pPr><w:pStyle w:val="TableCaption"/></w:pPr>` +
+    `<w:r><w:rPr><w:i/><w:color w:val="FF0000"/></w:rPr><w:t>Reconstruction quality.</w:t></w:r></w:p></w:body></w:document>`;
+  const saved = `<w:document><w:body>${echoed("A1", "TableCaption", '<w:color w:val="FF0000"/><w:sz w:val="28"/>')}</w:body></w:document>`;
+  const out = dropStyleEchoes(saved, before, sheet);
+  assert.match(out, /<w:i\/>/, "the author's own italic stays, although the style says it too");
+  assert.match(out, /<w:color w:val="FF0000"\/>/, "so does a property the style says nothing about");
+  assert.match(out, /<w:sz w:val="28"\/>/, "a size that differs from the style is a real override");
+  assert.equal(/<w:szCs w:val="24"\/>/.test(out), false, "the complex-script size the save added is still an echo");
+  assert.equal(/w:rFonts/.test(out), false, "the font the save resolved out of the theme goes");
+});
+
+test("a paragraph the document did not have before is cleaned whole", () => {
+  const saved = `<w:document><w:body>${echoed("B2", "TableCaption")}</w:body></w:document>`;
+  assert.equal(/<w:rPr>/.test(dropStyleEchoes(saved, `<w:document><w:body/></w:document>`, sheet)), false);
+});
+
+test("a character style, the paragraph mark and an unstyled paragraph are left alone", () => {
+  const rStyle = `<w:document><w:body><w:p w14:paraId="C3"><w:pPr><w:pStyle w:val="TableCaption"/><w:rPr><w:i/></w:rPr></w:pPr>` +
+    `<w:r><w:rPr><w:rStyle w:val="Emphasis"/><w:b/><w:i/></w:rPr><w:t>x</w:t></w:r></w:p></w:body></w:document>`;
+  const out = dropStyleEchoes(rStyle, null, sheet);
+  assert.match(out, /<w:rStyle w:val="Emphasis"\/>/, "the run keeps the character style it names");
+  assert.equal(/<w:b\/>/.test(out), false, "bold is what that character style says");
+  assert.match(out, /<w:pPr><w:pStyle w:val="TableCaption"\/><w:rPr><w:i\/><\/w:rPr><\/w:pPr>/, "the paragraph mark's own properties are not the text's");
+  const plain = `<w:document><w:body><w:p w14:paraId="D4"><w:r><w:rPr><w:sz w:val="24"/></w:rPr><w:t>x</w:t></w:r></w:p></w:body></w:document>`;
+  assert.equal(/<w:sz w:val="24"\/>/.test(dropStyleEchoes(plain, null, sheet)), false, "the document defaults count as the style behind an unstyled paragraph");
 });

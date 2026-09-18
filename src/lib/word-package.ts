@@ -1,7 +1,7 @@
 // A Word document as a zip package: what the Word view does to one on its way in and out. Kept apart from word.ts
 // (pure text) because it needs JSZip; scripts/word-template.mjs uses it too, so it stays erasable TypeScript.
 import JSZip from "jszip";
-import { addParagraphIds, lacksParagraphIds, paragraphIdMaker, paragraphIdsIn, repairCoreProperties } from "./word.ts";
+import { addParagraphIds, dropStyleEchoes, lacksParagraphIds, paragraphIdMaker, paragraphIdsIn, readWordStyles, repairCoreProperties } from "./word.ts";
 
 /** The parts whose paragraphs Word numbers. `document\d*` because Office 365 writes the main part as
  *  `document2.xml`, which the package relationships name (`import::office_document` and the Word view's Rust side
@@ -35,4 +35,25 @@ export async function repaired(bytes: Uint8Array): Promise<Uint8Array> {
   if (fixed === xml) return bytes;
   zip.file("docProps/core.xml", fixed);
   return zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
+}
+
+/** The package as saved, with the formatting the engine copied out of each paragraph's own style taken back
+ *  (see dropStyleEchoes). `original` is the document as it was read, which is how a property the author wrote
+ *  directly is told from one this save added. Rebuilt only when there is something to take back. */
+export async function withoutStyleEchoes(bytes: Uint8Array, original: Uint8Array | null): Promise<Uint8Array> {
+  const zip = await JSZip.loadAsync(bytes);
+  const styles = zip.file("word/styles.xml");
+  if (!styles) return bytes;
+  const sheet = readWordStyles(await styles.async("string"), (await zip.file("word/theme/theme1.xml")?.async("string")) ?? null);
+  const before = original ? await JSZip.loadAsync(original) : null;
+  const names = Object.keys(zip.files).filter((n) => PARAGRAPH_PARTS.test(n)).sort();
+  let changed = false;
+  for (const name of names) {
+    const xml = await zip.file(name)!.async("string");
+    const out = dropStyleEchoes(xml, (await before?.file(name)?.async("string")) ?? null, sheet);
+    if (out === xml) continue;
+    zip.file(name, out);
+    changed = true;
+  }
+  return changed ? zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }) : bytes;
 }
