@@ -83,6 +83,170 @@ export function addParagraphIds(xml: string, next: () => string): string {
   });
 }
 
+/** A run's properties as OOXML writes them: the element name (`w:i`, `w:rFonts`, …) against its attributes. */
+export type RunProps = Map<string, Record<string, string>>;
+/** A document's style sheet, as much of it as run properties need: the defaults every run starts from, each style
+ *  with what it sets and what it is based on, and the theme's font names, which `w:rFonts` refers to by slot. */
+export interface WordStyles { defaults: RunProps; styles: Map<string, { basedOn: string | null; props: RunProps }>; theme: Record<string, string> }
+
+/** Properties whose absent `w:val` means on, so `<w:i/>` and `<w:i w:val="1"/>` are the same thing. */
+const TOGGLES = new Set(["w:b", "w:bCs", "w:i", "w:iCs", "w:caps", "w:smallCaps", "w:strike", "w:dstrike", "w:outline", "w:shadow", "w:emboss", "w:imprint", "w:vanish", "w:webHidden", "w:rtl", "w:noProof", "w:snapToGrid", "w:specVanish", "w:oMath"]);
+/** Word writes a complex-script twin beside the property it mirrors; the engine copies both out of the style. */
+const TWINS: Record<string, string> = { "w:bCs": "w:b", "w:iCs": "w:i", "w:szCs": "w:sz" };
+/** The four faces `w:rFonts` names, each of which may be given outright or through a theme slot. */
+const FONT_SLOTS = ["ascii", "hansi", "cs", "eastasia"];
+
+const attrsOf = (text: string): Record<string, string> => {
+  const out: Record<string, string> = {};
+  for (const m of text.matchAll(/([\w:.-]+)\s*=\s*"([^"]*)"/g)) out[m[1].toLowerCase()] = m[2];
+  return out;
+};
+
+/** The children of one `<w:rPr>`, by element name. */
+export function runPropsIn(inner: string): RunProps {
+  const out: RunProps = new Map();
+  for (const m of inner.matchAll(/<(w:[\w]+)((?:[^>"]|"[^"]*")*?)(?:\/>|>[\s\S]*?<\/\1>)/g)) out.set(m[1], attrsOf(m[2]));
+  return out;
+}
+
+const firstRunProps = (xml: string): RunProps => {
+  const m = /<w:rPr\b[^>]*>([\s\S]*?)<\/w:rPr>/.exec(xml);
+  return m ? runPropsIn(m[1]) : new Map();
+};
+
+/** The style sheet a document saves with: `styles.xml`, and `theme1.xml` for the names behind the font slots. */
+export function readWordStyles(stylesXml: string, themeXml?: string | null): WordStyles {
+  const theme: Record<string, string> = {};
+  for (const kind of ["major", "minor"] as const) {
+    const block = new RegExp(`<a:${kind}Font>([\\s\\S]*?)</a:${kind}Font>`).exec(themeXml ?? "")?.[1] ?? "";
+    const face = (tag: string) => new RegExp(`<a:${tag}\\b[^>]*typeface="([^"]*)"`).exec(block)?.[1] ?? "";
+    const latin = face("latin");
+    theme[`${kind}hansi`] = theme[`${kind}ascii`] = latin;
+    // An empty slot in the theme means the latin face, which is what Word shows and what the engine writes out.
+    theme[`${kind}eastasia`] = face("ea") || latin;
+    theme[`${kind}bidi`] = face("cs") || latin;
+  }
+  const defaults = firstRunProps(/<w:rPrDefault>([\s\S]*?)<\/w:rPrDefault>/.exec(stylesXml)?.[1] ?? "");
+  const styles = new Map<string, { basedOn: string | null; props: RunProps }>();
+  for (const m of stylesXml.matchAll(/<w:style\b([^>]*)>([\s\S]*?)<\/w:style>/g)) {
+    const id = attrsOf(m[1])["w:styleid"];
+    if (!id) continue;
+    const body = m[2].replace(/<w:pPr>[\s\S]*?<\/w:pPr>/g, "");
+    styles.set(id, { basedOn: /<w:basedOn\b[^>]*w:val="([^"]*)"/.exec(body)?.[1] ?? null, props: firstRunProps(body) });
+  }
+  return { defaults, styles, theme };
+}
+
+/** What a run in a paragraph styled `pStyle` (and with the character style `rStyle`) already has without saying so:
+ *  the defaults, then each style from the root of its `w:basedOn` chain down, then the character style. */
+export function resolveRunProps(sheet: WordStyles, pStyle: string | null, rStyle: string | null): RunProps {
+  const out: RunProps = new Map(sheet.defaults);
+  const apply = (id: string | null) => {
+    const chain: { basedOn: string | null; props: RunProps }[] = [];
+    for (let at = id, guard = 0; at && guard < 32; guard++) {
+      const style = sheet.styles.get(at);
+      if (!style) break;
+      chain.unshift(style);
+      at = style.basedOn;
+    }
+    for (const style of chain) for (const [name, attrs] of style.props) out.set(name, attrs);
+  };
+  apply(pStyle);
+  apply(rStyle);
+  return out;
+}
+
+const isOn = (attrs: Record<string, string>) => !["0", "false", "off"].includes((attrs["w:val"] ?? "1").toLowerCase());
+/** The face each slot ends up with, whether it was named outright or through a theme slot. */
+const faces = (attrs: Record<string, string>, theme: Record<string, string>) =>
+  FONT_SLOTS.map((slot) => (attrs[`w:${slot}`] ?? theme[(attrs[`w:${slot}theme`] ?? "").toLowerCase()] ?? "").toLowerCase()).join("|");
+
+/** Does a run property say exactly what the style behind it already says? */
+export function sameRunProp(name: string, mine: Record<string, string>, inherited: Record<string, string> | undefined, theme: Record<string, string>): boolean {
+  if (!inherited) return false;
+  if (TOGGLES.has(name)) return isOn(mine) === isOn(inherited);
+  if (name === "w:rFonts") return faces(mine, theme) === faces(inherited, theme) && (mine["w:hint"] ?? "") === (inherited["w:hint"] ?? "");
+  const keys = new Set([...Object.keys(mine), ...Object.keys(inherited)]);
+  return [...keys].every((k) => (mine[k] ?? "") === (inherited[k] ?? ""));
+}
+
+const signature = (name: string, attrs: Record<string, string>) =>
+  `${name} ${Object.keys(attrs).sort().map((k) => `${k}=${attrs[k]}`).join(" ")}`;
+
+/** Every run property each paragraph of a part already carried, by paragraph id: what the author put there, as
+ *  opposed to what a save adds. A paragraph the part does not have yet answers with nothing. */
+export function runPropsBefore(xml: string): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>();
+  for (const p of xml.matchAll(/<w:p\b[^>]*\bw14:paraId="([0-9A-Fa-f]+)"([\s\S]*?)<\/w:p>/g)) {
+    const seen = out.get(p[1].toUpperCase()) ?? new Set<string>();
+    for (const r of p[2].matchAll(/<w:rPr\b[^>]*>([\s\S]*?)<\/w:rPr>/g)) for (const [name, attrs] of runPropsIn(r[1])) seen.add(signature(name, attrs));
+    out.set(p[1].toUpperCase(), seen);
+  }
+  return out;
+}
+
+/** Take back the formatting a save copied out of a paragraph's own style.
+ *
+ *  docx-editor resolves the style cascade into the editor's marks when it reads a document (toProseDoc merges the
+ *  paragraph style's formatting into every run), and writes those marks back as direct formatting (fromProseDoc has
+ *  no style resolver at all), so editing one word in a paragraph styled `TableCaption` returns it with the style's
+ *  own italic, size and font written onto the run. The paragraph still names the style, but the text no longer
+ *  follows it: put the manuscript on a journal's style sheet afterwards and that paragraph stays as it was.
+ *
+ *  This drops a run property only when both hold: the paragraph did not carry it before this save (`before`, the
+ *  document as it was read), and it says exactly what the style behind it already says. The author's own direct
+ *  formatting is therefore never touched, and a property that differs from the style — a real override — stays.
+ *  Reported upstream; remove this when the engine stops writing them. */
+export function dropStyleEchoes(xml: string, before: string | null, sheet: WordStyles): string {
+  const had = runPropsBefore(before ?? "");
+  const tags = /<(\/?)w:(p|pPr|rPr)(?=[\s/>])([^>]*?)(\/?)>/g;
+  let out = "", from = 0, inPPr = false;
+  const open: { style: string | null; sigs: Set<string> }[] = [];
+  for (let m = tags.exec(xml); m; m = tags.exec(xml)) {
+    const [whole, closing, name, attrs, selfClosing] = m;
+    if (name === "p") {
+      if (closing) open.pop();
+      else if (!selfClosing) open.push({ style: null, sigs: had.get((/\bw14:paraId="([0-9A-Fa-f]+)"/.exec(attrs)?.[1] ?? "").toUpperCase()) ?? new Set() });
+      continue;
+    }
+    if (name === "pPr") {
+      inPPr = !closing && !selfClosing;
+      if (inPPr && open.length) {
+        const shut = xml.indexOf("</w:pPr>", m.index);
+        const style = /<w:pStyle\b[^>]*w:val="([^"]*)"/.exec(shut < 0 ? "" : xml.slice(m.index, shut))?.[1];
+        if (style) open[open.length - 1].style = style;
+      }
+      continue;
+    }
+    if (closing || selfClosing || !open.length) continue;
+    // A paragraph's own `<w:pPr><w:rPr>` formats its mark, not its text, and the style it names sits in the pPr.
+    const end = xml.indexOf("</w:rPr>", m.index);
+    if (end < 0) continue;
+    const inner = xml.slice(m.index + whole.length, end);
+    if (inPPr) continue;
+    const paragraph = open[open.length - 1];
+    const props = runPropsIn(inner);
+    if (!props.size) continue;
+    const inherited = resolveRunProps(sheet, paragraph.style, props.get("w:rStyle")?.["w:val"] ?? null);
+    const echoes = new Set<string>();
+    for (const [name2, attrs2] of props) {
+      if (name2 === "w:rStyle" || paragraph.sigs.has(signature(name2, attrs2))) continue;
+      if (sameRunProp(name2, attrs2, inherited.get(name2), sheet.theme)) echoes.add(name2);
+    }
+    // A complex-script twin the save added beside an echo is one too: the style says nothing about it either.
+    for (const [twin, base] of Object.entries(TWINS)) {
+      const attrs2 = props.get(twin);
+      if (attrs2 && echoes.has(base) && !paragraph.sigs.has(signature(twin, attrs2)) && !inherited.has(twin)) echoes.add(twin);
+    }
+    if (!echoes.size) continue;
+    let kept = inner;
+    for (const name2 of echoes) kept = kept.replace(new RegExp(`<${name2}(?=[\\s/>])(?:[^>"]|"[^"]*")*?(?:/>|>[\\s\\S]*?</${name2}>)`, "g"), "");
+    out += xml.slice(from, m.index) + (kept.trim() ? `${whole}${kept}</w:rPr>` : "");
+    from = end + "</w:rPr>".length;
+  }
+  return from ? out + xml.slice(from) : xml;
+}
+
 /** Editing writes straight into the document; Suggesting records every edit as a tracked change under the
  *  author's name, as Word's Track Changes does; Viewing is read-only. */
 export type WordMode = "editing" | "suggesting" | "viewing";
