@@ -1555,6 +1555,40 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn a_save_that_cannot_be_written_leaves_the_document_as_it_was() {
+        // The Word view reports this and keeps the document dirty, so the next save can try again; what must
+        // hold here is that the file on disk is the old one, whole, and that the temporary file is gone.
+        use std::os::unix::fs::PermissionsExt;
+        let dir = scratch("readonly");
+        let file = dir.join("manuscript.docx");
+        let was = docx(&p("", &r("the author's text")), &[]);
+        fs::write(&file, &was).unwrap();
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o500)).unwrap();
+        let err = write_atomic(&file, &docx(&p("", &r("the edit")), &[])).unwrap_err();
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).unwrap();
+        assert!(
+            err.contains("manuscript.docx"),
+            "the message names the document: {err}"
+        );
+        assert_eq!(
+            fs::read(&file).unwrap(),
+            was,
+            "the document on disk is untouched"
+        );
+        let left: Vec<_> = fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok().map(|e| e.file_name().to_string_lossy().to_string()))
+            .filter(|n| n.contains("dabir-tmp"))
+            .collect();
+        assert!(
+            left.is_empty(),
+            "no half-written file is left behind: {left:?}"
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn atomic_write_keeps_permissions_and_follows_links() {
         use std::os::unix::fs::PermissionsExt;
         let dir = scratch("perm");
