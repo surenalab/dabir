@@ -118,15 +118,20 @@ export async function writeText(path: string, contents: string): Promise<void> {
 
 /** Browser preview only: binary files written this session, by path. */
 const PREVIEW_BINARY = new Map<string, Uint8Array>();
+/** `npm run dev` only: where the preview's compile says its PDF is. vite.config.ts serves that file at /__sample.pdf. */
+const DEV_PDF = "/.dabir/build/main.pdf";
+async function devBytes(url: string): Promise<Uint8Array> {
+  try { const r = await fetch(url); return r.ok ? new Uint8Array(await r.arrayBuffer()) : new Uint8Array(); } catch { return new Uint8Array(); }
+}
 async function previewBinary(path: string): Promise<Uint8Array> {
   const kept = PREVIEW_BINARY.get(path);
   if (kept) return kept.slice();
-  // `npm run dev` serves the sample Word paper's documents (scripts/vite-word-preview.mjs); a production preview has none.
-  if (!import.meta.env.DEV || !path.startsWith(`${SAMPLE_WORD_ROOT}/`)) return new Uint8Array();
-  try {
-    const r = await fetch(`/__dabir/word?name=${encodeURIComponent(path.split("/").pop() ?? "")}`);
-    return r.ok ? new Uint8Array(await r.arrayBuffer()) : new Uint8Array();
-  } catch { return new Uint8Array(); }
+  // Everything below is served by `npm run dev` alone, and the guard drops it from a production build.
+  if (!import.meta.env.DEV) return new Uint8Array();
+  // The preview compile's PDF (vite.config.ts), and the sample Word paper's documents (scripts/vite-word-preview.mjs).
+  if (path.endsWith(DEV_PDF)) return devBytes("/__sample.pdf");
+  if (path.startsWith(`${SAMPLE_WORD_ROOT}/`)) return devBytes(`/__dabir/word?name=${encodeURIComponent(path.split("/").pop() ?? "")}`);
+  return new Uint8Array();
 }
 
 export async function readBinary(path: string): Promise<Uint8Array> {
@@ -189,7 +194,8 @@ export async function checkForUpdates(confirm: (version: string, notes: string) 
 export async function compile(mainTex: string): Promise<CompileResult> {
   if (!native) {
     await wait(900);
-    return { ok: true, pdf: null, engine: "sample", millis: 900, log: "(browser preview: no TeX engine available)",
+    // The dev server has a real PDF to show (see previewBinary); a production preview does not.
+    return { ok: true, pdf: import.meta.env.DEV ? mainTex.replace(/\/[^/]*$/, DEV_PDF) : null, engine: "sample", millis: 900, log: "(browser preview: no TeX engine available)",
       diagnostics: [
         { severity: "error", category: "syntax", file: "main.tex", line: 41, message: "Undefined control sequence", context: "! Undefined control sequence.\nl.41 \\section{Results}\\undefinedmacro\n                                     {x}" },
         { severity: "warning", category: "citation", file: "main.tex", line: 51, message: "Citation `chung2023dps' on page 1 undefined", context: "LaTeX Warning: Citation `chung2023dps' on page 1 undefined on input line 51." },

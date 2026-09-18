@@ -55,8 +55,8 @@ The segmented control in the title bar chooses how the document is shown:
 | --- | --- | --- |
 | Visual | The LaTeX laid out as a page while you type. Equations, figures and tables render in place; the preamble folds into one row. Click anything to see and edit its source. | ⌘1 |
 | Source | The raw file with highlighting, folding, bracket matching, completion and the change gutter. | ⌘2 |
-| PDF | The compiled paper, with page navigation, zoom and find. | ⌘3 |
-| Split | Source beside PDF with a draggable divider. The PDF follows the cursor; double-click the PDF to jump to the source line. | ⌘4 |
+| PDF | The compiled paper, with page navigation, zoom (⌘= and ⌘−, or ⌘-scroll and pinch) and find. | ⌘3 |
+| Split | Source beside PDF with a draggable divider; double-click it to reset, or focus it and use the arrow keys. The PDF stays fitted to its pane and keeps its own zoom, follows the cursor, and a double-click on it jumps to the source line. | ⌘4 |
 
 The status bar at the bottom shows the compile state, the word count (prose only: no preamble, comments or math), and the spelling, completion and prediction switches.
 
