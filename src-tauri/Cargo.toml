@@ -2,7 +2,7 @@
 name = "dabir"
 version = "0.1.10"
 description = "Dabir: a local-first workspace for scientific writing"
-authors = ["Sadegh Salehi"]
+authors = ["Surena Lab"]
 license = "AGPL-3.0-only"
 edition = "2021"
 
