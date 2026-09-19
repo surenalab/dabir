@@ -1,0 +1,25 @@
+#!/bin/sh
+# Refuse an attribution trailer. Cursor, Claude Code and other harnesses append one to `git commit` without
+# saying so; twenty-three commits carried `Co-authored-by: Cursor <cursoragent@cursor.com>` before anyone
+# noticed, which put a tool in the repository's contributor list and took a rewrite to get out. AGENTS.md and
+# CONTRIBUTING.md say commits are the studio's; this is the line that enforces it. `scripts/commit.sh` goes
+# through git plumbing and is not rewritten, so prefer it. A real human co-author is the one case for
+# `git commit --no-verify`.
+msg="$1"
+if grep -qiE '^[[:space:]]*(co-authored-by|co-committed-by|assisted-by|generated-by)[[:space:]]*:' "$msg"; then
+  who=$(grep -iE '^[[:space:]]*(co-authored-by|co-committed-by|assisted-by|generated-by)[[:space:]]*:' "$msg" | head -3)
+  cat >&2 <<EOF
+This commit message carries an attribution trailer:
+
+$who
+
+Commits here are authored by Surena Lab <dev@surenalab.com> alone (AGENTS.md). Your tool probably added it:
+commit with scripts/commit.sh, which the harness cannot rewrite. A genuine human co-author: --no-verify.
+EOF
+  exit 1
+fi
+if grep -qiE '(🤖 )?generated with \[?claude code|noreply@anthropic\.com|cursoragent@cursor\.com' "$msg"; then
+  echo "This commit message names the tool that wrote it. Say what changed and why; the diff says what." >&2
+  exit 1
+fi
+exit 0
