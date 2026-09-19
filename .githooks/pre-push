@@ -1,7 +1,17 @@
 #!/bin/sh
 # Refuse to push to main directly and run the front-end half of the gate. Enable once per clone:
 #   git config core.hooksPath .githooks
-while read -r _local _lsha remote _rsha; do
+while read -r _local lsha remote rsha; do
   case "$remote" in refs/heads/main) echo "Push to main is not allowed; open a pull request from a branch."; exit 1;; esac
+  # The commit-msg hook catches a trailer as it is written; this catches one that arrived another way (a
+  # rebase, a cherry-pick, a clone without the hooks) before it reaches a branch other people can see.
+  case "$lsha" in *[!0]*) range="$lsha";; *) continue;; esac
+  case "$rsha" in *[!0]*) range="$rsha..$lsha";; esac
+  bad=$(git log --format='%h %s%n%b' "$range" | grep -icE '^[[:space:]]*(co-authored-by|assisted-by)[[:space:]]*:' || true)
+  if [ "$bad" -gt 0 ]; then
+    echo "These commits carry an attribution trailer; rewrite them before pushing:" >&2
+    git log --format='  %h %s' --grep='co-authored-by' -i "$range" >&2
+    exit 1
+  fi
 done
 SKIP_RUST=1 sh scripts/check.sh

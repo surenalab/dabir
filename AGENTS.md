@@ -30,7 +30,7 @@ Read PRODUCT.md and DESIGN.md before touching UI. Tokens live in src/styles/toke
 ## Contract and review
 - CONTRIBUTING.md is the contract: branch per change, `npm run check` green, pull request template filled, one or two reviews, squash-merge. docs/REVIEW.md is the rubric and the pipeline.
 - `npm run review` is the review bot (scripts/review.mjs): codebase-aware, runs on the local agent subscriptions, posts with `--pr N --post`. Ask a different vendor than the author for the second review.
-- Enable the pre-push hook once per clone: `git config core.hooksPath .githooks`.
+- Enable the hooks once per clone: `git config core.hooksPath .githooks`. `commit-msg` refuses an attribution trailer as it is written and `pre-push` refuses one that arrived another way; twenty-three commits carried `Co-authored-by: Cursor` before anyone noticed, which took a history rewrite to get out of the contributor list.
 
 ## Harness: how to build, test and release
 - Type and bundle: `npx tsc --noEmit -p tsconfig.json && npx vite build`.
