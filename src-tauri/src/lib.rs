@@ -2544,11 +2544,11 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
     let about = AboutMetadata {
         name: Some("Dabir".into()),
         version: Some(env!("CARGO_PKG_VERSION").into()),
-        authors: Some(vec!["Sadegh Salehi".into()]),
+        authors: Some(vec!["Surena Lab".into()]),
         comments: Some("A local-first workspace for scientific writing.".into()),
-        copyright: Some("© 2026 Sadegh Salehi. Free software: GNU AGPL v3, no warranty.".into()),
+        copyright: Some("© 2026 Surena Lab. Free software: GNU AGPL v3, no warranty.".into()),
         license: Some("AGPL-3.0-only".into()),
-        website: Some("https://github.com/surenalab/dabir".into()),
+        website: Some("https://surenalab.com/dabir".into()),
         website_label: Some("Source and licence".into()),
         ..Default::default()
     };
