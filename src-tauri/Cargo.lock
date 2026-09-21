@@ -756,7 +756,7 @@ name = "dabir"
 version = "0.1.10"
 dependencies = [
  "axum",
- "base64 0.22.1",
+ "base64 0.23.1",
  "flate2",
  "futures-util",
  "git2",
