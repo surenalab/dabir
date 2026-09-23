@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Toolbar, type ViewMode, type WordExport } from "./components/Toolbar";
-import { Navigator } from "./components/Navigator";
+import { Navigator, NAV_TABS, type NavTab } from "./components/Navigator";
 import { Document, type DocReview, type WordPane } from "./components/Document";
 import type { WordHandle, WordStats } from "./components/WordView";
 import { Inspector, type ReviewHandle, type Tab as InspectorTab } from "./components/Inspector";
@@ -71,6 +71,14 @@ export default function App() {
   const autosaveTimer = useRef<number | null>(null);
   const [mode, setMode] = useState<ViewMode>("visual");
   const [navOpen, setNavOpen] = useState(true);
+  // The sidebar's view, remembered across launches; Outline for a first launch, since writing is what you open a paper for.
+  const [navTab, setNavTabState] = useState<NavTab>(() => {
+    try { const t = localStorage.getItem("dabir.navTab"); return NAV_TABS.includes(t as NavTab) ? (t as NavTab) : "outline"; } catch { return "outline"; }
+  });
+  const setNavTab = useCallback((t: NavTab) => {
+    setNavTabState(t);
+    try { localStorage.setItem("dabir.navTab", t); } catch { /* the choice just is not remembered */ }
+  }, []);
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [navW, setNavW] = useState(NAV_W);
   const [inspW, setInspW] = useState(INSP_W);
@@ -1000,7 +1008,7 @@ export default function App() {
     const root = project?.root ?? "";
     const showMain = () => { if (project?.mainTex && fileRef.current !== project.mainTex) void selectFile(project.mainTex); };
     return [
-      { id: "folder", target: ".navigator .nav-files", title: "A paper is a folder", enter: () => { setNavOpen(true); showMain(); setMode("visual"); setTerminal((t) => ({ ...t, open: false })); },
+      { id: "folder", target: ".navigator .nav-files", title: "A paper is a folder", enter: () => { setNavOpen(true); setNavTab("files"); showMain(); setMode("visual"); setTerminal((t) => ({ ...t, open: false })); },
         body: <><p>This is the sample: <code>main.tex</code>, a <code>refs.bib</code>, the figures and tables, and <code>code/sweep.py</code>, the script that made them. Dabir opens the folder in place. Nothing is uploaded or converted, and the folder stays yours to use with any other tool.</p><p>Click a file to open it. Open files become tabs above the editor.</p></> },
       { id: "modes", target: ".titlebar .seg", title: "Four ways to look at it", enter: () => { showMain(); setMode("visual"); },
         body: <><p><b>Visual</b> lays the LaTeX out as a page while you type, with the source one click away. <b>Source</b> is the raw file with highlighting, folding and completions. <b>PDF</b> is the compiled paper. <b>Split</b> puts source and PDF side by side; click a line in the PDF to jump to it in the source, and back.</p></>,
@@ -1011,7 +1019,7 @@ export default function App() {
       { id: "write", target: ".formatbar", title: "Writing with help", enter: () => { showMain(); setMode("visual"); },
         body: <><p>The bar formats without you remembering the macro: bold, emphasis, inline math, sections, lists, citations and references. Type <code>\cite{"{"}</code> or <code>\ref{"{"}</code> and the entries and labels of this paper complete. Spelling and grammar are underlined; a suggestion is one click.</p></>,
         keys: [{ keys: "⇧⌘Space", does: "the agent continues the sentence" }, { keys: "⌘F", does: "find in paper" }] },
-      { id: "outline", target: ".navigator .nav-outline", title: "Outline and word count", enter: showMain,
+      { id: "outline", target: ".navigator .nav-outline", title: "Outline and word count", enter: () => { setNavOpen(true); setNavTab("outline"); showMain(); },
         body: <><p>The outline follows the sections of the whole paper, <code>\input</code>s included, and the word count at the bottom counts prose only: no preamble, no comments, no math. Click a heading to jump.</p></> },
       { id: "agent", target: ".inspector textarea", title: "Ask an agent", enter: () => { setInspectorOpen(true); setTabRequest({ tab: "agent", stamp: Date.now() }); },
         body: <><p>Claude Code, Codex, Cursor, Grok or OpenCode: whichever is installed. Each run gets a short preamble (the paper's map, your focus, the memory of past runs) rather than the whole folder, and works on a copy of the paper. When it finishes, the document shows its version with the changes marked. <b>Accept</b> lands them and takes a snapshot; <b>Reject</b> discards them. Try: <i>"Tighten the abstract to 150 words."</i></p></>,
@@ -1024,7 +1032,7 @@ export default function App() {
       { id: "terminal", target: ".terminal", title: "The terminal", enter: () => { setTerminal((t) => (t.open ? t : { ...t, open: true, focusStamp: Date.now() })); },
         body: <><p>A real shell in the paper's folder, with tabs, and the same one agents can use. With <code>[remote]</code> in <code>dabir.toml</code>, a tab opens over SSH on the machine that runs the experiments. Drag the top edge to resize.</p></>,
         keys: [{ keys: "⌃`", does: "show or hide" }] },
-      { id: "history", target: ".navigator .nav-history, .navigator .nav-changes", title: "History and Git", enter: () => { setNavOpen(true); setTerminal((t) => ({ ...t, open: false })); },
+      { id: "history", target: ".navigator .nav-history, .navigator .nav-changes", title: "History and Git", enter: () => { setNavOpen(true); setNavTab("changes"); setTerminal((t) => ({ ...t, open: false })); },
         body: <><p>Every save is a step you can return to, every accepted run a snapshot, and commits are yours: the message is drafted from the change, the author is you. The History tab in the inspector lists versions and restores any of them.</p></> },
       { id: "together", target: '.titlebar .tb-btn[aria-label="Share"]', title: "Working together", enter: () => { setInspectorOpen(true); setTabRequest({ tab: "people", stamp: Date.now() }); },
         body: <><p>Start a live session and send the invite code: coauthors edit the same paper peer to peer, with comments and suggested changes in the People tab. Overleaf projects pull and push as Git remotes, and Export makes an arXiv-ready bundle.</p></> },
@@ -1113,6 +1121,7 @@ export default function App() {
       case "fmt-link": editorRef.current?.format("link"); break;
       case "fmt-footnote": editorRef.current?.format("footnote"); break;
       case "toggle-sidebar": toggleNav(); break;
+      case "nav-outline": case "nav-files": case "nav-changes": setNavOpen(true); setNavTab(id.slice(4) as NavTab); break;
       case "toggle-inspector": toggleInspector(); break;
       case "ask-agent": if (!inspectorOpen) toggleInspector(); setAskFocus((n) => n + 1); break;
       case "find": if (mode === "pdf") setPdfFindRequest((n) => n + 1); else { if (mode === "visual") setMode("source"); setFindRequest((n) => n + 1); } break;
@@ -1131,7 +1140,7 @@ export default function App() {
         checkForUpdates(async (v, notes) => window.confirm(`Dabir ${v} is available.\n\n${notes}\n\nDownload and restart now?`)).then(setNote).catch((e) => setNote(String(e)));
         break;
     }
-  }, [open, startTour, openSetup, closePaper, importFromOverleaf, openWordImport, newWordPaper, openWordFile, wordStats, setWordMode, save, compile, showInPdf, toggleNav, toggleInspector, toggleTerminal, openFindPaper, toggleFocusMode, inspectorOpen, navOpen, runGrammar, mode, cycleFile, closeFile, file, project, runFile, runSelection, openRepl, formatDocument, settings.formatOnSave]);
+  }, [setNavTab, open, startTour, openSetup, closePaper, importFromOverleaf, openWordImport, newWordPaper, openWordFile, wordStats, setWordMode, save, compile, showInPdf, toggleNav, toggleInspector, toggleTerminal, openFindPaper, toggleFocusMode, inspectorOpen, navOpen, runGrammar, mode, cycleFile, closeFile, file, project, runFile, runSelection, openRepl, formatDocument, settings.formatOnSave]);
 
   useEffect(() => onMenu(command), [command]);
   useEffect(() => onCompileProgress((line) => setProgress(line.length > 90 ? line.slice(0, 87) + "…" : line)), []);
@@ -1174,6 +1183,8 @@ export default function App() {
       if (k === "0") { e.preventDefault(); command("zoom-fit"); return; }
       // ⌃⌘S on the Mac; Ctrl+Alt+S elsewhere, where Ctrl+Shift+S is Share.
       if (isMac ? (e.ctrlKey && k === "s") : (e.altKey && (k === "s" || e.code === "KeyS"))) { e.preventDefault(); command("toggle-sidebar"); return; }
+      // The sidebar's views: ⌃⌘1–3 on the Mac, Ctrl+Alt+1–3 elsewhere (e.code, since Alt+digit is a symbol on many layouts).
+      if ((isMac ? e.ctrlKey : e.altKey) && !e.shiftKey && /^Digit[123]$/.test(e.code)) { e.preventDefault(); command(`nav-${NAV_TABS[Number(e.code.slice(5)) - 1]}`); return; }
       if (e.altKey && !e.shiftKey && (k === "i" || e.code === "KeyI")) { e.preventDefault(); command("toggle-inspector"); return; }
       if (e.altKey && !e.shiftKey && (k === "f" || e.code === "KeyF")) { e.preventDefault(); command("focus-mode"); return; }
       // Off the Mac the modifier is Ctrl itself, so only Alt and Shift rule a plain chord out; and in the
@@ -1424,7 +1435,7 @@ export default function App() {
       <Toolbar project={project} file={file} dirty={dirty} saveLabel={settings.autosave ? (saveState === "saving" ? "Saving…" : saveState === "unsaved" ? "Unsaved" : saveState === "saved" ? "Saved" : null) : null} mode={mode} navOpen={navOpen} inspectorOpen={inspectorOpen}
         compiling={compileState.status === "running"} onMode={setMode} onToggleNav={toggleNav} onToggleInspector={toggleInspector} onOpen={open} onCompile={compile} onCancelCompile={() => compileCancel()}
         onShare={() => setSheet("share")} live={!!live} peers={peers} following={followId} onJumpPeer={jumpToPeer} terminalOpen={terminal.open} onToggleTerminal={() => command("show-terminal")} run={runRecipeNow} onRun={() => command("run-file")} word={wordBar} />
-      <Navigator project={project} current={file} outline={isWord || fileKind(file) === "code" || /\.(md|markdown)$/i.test(file ?? "") ? outline : paperOutline(map) ?? outline} git={git} commitFocus={commitFocus} busy={gitBusy || historyBusy} draftMessage={commitDraft} onDiscard={discardChange} onHistory={(id) => { if (!inspectorOpen) toggleInspector(); setHistoryFocus({ at: Date.now(), id: id ?? null }); }} history={versions}
+      <Navigator tab={navTab} onTab={setNavTab} project={project} current={file} outline={isWord || fileKind(file) === "code" || /\.(md|markdown)$/i.test(file ?? "") ? outline : paperOutline(map) ?? outline} git={git} commitFocus={commitFocus} busy={gitBusy || historyBusy} draftMessage={commitDraft} onDiscard={discardChange} onHistory={(id) => { if (!inspectorOpen) toggleInspector(); setHistoryFocus({ at: Date.now(), id: id ?? null }); }} history={versions}
         onSelect={selectFile} onJump={(l, f) => (f ? jumpToFile(f, l) : jumpTo(l))} onInitGit={initGit} onCommit={commitAll} find={findPaper} onCloseFind={closeFindPaper} />
       <Document project={project} onSetup={(f) => openSetup(f ?? null)} file={file} source={source} bib={bib} paperWords={paperWordsNow} openFiles={openFiles} dirty={dirty} onCloseFile={closeFile} headText={headText} code={codeState} mode={mode} jumpLine={jumpLine} jumpStamp={jumpStamp}
         compileState={compileState} progress={progress} showLog={showLog} onToggleLog={() => setShowLog((v) => !v)} terminal={terminal} onToggleTerminal={toggleTerminal} findRequest={findRequest}

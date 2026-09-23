@@ -1,6 +1,7 @@
 import { useRef } from "react";
 
-interface Option { value: string; label: string; title?: string; disabled?: boolean }
+/** `badge` is a count shown after the label (Changes in the sidebar); zero or absent shows nothing. */
+interface Option { value: string; label: string; title?: string; disabled?: boolean; badge?: number }
 
 /** A macOS-style segmented control: one choice, radio semantics, arrow keys move between segments. */
 export function Segmented({ label, value, options, onChange }: { label: string; value: string; options: Option[]; onChange: (v: string) => void }) {
@@ -23,6 +24,7 @@ export function Segmented({ label, value, options, onChange }: { label: string; 
           onClick={() => onChange(o.value)}
         >
           {o.label}
+          {o.badge ? <span className="seg-badge" aria-label={`${o.badge} pending`}>{o.badge}</span> : null}
         </button>
       ))}
     </div>

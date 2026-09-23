@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronRight, FileText, FileType, BookMarked, Code2, Image, Database, File, Folder, GitCommitHorizontal, Undo2, History as HistoryIcon, X } from "lucide-react";
 import { searchPaper, type Checkpoint, type Entry, type GitStatus, type Project, type SearchHit } from "../lib/backend";
 import { Scrubber, stepKind } from "./Scrubber";
+import { Segmented } from "./Segmented";
 import type { OutlineItem } from "../lib/latex";
-import { chord } from "../lib/keys";
+import { chord, navKey } from "../lib/keys";
 
 const ICON = { tex: FileText, bib: BookMarked, code: Code2, figure: Image, data: Database, word: FileType, other: File, dir: Folder } as const;
 
@@ -116,16 +117,25 @@ interface Props {
   /** Find in Paper is open; `stamp` bumps to refocus the field. */
   find: { open: boolean; stamp: number };
   onCloseFind: () => void;
+  /** Which of the sidebar's three views is showing. The app owns it, so the menu, the tour and Commit can switch it. */
+  tab: NavTab;
+  onTab: (tab: NavTab) => void;
 }
 
-export function Navigator({ project, current, outline, git, commitFocus, busy, onSelect, onJump, onInitGit, onCommit, draftMessage, onDiscard, onHistory, history, find, onCloseFind }: Props) {
+/** The sidebar's views. The history rail sits above all three, since moving through time applies to each. */
+export type NavTab = "outline" | "files" | "changes";
+export const NAV_TABS: NavTab[] = ["outline", "files", "changes"];
+
+export function Navigator({ project, current, outline, git, commitFocus, busy, onSelect, onJump, onInitGit, onCommit, draftMessage, onDiscard, onHistory, history, find, onCloseFind, tab, onTab }: Props) {
   const ref = useRef<HTMLElement>(null);
   const commitInput = useRef<HTMLInputElement>(null);
   const [message, setMessage] = useState("");
   const [showNoise, setShowNoise] = useState(false);
-  useEffect(() => { if (draftMessage) { setMessage(draftMessage); commitInput.current?.focus(); } }, [draftMessage]);
-
-  useEffect(() => { if (commitFocus) commitInput.current?.focus(); }, [commitFocus]);
+  const [focusCommit, setFocusCommit] = useState(0);
+  useEffect(() => { if (draftMessage) { setMessage(draftMessage); onTab("changes"); setFocusCommit(Date.now()); } }, [draftMessage, onTab]);
+  useEffect(() => { if (commitFocus) { onTab("changes"); setFocusCommit(Date.now()); } }, [commitFocus, onTab]);
+  // Runs after the switch has rendered the field; focusing in the same pass would find nothing to focus.
+  useEffect(() => { if (focusCommit && tab === "changes") commitInput.current?.focus(); }, [focusCommit, tab]);
 
   const onKey = (e: React.KeyboardEvent) => {
     if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
@@ -163,10 +173,19 @@ export function Navigator({ project, current, outline, git, commitFocus, busy, o
           {history.length > 0 && <Scrubber axis="horizontal" steps={history} kindOf={stepKind} openId={null} onPick={(id) => onHistory(id)} />}
         </section>
       )}
-      {outline.length > 0 && (
-        <section className="nav-section nav-outline">
-          <div className="nav-heading"><span>Outline</span></div>
-          {outline.map((o) => (
+      <div className="nav-tabs">
+        <Segmented label="Sidebar" value={tab} onChange={(v) => onTab(v as NavTab)} options={[
+          { value: "outline", label: "Outline", title: chord(`Outline (${navKey(1)})`) },
+          { value: "files", label: "Files", title: chord(`Files (${navKey(2)})`) },
+          { value: "changes", label: "Changes", title: chord(`Changes (${navKey(3)})`), badge: git?.isRepo ? shown.length : 0 },
+        ]} />
+      </div>
+
+      {tab === "outline" && (
+        <section className="nav-section nav-outline" role="tabpanel" aria-label="Outline">
+          {outline.length === 0 ? (
+            <div className="empty-nav">Nothing to outline yet. Sections and headings appear here as you write them.</div>
+          ) : outline.map((o) => (
             <button key={`${o.file ?? ""}-${o.number}-${o.line}`} className={`outline-row l${o.level}`} onClick={() => onJump(o.line, o.file)} title={o.hint ?? (o.file ? `${o.file}:${o.line}` : `Line ${o.line}`)}>
               {o.hint == null && <span className="num">{o.number}</span>}<span>{o.text}</span>
             </button>
@@ -174,10 +193,11 @@ export function Navigator({ project, current, outline, git, commitFocus, busy, o
         </section>
       )}
 
-      <section className="nav-section nav-changes">
+      {tab === "changes" && (
+      <section className="nav-section nav-changes" role="tabpanel" aria-label="Changes">
         <div className="nav-heading">
-          <span>Changes</span>
-          <span className="count">{git?.isRepo ? (shown.length > 0 ? `${shown.length}${hidden.length ? ` · ${hidden.length} hidden` : ""}` : git.branch ? `on ${git.branch}` : "no commits") : "no git"}</span>
+          <span>{git?.isRepo ? (git.branch ? `On ${git.branch}` : "No commits yet") : "Not a repository"}</span>
+          {git?.isRepo && hidden.length > 0 && <span className="count">{hidden.length} hidden</span>}
         </div>
         {!git?.isRepo ? (
           <div className="empty-nav">
@@ -208,7 +228,7 @@ export function Navigator({ project, current, outline, git, commitFocus, busy, o
             <div className="commit-box">
               <input ref={commitInput} value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Commit message" aria-label="Commit message"
                 onKeyDown={(e) => { if (e.key === "Enter") submit(); }} disabled={busy} />
-              <button className="btn" onClick={submit} disabled={!message.trim() || busy} title={chord("Commit all changes (⇧⌘C)")}><GitCommitHorizontal /> Commit</button>
+              <button className="btn" onClick={submit} disabled={!message.trim() || busy} title={chord("Commit all changes (⌥⌘C)")}><GitCommitHorizontal /> Commit</button>
             </div>
           </>
         )}
@@ -222,14 +242,17 @@ export function Navigator({ project, current, outline, git, commitFocus, busy, o
           </div>
         )}
       </section>
+      )}
 
-      <section className="nav-section nav-files">
-        <div className="nav-heading"><span>Files</span><span className="count" title={project.treeTruncated ? "This folder holds more files than the sidebar lists. Open the paper's own folder to see all of it." : undefined}>{countFiles(project.tree)}{project.treeTruncated ? "+" : ""}</span></div>
+      {tab === "files" && (
+      <section className="nav-section nav-files" role="tabpanel" aria-label="Files">
+        <div className="nav-heading"><span title={project.root}>{project.name}</span><span className="count" title={project.treeTruncated ? "This folder holds more files than the sidebar lists. Open the paper's own folder to see all of it." : undefined}>{countFiles(project.tree)}{project.treeTruncated ? "+" : ""}</span></div>
         <ul className="tree" role="tree" aria-label="Project files" tabIndex={0}
           onFocus={(e) => { if (e.target === e.currentTarget) e.currentTarget.querySelector<HTMLButtonElement>('.tree-row[aria-current="true"], .tree-row')?.focus(); }}>
           {project.tree.map((e) => <Node key={e.path} entry={e} current={current} onSelect={onSelect} depth={0} />)}
         </ul>
       </section>
+      )}
     </aside>
   );
 }

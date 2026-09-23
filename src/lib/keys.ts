@@ -25,3 +25,7 @@ export function chord(text: string): string {
 /** Run File in Terminal: ⌃⏎ on the Mac; Ctrl+Alt+Enter elsewhere, where Ctrl+Enter is Send to Agent and GTK's menu
  *  accelerator would otherwise take the chord before the composer sees it. */
 export const RUN_FILE = isMac ? "⌃⏎" : "⌥⌘⏎";
+
+/** The sidebar's views, Outline, Files and Changes: ⌃⌘1–3 on the Mac, beside ⌃⌘S for the sidebar itself; Ctrl+Alt+1–3
+ *  elsewhere, where Ctrl+1–4 are the document views. */
+export const navKey = (n: 1 | 2 | 3) => (isMac ? `⌃⌘${n}` : `⌥⌘${n}`);

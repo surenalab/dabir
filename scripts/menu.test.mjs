@@ -68,3 +68,13 @@ test("the Word chords are the ones the guide names", () => {
   assert.equal(chord("toggle-inspector", "other"), "alt+mod+i", "and the same one off the Mac, where Ctrl+Shift+I is Italic");
   assert.equal(chord("fmt-italic", "other"), "mod+shift+i");
 });
+
+test("the sidebar's views answer to their own chords, not the document views'", () => {
+  const by = (id) => items.find((i) => i.id === id);
+  const chord = (id, platform = "mac") => normalise(by(id)?.[platform] ?? "", platform);
+  ["nav-outline", "nav-files", "nav-changes"].forEach((id, i) => {
+    assert.equal(chord(id), `ctrl+mod+${i + 1}`, `${id} on the Mac`);
+    assert.equal(chord(id, "other"), `alt+mod+${i + 1}`, `${id} off the Mac`);
+  });
+  assert.equal(chord("view-visual"), "mod+1", "the document views keep the plain chords");
+});

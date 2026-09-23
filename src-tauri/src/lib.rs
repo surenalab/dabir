@@ -2793,6 +2793,34 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
                 })
                 .build(app)?,
         )
+        // The sidebar's three views, beside Show/Hide Sidebar; Ctrl+1–4 are the document views off the Mac.
+        .item(
+            &MenuItemBuilder::with_id("nav-outline", "Outline")
+                .accelerator(if cfg!(target_os = "macos") {
+                    "Ctrl+Cmd+1"
+                } else {
+                    "CmdOrCtrl+Alt+1"
+                })
+                .build(app)?,
+        )
+        .item(
+            &MenuItemBuilder::with_id("nav-files", "Files")
+                .accelerator(if cfg!(target_os = "macos") {
+                    "Ctrl+Cmd+2"
+                } else {
+                    "CmdOrCtrl+Alt+2"
+                })
+                .build(app)?,
+        )
+        .item(
+            &MenuItemBuilder::with_id("nav-changes", "Changes")
+                .accelerator(if cfg!(target_os = "macos") {
+                    "Ctrl+Cmd+3"
+                } else {
+                    "CmdOrCtrl+Alt+3"
+                })
+                .build(app)?,
+        )
         .item(
             &MenuItemBuilder::with_id("focus-mode", "Focus Mode")
                 .accelerator("Alt+CmdOrCtrl+F")
