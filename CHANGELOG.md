@@ -5,7 +5,7 @@ Newest first. Every merged pull request adds a line under Unreleased; a release 
 ## Unreleased
 
 - The history rail moves to the top of the sidebar, so moving through the paper's saves and accepted changes starts where the eye does; its card opens below it. The sidebar then opens on the outline, then Changes. Changes lists the manuscript and the code; build products, caches and binaries stay behind “Show N build and binary files”, and a commit still includes them.
-- The agent is handed the playbook that matches the request, written into the prompt, and the errors and warnings of the last compile, so it does not open skill files or the build log to find its bearings. A change in one file stays with that agent; a subagent is for two pieces of work that do not depend on each other, and it is told the file and the line. A follow-up keeps the newest report and shortens the ones before it. The Problems list starts closed: the counts stay on one line, and the list opens when you ask.
+- The agent is handed the playbook that matches the request, written into the prompt, and the errors of the last compile (its warnings too when the request is about building the paper), so it does not open skill files or the build log to find its bearings. A playbook's cue words match whole words, so "doing" no longer attaches the references playbook and "configure" the figure one. A change in one file stays with that agent; a subagent is for two pieces of work that do not depend on each other, and it is told the file and the line. A follow-up keeps the newest report and shortens the ones before it. The Problems list starts closed: the counts stay on one line, and the list opens when you ask.
 
 ## 0.2.0
 

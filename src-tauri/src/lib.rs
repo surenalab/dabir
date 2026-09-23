@@ -2119,6 +2119,9 @@ fn agent_preamble(
     query: &str,
     focus: Option<&Focus>,
 ) -> String {
+    // The author's own words, before the selection is appended to `query` for the context pack: a selected
+    // sentence about "the error rate" must not read as a request about compile errors.
+    let asked = query.to_lowercase();
     let main_path = find_main_tex(root);
     let word_paper = main_path.as_ref().is_some_and(|p| word::is_docx(p));
     let map = main_path
@@ -2301,7 +2304,7 @@ fn agent_preamble(
     }
 
     out.push_str("How to work\n");
-    out.push_str("1. This message already holds the project brief, the paper map (every section, label, figure, table, equation and macro with its file and line), the file list, the likely relevant lines, the playbook that applies and, when the last compile failed, its errors and warnings. Do not list directories, search the tree, run git, or open AGENTS.md, CLAUDE.md, .dabir/PROJECT.md, .dabir/memory, .dabir/skills or .dabir/build to orient yourself; go straight to the file and line the map gives and read only the lines around it.\n");
+    out.push_str("1. This message already holds the project brief, the paper map (every section, label, figure, table, equation and macro with its file and line), the file list, the likely relevant lines, the playbook that applies and, when the last compile failed, its errors (and its warnings when the request is about building the paper). Do not list directories, search the tree, run git, or open AGENTS.md, CLAUDE.md, .dabir/PROJECT.md, .dabir/memory, .dabir/skills or .dabir/build to orient yourself; go straight to the file and line the map gives and read only the lines around it.\n");
     out.push_str("2. Decide on one reading of the request and carry it out in one pass. If the request is short or ambiguous, choose the most useful reading given the paper as it stands and do not stop to ask. Prefer cheap paths: recorded commands, existing artefacts, TikZ or pgfplots for a schematic. No new experiments or long runs unless asked.\n");
     out.push_str("3. Make the smallest change that does the job. Never hand-edit generated artefacts (figures, tables, numbers copied from them); rerun their recorded command instead.\n");
     if let Some(p) = &prefix {
@@ -2336,7 +2339,7 @@ fn agent_preamble(
             "doi",
         ]
         .iter()
-        .any(|k| lower.contains(k));
+        .any(|k| memory::has_cue(&lower, k));
         if about_refs
             && root
                 .join(".dabir/skills/check-references/scripts/verify_refs.py")
@@ -2351,11 +2354,18 @@ fn agent_preamble(
         }
         out.push_str("Record a durable decision as one file in .dabir/memory/ with `name` and `description` frontmatter, and only when a later run would otherwise get it wrong.\n");
     }
-    let findings = memory::compile_findings(root);
+    // Warnings only when the request is about building the paper; errors whenever there are any.
+    let about_build = playbooks.iter().any(|(n, _)| n == "compile-and-fix")
+        || ["warning", "overfull", "underfull", "compile", "error"]
+            .iter()
+            .any(|c| memory::has_cue(&asked, c));
+    let findings = memory::compile_findings(root, about_build);
     if !findings.is_empty() {
-        out.push_str(
-            "\nLast compile, errors then warnings (already read; do not open .dabir/build)\n",
-        );
+        out.push_str(if about_build {
+            "\nLast compile, errors then warnings (already read; do not open .dabir/build)\n"
+        } else {
+            "\nThe last compile failed with these errors (already read; do not open .dabir/build). Fix them only if the request needs a paper that builds.\n"
+        });
         out.push_str(&findings);
     }
 
