@@ -72,6 +72,22 @@ function FindSection({ root, stamp, onJump, onClose }: { root: string; stamp: nu
 
 const countFiles = (entries: Entry[]): number => entries.reduce((n, e) => n + (e.kind === "dir" ? countFiles(e.children) : 1), 0);
 
+/** Build products, caches and binaries. The Changes list hides these until asked; a commit still includes them. */
+const NOISE_DIR = new Set([".git", ".dabir", "node_modules", "target", "dist", "build", "__pycache__", ".venv", "venv"]);
+const NOISE_EXT = new Set(["aux", "log", "out", "toc", "fls", "fdb_latexmk", "synctex", "gz", "pdf", "png", "jpg", "jpeg", "gif", "webp", "eps", "zip", "pyc", "o", "a", "so", "dylib", "wasm", "exe", "dll", "class"]);
+const NOISE_NAME = new Set([".ds_store", "thumbs.db"]);
+
+function noiseChange(path: string, binary: boolean): boolean {
+  if (binary) return true;
+  const parts = path.split("/");
+  if (parts.some((p) => NOISE_DIR.has(p))) return true;
+  const base = parts[parts.length - 1] ?? path;
+  if (NOISE_NAME.has(base.toLowerCase())) return true;
+  const dot = base.lastIndexOf(".");
+  const ext = dot > 0 ? base.slice(dot + 1).toLowerCase() : "";
+  return NOISE_EXT.has(ext);
+}
+
 function ago(when: number): string {
   const s = Math.max(0, Date.now() / 1000 - when);
   if (s < 3600) return `${Math.max(1, Math.round(s / 60))} min ago`;
@@ -106,6 +122,7 @@ export function Navigator({ project, current, outline, git, commitFocus, busy, o
   const ref = useRef<HTMLElement>(null);
   const commitInput = useRef<HTMLInputElement>(null);
   const [message, setMessage] = useState("");
+  const [showNoise, setShowNoise] = useState(false);
   useEffect(() => { if (draftMessage) { setMessage(draftMessage); commitInput.current?.focus(); } }, [draftMessage]);
 
   useEffect(() => { if (commitFocus) commitInput.current?.focus(); }, [commitFocus]);
@@ -128,21 +145,16 @@ export function Navigator({ project, current, outline, git, commitFocus, busy, o
   }
 
   const changes = git?.changes ?? [];
+  const shown = changes.filter((c) => !noiseChange(c.path, c.binary));
+  const hidden = changes.filter((c) => noiseChange(c.path, c.binary));
+  const listed = showNoise ? changes : shown;
   const submit = async () => { if (!message.trim() || busy) return; await onCommit(message.trim()); setMessage(""); };
 
   return (
     <aside className="navigator" ref={ref} onKeyDown={onKey}>
       {find.open && <FindSection root={project.root} stamp={find.stamp} onJump={(l, f) => onJump(l, f)} onClose={onCloseFind} />}
-      <section className="nav-section">
-        <div className="nav-heading"><span>Files</span><span className="count" title={project.treeTruncated ? "This folder holds more files than the sidebar lists. Open the paper's own folder to see all of it." : undefined}>{countFiles(project.tree)}{project.treeTruncated ? "+" : ""}</span></div>
-        <ul className="tree" role="tree" aria-label="Project files" tabIndex={0}
-          onFocus={(e) => { if (e.target === e.currentTarget) e.currentTarget.querySelector<HTMLButtonElement>('.tree-row[aria-current="true"], .tree-row')?.focus(); }}>
-          {project.tree.map((e) => <Node key={e.path} entry={e} current={current} onSelect={onSelect} depth={0} />)}
-        </ul>
-      </section>
-
       {outline.length > 0 && (
-        <section className="nav-section">
+        <section className="nav-section nav-outline">
           <div className="nav-heading"><span>Outline</span></div>
           {outline.map((o) => (
             <button key={`${o.file ?? ""}-${o.number}-${o.line}`} className={`outline-row l${o.level}`} onClick={() => onJump(o.line, o.file)} title={o.hint ?? (o.file ? `${o.file}:${o.line}` : `Line ${o.line}`)}>
@@ -152,10 +164,10 @@ export function Navigator({ project, current, outline, git, commitFocus, busy, o
         </section>
       )}
 
-      <section className="nav-section">
+      <section className="nav-section nav-changes">
         <div className="nav-heading">
           <span>Changes</span>
-          <span className="count">{git?.isRepo ? (git.branch ? `on ${git.branch}` : "no commits") : "no git"}</span>
+          <span className="count">{git?.isRepo ? (shown.length > 0 ? `${shown.length}${hidden.length ? ` · ${hidden.length} hidden` : ""}` : git.branch ? `on ${git.branch}` : "no commits") : "no git"}</span>
         </div>
         {!git?.isRepo ? (
           <div className="empty-nav">
@@ -166,8 +178,9 @@ export function Navigator({ project, current, outline, git, commitFocus, busy, o
           <div className="empty-nav">No uncommitted changes.</div>
         ) : (
           <>
+            {shown.length === 0 && <div className="empty-nav">No changes to the manuscript or the code.</div>}
             <div className="changes">
-              {changes.map((c) => (
+              {listed.map((c) => (
                 <div className="change" key={c.path}>
                   <span className="file" title={c.path}>{c.path}</span>
                   <span className="meta"><span>{c.status}</span>
@@ -177,6 +190,11 @@ export function Navigator({ project, current, outline, git, commitFocus, busy, o
                 </div>
               ))}
             </div>
+            {hidden.length > 0 && (
+              <button type="button" className="versions-toggle" aria-expanded={showNoise} onClick={() => setShowNoise((v) => !v)} title="Build products, caches and binaries. A commit still includes them.">
+                {showNoise ? "Hide" : "Show"} {hidden.length} build and binary {hidden.length === 1 ? "file" : "files"}
+              </button>
+            )}
             <div className="commit-box">
               <input ref={commitInput} value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Commit message" aria-label="Commit message"
                 onKeyDown={(e) => { if (e.key === "Enter") submit(); }} disabled={busy} />
@@ -201,6 +219,14 @@ export function Navigator({ project, current, outline, git, commitFocus, busy, o
             {history.length > 0 && <Scrubber axis="horizontal" steps={history} kindOf={stepKind} openId={null} onPick={(id) => onHistory(id)} />}
           </>
         )}
+      </section>
+
+      <section className="nav-section nav-files">
+        <div className="nav-heading"><span>Files</span><span className="count" title={project.treeTruncated ? "This folder holds more files than the sidebar lists. Open the paper's own folder to see all of it." : undefined}>{countFiles(project.tree)}{project.treeTruncated ? "+" : ""}</span></div>
+        <ul className="tree" role="tree" aria-label="Project files" tabIndex={0}
+          onFocus={(e) => { if (e.target === e.currentTarget) e.currentTarget.querySelector<HTMLButtonElement>('.tree-row[aria-current="true"], .tree-row')?.focus(); }}>
+          {project.tree.map((e) => <Node key={e.path} entry={e} current={current} onSelect={onSelect} depth={0} />)}
+        </ul>
       </section>
     </aside>
   );

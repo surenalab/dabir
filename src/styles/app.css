@@ -1049,9 +1049,17 @@ button { background: none; border: 0; padding: 0; cursor: default; }
 .diag .count { color: var(--ink-4); font-family: var(--font-mono); font-size: var(--text-xs); margin-left: 4px; }
 
 /* Problems panel */
-.problems { border-bottom: 1px solid var(--line); background: var(--paper-2); max-height: 40%; display: flex; flex-direction: column; }
+.problems { border-bottom: 1px solid var(--line); background: var(--paper-2); display: flex; flex-direction: column; }
+.problems.open { max-height: 32%; }
 .app.native .problems { background: transparent; }
-.problems-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: 6px var(--space-3); border-bottom: 1px solid var(--line); }
+.problems-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: 4px var(--space-3); }
+.problems.open .problems-head { border-bottom: 1px solid var(--line); }
+.problems-toggle { display: flex; align-items: center; gap: 4px; min-width: 0; color: inherit; }
+.problems-toggle .chev { width: 12px; height: 12px; color: var(--ink-4); transition: transform var(--dur-fast); }
+.problems.open .problems-toggle .chev { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) {
+  .problems-toggle .chev { transition: none; }
+}
 .problems-head .summary { display: flex; gap: 6px; align-items: center; }
 .pill { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 8px; border-radius: 10px; font-size: var(--text-xs); font-weight: 600; border: 1px solid transparent; }
 .pill svg { width: 12px; height: 12px; }

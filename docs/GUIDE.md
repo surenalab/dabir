@@ -99,7 +99,7 @@ The **Agent** tab (⌘J) sends a request to the agent you choose: Claude Code, C
 
 What happens on a run:
 
-1. Dabir builds a short **preamble** rather than sending the folder: the paper's identity, the paper map (files, headings, labels, citations), your **focus** (the selection or the section you are in), the memory of past runs and decisions, the relevant skills, and the compile log when there was an error. Runs cost a fraction of an agent left to search on its own.
+1. Dabir builds a short **preamble** rather than sending the folder: the paper's identity, the paper map (files, headings, labels, citations), your **focus** (the selection or the section you are in), the memory of past runs and decisions, the one or two playbooks the request actually needs (their text, not a pointer to a file), and the errors and warnings of the last compile when there were any. A follow-up keeps the newest report and shortens the earlier ones. A change in one place is done by that agent; it is told to spawn a subagent only when two pieces of the work do not depend on each other. Runs cost a fraction of an agent left to search on its own.
 2. The agent works on a **Git worktree** seeded from your working copy, so nothing needs committing first and nothing touches your files while it runs. It has a terminal in the worktree and can compile there.
 3. When it finishes, the document shows **its version** with the changes marked, and the inspector shows its report. ⌘B compiles that version. **Accept** lands the changes in your files and takes a snapshot; **Accept and Commit** does that and commits; **Reject** discards them; or accept and reject hunk by hunk.
 

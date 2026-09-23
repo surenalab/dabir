@@ -1072,6 +1072,203 @@ pub fn recent_runs(root: &Path, n: usize) -> Vec<String> {
         .collect()
 }
 
+fn playbook_name(name: &str) -> &str {
+    name.trim_start_matches("dabir-")
+}
+
+fn code_playbook(name: &str) -> bool {
+    matches!(
+        name,
+        "run-and-test" | "debug-failing-run" | "refactor-safely" | "notebook-to-script"
+    )
+}
+
+/// Words that mean a playbook applies. A longer phrase scores higher so "unit test" beats a stray "test".
+fn playbook_cues(name: &str) -> &'static [(&'static str, i32)] {
+    match name {
+        "compile-and-fix" => &[
+            ("undefined control", 3),
+            ("overfull", 3),
+            ("underfull", 2),
+            ("does not compile", 3),
+            ("won't compile", 3),
+            ("latex error", 3),
+            ("compile", 2),
+            ("tectonic", 2),
+        ],
+        "check-references" => &[
+            ("bibliograph", 3),
+            ("citation", 3),
+            ("\\cite", 3),
+            ("bibtex", 3),
+            (".bib", 3),
+            ("references", 2),
+            ("doi", 2),
+            ("reference", 1),
+        ],
+        "tighten-prose" => &[
+            ("tighten", 3),
+            ("shorten", 2),
+            ("wording", 2),
+            ("prose", 2),
+            ("rewrite", 2),
+            ("rephrase", 2),
+            ("concise", 2),
+        ],
+        "address-reviewer" => &[("reviewer", 3), ("referee", 3), ("rebuttal", 3)],
+        "rerun-experiment" => &[
+            ("rerun", 3),
+            ("re-run", 3),
+            ("regenerate", 2),
+            ("experiment", 1),
+        ],
+        "update-figure-and-text" => &[
+            ("includegraphics", 3),
+            ("caption", 2),
+            ("figure", 2),
+            ("plot", 2),
+            ("schematic", 2),
+        ],
+        "run-and-test" => &[
+            ("pytest", 3),
+            ("unit test", 3),
+            ("run the tests", 3),
+            ("run the script", 3),
+            ("tests", 2),
+        ],
+        "debug-failing-run" => &[
+            ("traceback", 3),
+            ("exception", 3),
+            ("does not run", 3),
+            ("crash", 2),
+            ("failing", 2),
+            ("debug", 2),
+        ],
+        "refactor-safely" => &[("refactor", 3), ("without changing", 2)],
+        "notebook-to-script" => &[("notebook", 3), ("ipynb", 3), ("jupyter", 3)],
+        _ => &[],
+    }
+}
+
+fn cap_lines(text: &str, max: usize) -> String {
+    let text = text.trim();
+    if text.len() <= max {
+        return text.to_string();
+    }
+    let mut out = String::new();
+    for line in text.lines() {
+        if out.len() + line.len() + 1 > max.saturating_sub(2) {
+            break;
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    out.push('…');
+    out
+}
+
+/// The one or two playbooks this request is actually about, with the text of each, capped.
+/// `mode` is `paper`, `code` or `both`. A code playbook is not attached to a wording change on the
+/// strength of one shared word, and the reverse. The body is the file on disk, so an edit the
+/// author made to a playbook is what the agent sees.
+pub fn relevant_playbooks(skills: &[Skill], prompt: &str, mode: &str) -> Vec<(String, String)> {
+    let lower = prompt.to_lowercase();
+    let mut scored: Vec<(i32, String, String)> = Vec::new();
+    for sk in skills {
+        let name = playbook_name(&sk.name).to_string();
+        let mut score = 0;
+        for (cue, pts) in playbook_cues(&name) {
+            if lower.contains(cue) {
+                score += pts;
+            }
+        }
+        let mentions_fault = lower.contains("error") || lower.contains("warning");
+        if mentions_fault && name == "compile-and-fix" && mode != "code" {
+            score += 2;
+        }
+        if mentions_fault && name == "debug-failing-run" && mode == "code" {
+            score += 2;
+        }
+        let code = code_playbook(&name);
+        if mode == "paper" && code && score < 3 {
+            score = 0;
+        }
+        if mode == "code" && !code && score < 3 {
+            score = 0;
+        }
+        if score < 2 {
+            continue;
+        }
+        let Ok(text) = fs::read_to_string(&sk.path) else {
+            continue;
+        };
+        let (_, _, body) = frontmatter(&text);
+        let body = cap_lines(&body, 900);
+        if body.is_empty() {
+            continue;
+        }
+        scored.push((score, name, body));
+    }
+    scored.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+    scored.truncate(2);
+    scored.into_iter().map(|(_, n, b)| (n, b)).collect()
+}
+
+/// Errors, then warnings, from the newest log of the last compile. Empty when the log is clean
+/// or there is no log, so a wording change does not carry a build transcript.
+pub fn compile_findings(root: &Path) -> String {
+    let dir = root.join(".dabir").join("build");
+    let mut logs: Vec<(SystemTime, PathBuf)> = fs::read_dir(&dir)
+        .ok()
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|e| {
+            let p = e.path();
+            if p.extension().and_then(|x| x.to_str()) != Some("log") {
+                return None;
+            }
+            let t = e.metadata().ok().and_then(|m| m.modified().ok())?;
+            Some((t, p))
+        })
+        .collect();
+    logs.sort_by_key(|(t, _)| *t);
+    let Some((_, path)) = logs.pop() else {
+        return String::new();
+    };
+    let Ok(text) = fs::read_to_string(path) else {
+        return String::new();
+    };
+    let mut errors = Vec::new();
+    let mut warnings = Vec::new();
+    for line in text.lines() {
+        let t = line.trim();
+        if t.is_empty() || t.starts_with("l.") {
+            continue;
+        }
+        let clipped: String = t.chars().take(180).collect();
+        let is_error = t.starts_with('!') || t.contains("Error:");
+        let is_warning = t.contains("Warning") || t.contains("Overfull") || t.contains("Underfull");
+        if is_error && errors.len() < 8 {
+            errors.push(clipped);
+        } else if is_warning && warnings.len() < 4 {
+            warnings.push(clipped);
+        }
+    }
+    let mut out = String::new();
+    for e in errors {
+        out.push_str("- ");
+        out.push_str(&e);
+        out.push('\n');
+    }
+    for w in warnings {
+        out.push_str("- ");
+        out.push_str(&w);
+        out.push('\n');
+    }
+    out
+}
+
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct RunOutput {
