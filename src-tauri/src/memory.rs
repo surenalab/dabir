@@ -1150,6 +1150,36 @@ fn playbook_cues(name: &str) -> &'static [(&'static str, i32)] {
     }
 }
 
+/// Does `hay` hold `cue` starting at a word boundary? A cue is a stem, so "figure" finds "figures", but it
+/// must not fire inside another word: "doi" inside "doing" attached the references playbook to nearly every
+/// request, and "figure" inside "configure" attached the figure one. A cue of three letters or fewer is a
+/// word, not a stem, and has to end at a boundary too. Cues that begin with punctuation (`\cite`, `.bib`)
+/// carry their own boundary.
+pub fn has_cue(hay: &str, cue: &str) -> bool {
+    let starts_word = cue.chars().next().is_some_and(|c| c.is_alphanumeric());
+    let whole_word = cue.chars().count() <= 3;
+    let mut from = 0;
+    while let Some(i) = hay[from..].find(cue) {
+        let at = from + i;
+        let end = at + cue.len();
+        let before = !starts_word
+            || hay[..at]
+                .chars()
+                .next_back()
+                .is_none_or(|c| !c.is_alphanumeric());
+        let after = !whole_word
+            || hay[end..]
+                .chars()
+                .next()
+                .is_none_or(|c| !c.is_alphanumeric());
+        if before && after {
+            return true;
+        }
+        from = end;
+    }
+    false
+}
+
 fn cap_lines(text: &str, max: usize) -> String {
     let text = text.trim();
     if text.len() <= max {
@@ -1162,6 +1192,10 @@ fn cap_lines(text: &str, max: usize) -> String {
         }
         out.push_str(line);
         out.push('\n');
+    }
+    if out.is_empty() {
+        // One line longer than the whole budget: keep its start rather than nothing.
+        out = text.chars().take(max.saturating_sub(2)).collect();
     }
     out.push('…');
     out
@@ -1178,11 +1212,11 @@ pub fn relevant_playbooks(skills: &[Skill], prompt: &str, mode: &str) -> Vec<(St
         let name = playbook_name(&sk.name).to_string();
         let mut score = 0;
         for (cue, pts) in playbook_cues(&name) {
-            if lower.contains(cue) {
+            if has_cue(&lower, cue) {
                 score += pts;
             }
         }
-        let mentions_fault = lower.contains("error") || lower.contains("warning");
+        let mentions_fault = has_cue(&lower, "error") || has_cue(&lower, "warning");
         if mentions_fault && name == "compile-and-fix" && mode != "code" {
             score += 2;
         }
@@ -1214,9 +1248,12 @@ pub fn relevant_playbooks(skills: &[Skill], prompt: &str, mode: &str) -> Vec<(St
     scored.into_iter().map(|(_, n, b)| (n, b)).collect()
 }
 
-/// Errors, then warnings, from the newest log of the last compile. Empty when the log is clean
-/// or there is no log, so a wording change does not carry a build transcript.
-pub fn compile_findings(root: &Path) -> String {
+/// Errors, then warnings, from the newest log of the last compile. Empty when there is no log, and
+/// empty when the log has only warnings and `with_warnings` is off: nearly every LaTeX log has an
+/// overfull box, and a request to tighten the abstract should not arrive carrying four of them and
+/// the temptation to fix them. Errors always come, since a paper that does not build is everyone's
+/// business.
+pub fn compile_findings(root: &Path, with_warnings: bool) -> String {
     let dir = root.join(".dabir").join("build");
     let mut logs: Vec<(SystemTime, PathBuf)> = fs::read_dir(&dir)
         .ok()
@@ -1254,6 +1291,12 @@ pub fn compile_findings(root: &Path) -> String {
         } else if is_warning && warnings.len() < 4 {
             warnings.push(clipped);
         }
+    }
+    if errors.is_empty() && !with_warnings {
+        return String::new();
+    }
+    if !with_warnings {
+        warnings.clear();
     }
     let mut out = String::new();
     for e in errors {
@@ -1874,6 +1917,158 @@ mod tests {
         assert_eq!(super::shell_quote("~bob/x y"), "~bob'/x y'");
     }
     use super::*;
+
+    fn playbook(dir: &Path, name: &str, body: &str) -> Skill {
+        let path = dir.join(format!("{name}.md"));
+        fs::write(
+            &path,
+            format!("---\nname: dabir-{name}\ndescription: x\n---\n{body}\n"),
+        )
+        .unwrap();
+        Skill {
+            name: format!("dabir-{name}"),
+            description: "x".into(),
+            path: path.to_string_lossy().to_string(),
+        }
+    }
+
+    #[test]
+    fn a_cue_fires_at_a_word_boundary_only() {
+        assert!(has_cue("add the doi to each entry", "doi"));
+        assert!(
+            !has_cue("what are you doing with the abstract", "doi"),
+            "doi is not a prefix of doing"
+        );
+        assert!(
+            has_cue("redraw the figures", "figure"),
+            "a stem finds its plural"
+        );
+        assert!(
+            !has_cue("configure the sweep", "figure"),
+            "but not the inside of another word"
+        );
+        assert!(
+            has_cue("fix every \\cite key", "\\cite"),
+            "a cue that starts with punctuation is its own boundary"
+        );
+        assert!(has_cue("check refs.bib", ".bib"));
+        assert!(!has_cue("", "doi"));
+    }
+
+    #[test]
+    fn only_the_playbooks_a_request_is_about_are_attached() {
+        let dir = std::env::temp_dir().join(format!("dabir-playbooks-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let skills = vec![
+            playbook(
+                &dir,
+                "check-references",
+                "Verify every entry against Crossref.",
+            ),
+            playbook(
+                &dir,
+                "update-figure-and-text",
+                "Rerun the script, then the caption.",
+            ),
+            playbook(&dir, "tighten-prose", "Cut what repeats."),
+            playbook(&dir, "run-and-test", "Run pytest."),
+            playbook(&dir, "compile-and-fix", "Read the log, fix the cause."),
+        ];
+        let names = |p: &str, mode: &str| {
+            relevant_playbooks(&skills, p, mode)
+                .into_iter()
+                .map(|(n, _)| n)
+                .collect::<Vec<_>>()
+        };
+        assert!(
+            names("What are you doing in section 2? Tighten it.", "paper")
+                .contains(&"tighten-prose".to_string())
+        );
+        assert!(
+            !names("What are you doing in section 2? Tighten it.", "paper")
+                .contains(&"check-references".to_string()),
+            "doing is not doi"
+        );
+        assert!(
+            names("configure the sweep for sigma 0.3", "code").is_empty(),
+            "configure is not figure, and nothing else applies"
+        );
+        assert!(names("fix the DOIs and the bibliography", "paper")
+            .contains(&"check-references".to_string()));
+        assert!(names("the paper has a LaTeX error in section 3", "paper")
+            .contains(&"compile-and-fix".to_string()));
+        assert!(
+            !names("tighten the abstract", "paper").contains(&"run-and-test".to_string()),
+            "a code playbook stays off a wording change"
+        );
+        let body = relevant_playbooks(&skills, "tighten the abstract", "paper");
+        assert_eq!(body.len(), 1);
+        assert!(
+            body[0].1.contains("Cut what repeats"),
+            "the text itself travels, not a pointer to it: {:?}",
+            body
+        );
+        assert!(
+            names(
+                "rerun the figure, tighten the prose, fix citations and the compile error",
+                "both"
+            )
+            .len()
+                <= 2,
+            "never more than two"
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_playbook_with_one_long_line_is_cut_not_emptied() {
+        let long = "x".repeat(2000);
+        let cut = cap_lines(&long, 900);
+        assert!(
+            cut.chars().count() > 800 && cut.ends_with('…'),
+            "{} characters",
+            cut.chars().count()
+        );
+        assert_eq!(cap_lines("short", 900), "short");
+    }
+
+    #[test]
+    fn compile_findings_bring_warnings_only_when_asked() {
+        let root = std::env::temp_dir().join(format!("dabir-findings-{}", uuid::Uuid::new_v4()));
+        let build = root.join(".dabir/build");
+        fs::create_dir_all(&build).unwrap();
+        assert_eq!(compile_findings(&root, true), "", "no log, nothing");
+        fs::write(build.join("main.log"), "Overfull \\hbox (3.2pt too wide) in paragraph at lines 40--41\nLaTeX Warning: Citation `x' undefined.\n").unwrap();
+        assert_eq!(
+            compile_findings(&root, false),
+            "",
+            "a clean build with the usual overfull box says nothing to a wording change"
+        );
+        let asked = compile_findings(&root, true);
+        assert!(
+            asked.contains("Overfull") && asked.contains("Citation"),
+            "{asked}"
+        );
+        fs::write(
+            build.join("main.log"),
+            "! Undefined control sequence.\nl.41 \\foo\nOverfull \\hbox (3.2pt too wide)\n",
+        )
+        .unwrap();
+        let errors_only = compile_findings(&root, false);
+        assert!(
+            errors_only.contains("Undefined control sequence"),
+            "{errors_only}"
+        );
+        assert!(
+            !errors_only.contains("Overfull"),
+            "errors come always, warnings only when asked: {errors_only}"
+        );
+        assert!(
+            !errors_only.contains("l.41"),
+            "the source-line echo is not a finding"
+        );
+        let _ = fs::remove_dir_all(root);
+    }
 
     #[test]
     fn tokens_keep_arguments_and_identifiers_not_command_names() {
