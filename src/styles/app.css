@@ -124,6 +124,13 @@ button { background: none; border: 0; padding: 0; cursor: default; }
 }
 .seg button[aria-checked="true"] { background: var(--seg-on); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
 .seg button:disabled { opacity: .45; }
+/* A count after a segment's label: pending changes on the sidebar's Changes. */
+.seg-badge { display: inline-grid; place-items: center; min-width: 16px; height: 16px; margin-left: 5px; padding: 0 4px; border-radius: 8px; font-size: var(--text-xs); font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1; background: var(--line); color: var(--ink-2); }
+.seg button[aria-checked="true"] .seg-badge { background: var(--accent); color: var(--accent-ink); }
+/* The sidebar's switcher spans the sidebar; each segment takes an equal share. */
+.nav-tabs { padding: 0 var(--space-2); margin-bottom: var(--space-2); }
+.nav-tabs .seg { display: flex; width: 100%; }
+.nav-tabs .seg button { flex: 1; min-width: 0; padding: 0 6px; display: inline-flex; align-items: center; justify-content: center; font-size: var(--text-sm); }
 
 /* Inactive window: selection and accent go quiet, as system views do. */
 .app.inactive .tree-row[aria-current="true"] { background: var(--selection-inactive); color: var(--ink-2); }

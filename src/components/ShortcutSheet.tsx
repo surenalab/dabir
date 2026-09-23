@@ -28,6 +28,7 @@ const ROWS: [string, string[]][] = [
   ["Inline math · Citation · Cross-ref", ["⇧⌘", "M C R"]],
   ["Zoom in · out · fit", ["⌘", "= − 0"]],
   ["Show or Hide Sidebar", isMac ? ["⌃", "⌘", "S"] : ["⌥", "⌘", "S"]],
+  ["Sidebar: Outline · Files · Changes", isMac ? ["⌃", "⌘", "1 2 3"] : ["⌥", "⌘", "1 2 3"]],
   ["Show or Hide Inspector", ["⌥", "⌘", "I"]],
   ["Ask the Agent", ["⌘", "J"]],
   ["Link", ["⌘", "K"]],

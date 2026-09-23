@@ -26,7 +26,7 @@ A manuscript editor for researchers. Paper, ink, proof marks, journal typography
 - **Code, logs, diffs:** IBM Plex Mono 12–13 px with a real italic. Tabular numerals wherever digits align.
 
 ## Layout
-Three-pane macOS document window: navigator (232 px, 180–340), document, inspector (380 px, 280–480). Dividers drag; the inspector auto-hides under 1100 px. Unified title bar with traffic lights overlaid, sidebar toggle leading, true-centred document title and path, trailing segmented view switch, borderless Compile, a fixed spacer, Share and the inspector toggle. Sidebar and inspector are transparent over macOS vibrancy. Window inactive state greys the selection and primary button. Status bar sits at the bottom of the document with a live region.
+Three-pane macOS document window: navigator (232 px, 180–340), document, inspector (380 px, 280–480). The navigator follows Xcode's: the history rail pinned at the top, then a segmented switcher (Outline · Files · Changes, with a count badge on Changes) and one view below it at full height; the inspector uses the same switcher. Dividers drag; the inspector auto-hides under 1100 px. Unified title bar with traffic lights overlaid, sidebar toggle leading, true-centred document title and path, trailing segmented view switch, borderless Compile, a fixed spacer, Share and the inspector toggle. Sidebar and inspector are transparent over macOS vibrancy. Window inactive state greys the selection and primary button. Status bar sits at the bottom of the document with a live region.
 
 ## Components
 - **Segmented control** for Visual / Source / PDF and for inspector panes; radio semantics, arrow keys.
