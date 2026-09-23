@@ -47,7 +47,7 @@ engine = "tectonic"     # typst for a .typ paper, word for a .docx (main = "manu
 
 ## 4. Find your way around the window
 
-From left to right: the **sidebar** (files, the outline of the whole paper, the Git changes and recent commits), the **document**, and the **inspector** (Agent, Memory, People, History). The **terminal** opens below the document (⌃`). ⌃⌘S and ⌥⌘I hide and show the side panels; drag their edges to resize. Focus mode (⌥⌘F) folds the panels away and inks only the paragraph you are in.
+From left to right: the **sidebar** (the history rail at the top, then the outline of the whole paper, the Git changes and recent commits, and the files), the **document**, and the **inspector** (Agent, Memory, People, History). The **terminal** opens below the document (⌃`). ⌃⌘S and ⌥⌘I hide and show the side panels; drag their edges to resize. Focus mode (⌥⌘F) folds the panels away and inks only the paragraph you are in.
 
 The segmented control in the title bar chooses how the document is shown:
 

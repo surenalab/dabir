@@ -1024,7 +1024,7 @@ export default function App() {
       { id: "terminal", target: ".terminal", title: "The terminal", enter: () => { setTerminal((t) => (t.open ? t : { ...t, open: true, focusStamp: Date.now() })); },
         body: <><p>A real shell in the paper's folder, with tabs, and the same one agents can use. With <code>[remote]</code> in <code>dabir.toml</code>, a tab opens over SSH on the machine that runs the experiments. Drag the top edge to resize.</p></>,
         keys: [{ keys: "⌃`", does: "show or hide" }] },
-      { id: "history", target: ".navigator .nav-changes", title: "History and Git", enter: () => { setNavOpen(true); setTerminal((t) => ({ ...t, open: false })); },
+      { id: "history", target: ".navigator .nav-history, .navigator .nav-changes", title: "History and Git", enter: () => { setNavOpen(true); setTerminal((t) => ({ ...t, open: false })); },
         body: <><p>Every save is a step you can return to, every accepted run a snapshot, and commits are yours: the message is drafted from the change, the author is you. The History tab in the inspector lists versions and restores any of them.</p></> },
       { id: "together", target: '.titlebar .tb-btn[aria-label="Share"]', title: "Working together", enter: () => { setInspectorOpen(true); setTabRequest({ tab: "people", stamp: Date.now() }); },
         body: <><p>Start a live session and send the invite code: coauthors edit the same paper peer to peer, with comments and suggested changes in the People tab. Overleaf projects pull and push as Git remotes, and Export makes an arXiv-ready bundle.</p></> },
