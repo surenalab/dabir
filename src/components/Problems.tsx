@@ -35,11 +35,13 @@ const LABEL: Record<string, string> = { syntax: "syntax", citation: "citation", 
 
 export function Problems({ problems, mainFile, agentReady, onJump, onFix }: Props) {
   const [showInfo, setShowInfo] = useState(false);
+  const [listOpen, setListOpen] = useState(false);
   const [open, setOpen] = useState<Set<string>>(new Set());
   const errors = problems.filter((p) => p.severity === "error");
   const warnings = problems.filter((p) => p.severity === "warning");
   const infos = problems.filter((p) => p.severity === "info");
-  const shown = [...errors, ...warnings, ...(showInfo ? infos : [])];
+  const notesOnly = errors.length === 0 && warnings.length === 0;
+  const shown = [...errors, ...warnings, ...(showInfo || notesOnly ? infos : [])];
   if (problems.length === 0) return null;
 
   const toggle = (k: string) => setOpen((s) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n; });
@@ -56,20 +58,26 @@ export function Problems({ problems, mainFile, agentReady, onJump, onFix }: Prop
   };
 
   return (
-    <section className="problems" aria-label="Problems">
+    <section className={`problems ${listOpen ? "open" : ""}`} aria-label="Problems">
       <header className="problems-head">
-        <span className="summary">
-          {errors.length > 0 && <span className="pill error"><AlertCircle aria-hidden /> {errors.length} error{errors.length > 1 ? "s" : ""}</span>}
-          {warnings.length > 0 && <span className="pill warning"><AlertTriangle aria-hidden /> {warnings.length} warning{warnings.length > 1 ? "s" : ""}</span>}
-          {infos.length > 0 && <button className={`pill info ${showInfo ? "on" : ""}`} onClick={() => setShowInfo((v) => !v)} aria-pressed={showInfo} title="Font substitutions, overfull boxes and rerun notes"><Info aria-hidden /> {infos.length} note{infos.length > 1 ? "s" : ""}</button>}
-        </span>
+        <button type="button" className="problems-toggle" aria-expanded={listOpen} onClick={() => setListOpen((v) => !v)} title={listOpen ? "Hide the list" : "Show the list"}>
+          <ChevronRight className="chev" aria-hidden />
+          <span className="summary">
+            {errors.length > 0 && <span className="pill error"><AlertCircle aria-hidden /> {errors.length} error{errors.length > 1 ? "s" : ""}</span>}
+            {warnings.length > 0 && <span className="pill warning"><AlertTriangle aria-hidden /> {warnings.length} warning{warnings.length > 1 ? "s" : ""}</span>}
+            {notesOnly && <span className="pill info"><Info aria-hidden /> {infos.length} note{infos.length > 1 ? "s" : ""}</span>}
+          </span>
+        </button>
+        {infos.length > 0 && (errors.length > 0 || warnings.length > 0) && (
+          <button type="button" className={`pill info ${showInfo ? "on" : ""}`} onClick={() => { setShowInfo((v) => !v); setListOpen(true); }} aria-pressed={showInfo} title="Font substitutions, overfull boxes and rerun notes"><Info aria-hidden /> {infos.length} note{infos.length > 1 ? "s" : ""}</button>
+        )}
         {(errors.length > 0 || warnings.length > 0) && (
           <button className="btn small" onClick={fixAll} disabled={!agentReady} title={agentReady ? "Send all of them to the agent with the compile-and-fix skill" : "Choose an installed agent first"}>
             <Sparkles /> Fix {errors.length ? "errors" : "warnings"} with agent
           </button>
         )}
       </header>
-      <ul className="problem-list" role="list">
+      {listOpen && <ul className="problem-list" role="list">
         {shown.map((p) => {
           const Icon = ICON[p.severity as keyof typeof ICON] ?? Info;
           const isOpen = open.has(p.key);
@@ -90,7 +98,7 @@ export function Problems({ problems, mainFile, agentReady, onJump, onFix }: Prop
             </li>
           );
         })}
-      </ul>
+      </ul>}
     </section>
   );
 }

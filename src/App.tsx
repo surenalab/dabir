@@ -1000,7 +1000,7 @@ export default function App() {
     const root = project?.root ?? "";
     const showMain = () => { if (project?.mainTex && fileRef.current !== project.mainTex) void selectFile(project.mainTex); };
     return [
-      { id: "folder", target: ".navigator .nav-section:first-of-type", title: "A paper is a folder", enter: () => { setNavOpen(true); showMain(); setMode("visual"); setTerminal((t) => ({ ...t, open: false })); },
+      { id: "folder", target: ".navigator .nav-files", title: "A paper is a folder", enter: () => { setNavOpen(true); showMain(); setMode("visual"); setTerminal((t) => ({ ...t, open: false })); },
         body: <><p>This is the sample: <code>main.tex</code>, a <code>refs.bib</code>, the figures and tables, and <code>code/sweep.py</code>, the script that made them. Dabir opens the folder in place. Nothing is uploaded or converted, and the folder stays yours to use with any other tool.</p><p>Click a file to open it. Open files become tabs above the editor.</p></> },
       { id: "modes", target: ".titlebar .seg", title: "Four ways to look at it", enter: () => { showMain(); setMode("visual"); },
         body: <><p><b>Visual</b> lays the LaTeX out as a page while you type, with the source one click away. <b>Source</b> is the raw file with highlighting, folding and completions. <b>PDF</b> is the compiled paper. <b>Split</b> puts source and PDF side by side; click a line in the PDF to jump to it in the source, and back.</p></>,
@@ -1011,7 +1011,7 @@ export default function App() {
       { id: "write", target: ".formatbar", title: "Writing with help", enter: () => { showMain(); setMode("visual"); },
         body: <><p>The bar formats without you remembering the macro: bold, emphasis, inline math, sections, lists, citations and references. Type <code>\cite{"{"}</code> or <code>\ref{"{"}</code> and the entries and labels of this paper complete. Spelling and grammar are underlined; a suggestion is one click.</p></>,
         keys: [{ keys: "⇧⌘Space", does: "the agent continues the sentence" }, { keys: "⌘F", does: "find in paper" }] },
-      { id: "outline", target: ".navigator .nav-section:nth-of-type(2)", title: "Outline and word count", enter: showMain,
+      { id: "outline", target: ".navigator .nav-outline", title: "Outline and word count", enter: showMain,
         body: <><p>The outline follows the sections of the whole paper, <code>\input</code>s included, and the word count at the bottom counts prose only: no preamble, no comments, no math. Click a heading to jump.</p></> },
       { id: "agent", target: ".inspector textarea", title: "Ask an agent", enter: () => { setInspectorOpen(true); setTabRequest({ tab: "agent", stamp: Date.now() }); },
         body: <><p>Claude Code, Codex, Cursor, Grok or OpenCode: whichever is installed. Each run gets a short preamble (the paper's map, your focus, the memory of past runs) rather than the whole folder, and works on a copy of the paper. When it finishes, the document shows its version with the changes marked. <b>Accept</b> lands them and takes a snapshot; <b>Reject</b> discards them. Try: <i>"Tighten the abstract to 150 words."</i></p></>,
@@ -1024,7 +1024,7 @@ export default function App() {
       { id: "terminal", target: ".terminal", title: "The terminal", enter: () => { setTerminal((t) => (t.open ? t : { ...t, open: true, focusStamp: Date.now() })); },
         body: <><p>A real shell in the paper's folder, with tabs, and the same one agents can use. With <code>[remote]</code> in <code>dabir.toml</code>, a tab opens over SSH on the machine that runs the experiments. Drag the top edge to resize.</p></>,
         keys: [{ keys: "⌃`", does: "show or hide" }] },
-      { id: "history", target: ".navigator .nav-section:last-of-type", title: "History and Git", enter: () => { setNavOpen(true); setTerminal((t) => ({ ...t, open: false })); },
+      { id: "history", target: ".navigator .nav-changes", title: "History and Git", enter: () => { setNavOpen(true); setTerminal((t) => ({ ...t, open: false })); },
         body: <><p>Every save is a step you can return to, every accepted run a snapshot, and commits are yours: the message is drafted from the change, the author is you. The History tab in the inspector lists versions and restores any of them.</p></> },
       { id: "together", target: '.titlebar .tb-btn[aria-label="Share"]', title: "Working together", enter: () => { setInspectorOpen(true); setTabRequest({ tab: "people", stamp: Date.now() }); },
         body: <><p>Start a live session and send the invite code: coauthors edit the same paper peer to peer, with comments and suggested changes in the People tab. Overleaf projects pull and push as Git remotes, and Export makes an arXiv-ready bundle.</p></> },

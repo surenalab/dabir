@@ -1774,8 +1774,8 @@ fn agent_run_blocking(
                 .collect();
             let ask = format!(
                 "This request continues your previous one in this same working copy. Earlier request: {}\nYour report then: {}\nThe files still hold the changes you made; the author has not accepted them yet and now asks for the following on top of them. Do not undo your earlier work unless asked.{}\n\n{}",
-                f.prompt.trim(),
-                if f.reply.trim().is_empty() { "(none)" } else { f.reply.trim() },
+                compact_text(f.prompt.trim(), 240),
+                if f.reply.trim().is_empty() { "(none)".into() } else { compact_text(f.reply.trim(), 480) },
                 if carried.is_empty() { String::new() } else { format!("\nSince then the author edited {} by hand; those edits are already in the files.", carried.join(", ")) },
                 prompt
             );
@@ -1861,6 +1861,31 @@ Match the voice, tense and markup conventions already in use. No quotation marks
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// Keep the start and, when the text is long, the end. A follow-up otherwise resends the whole
+/// earlier report, which is the part of the prompt that grows without bound.
+fn compact_text(s: &str, max_chars: usize) -> String {
+    let t = s.trim();
+    let n = t.chars().count();
+    if n <= max_chars {
+        return t.to_string();
+    }
+    let head = (max_chars * 2 / 3).max(1);
+    let tail = max_chars.saturating_sub(head).max(1);
+    let h: String = t.chars().take(head).collect();
+    let tl: String = t.chars().skip(n - tail).collect();
+    format!("{h}… {tl}")
+}
+
+/// A logged run is `date · agent · request · files · outcome · report`. Older runs keep the
+/// outcome and drop the report, so three runs do not cost three reports.
+fn strip_run_report(line: &str) -> String {
+    let parts: Vec<&str> = line.split(" · ").collect();
+    if parts.len() <= 5 {
+        return line.to_string();
+    }
+    parts[..5].join(" · ")
 }
 
 /// The reply as text to insert: first paragraph only, quotes and fences stripped, no trailing chatter.
@@ -2109,7 +2134,7 @@ fn agent_preamble(
             .map(|(l, t)| format!("{}{}", "  ".repeat((*l as usize).saturating_sub(1)), t))
             .collect::<Vec<_>>()
             .join("\n"),
-        None => paper::render(&map, 5000),
+        None => paper::render(&map, 3200),
     };
     let main = main_path
         .and_then(|p| {
@@ -2139,15 +2164,16 @@ fn agent_preamble(
     let brief = fs::read_to_string(root.join(".dabir").join("PROJECT.md")).ok();
     let mem = memory::read(root).ok();
     let prefix = mem.as_ref().and_then(|m| m.env_prefix.clone());
-    let skills = mem
+    // The author's new words, not a follow-up's retelling of the previous run: that retelling
+    // would attach the previous playbook again.
+    let mode_word = match request_mode(query, focus) {
+        RequestMode::Code => "code",
+        RequestMode::Paper => "paper",
+        RequestMode::Both => "both",
+    };
+    let playbooks = mem
         .as_ref()
-        .map(|m| {
-            m.skills
-                .iter()
-                .map(|s| s.name.trim_start_matches("dabir-").to_string())
-                .collect::<Vec<_>>()
-                .join(", ")
-        })
+        .map(|m| memory::relevant_playbooks(&m.skills, query, mode_word))
         .unwrap_or_default();
     let artefact_cmds: std::collections::HashMap<String, String> = mem
         .as_ref()
@@ -2167,7 +2193,7 @@ fn agent_preamble(
     let bibs: Vec<String> = map.bibs.iter().map(|(f, _)| f.clone()).collect();
     let files = memory::file_map_by_role(
         root,
-        80,
+        40,
         Some(main.as_str()),
         &manuscript,
         &bibs,
@@ -2179,7 +2205,7 @@ fn agent_preamble(
         Some(sel) => format!("{query}\n{sel}"),
         None => query.to_string(),
     };
-    let pack = memory::context_pack(root, &query, 2200);
+    let pack = memory::context_pack(root, &query, 1400);
     // Durable decisions and the commands behind generated artefacts, one line each, so the agent
     // neither opens .dabir/memory nor guesses how a figure was made.
     let facts: Vec<String> = mem
@@ -2187,7 +2213,7 @@ fn agent_preamble(
         .map(|m| {
             m.facts
                 .iter()
-                .take(12)
+                .take(8)
                 .map(|f| {
                     let d = f.description.trim();
                     let path = Path::new(&f.path)
@@ -2208,14 +2234,24 @@ fn agent_preamble(
         .map(|m| {
             m.provenance
                 .iter()
-                .take(10)
+                .take(6)
                 .map(|a| format!("{} <- `{}`", a.artefact, a.command))
                 .collect()
         })
         .unwrap_or_default();
     // What happened before this run: the last runs (request, outcome, the agent's own report) and the
     // paper's last steps, so "make it bigger" or "undo that" has a referent.
-    let runs = memory::recent_runs(root, 3);
+    let runs: Vec<String> = memory::recent_runs(root, 3)
+        .into_iter()
+        .enumerate()
+        .map(|(i, line)| {
+            if i == 0 {
+                line
+            } else {
+                strip_run_report(&line)
+            }
+        })
+        .collect();
     let steps: Vec<String> = git::checkpoints(root, 6)
         .unwrap_or_default()
         .into_iter()
@@ -2265,7 +2301,7 @@ fn agent_preamble(
     }
 
     out.push_str("How to work\n");
-    out.push_str("1. This message already holds the project brief, the paper map (every section, label, figure, table, equation and macro with its file and line), the file list and the likely relevant lines. Do not list directories, search the tree, run git, or open AGENTS.md, CLAUDE.md, .dabir/PROJECT.md, .dabir/memory or .dabir/skills to orient yourself; go straight to the file and line the map gives and read only the lines around it.\n");
+    out.push_str("1. This message already holds the project brief, the paper map (every section, label, figure, table, equation and macro with its file and line), the file list, the likely relevant lines, the playbook that applies and, when the last compile failed, its errors and warnings. Do not list directories, search the tree, run git, or open AGENTS.md, CLAUDE.md, .dabir/PROJECT.md, .dabir/memory, .dabir/skills or .dabir/build to orient yourself; go straight to the file and line the map gives and read only the lines around it.\n");
     out.push_str("2. Decide on one reading of the request and carry it out in one pass. If the request is short or ambiguous, choose the most useful reading given the paper as it stands and do not stop to ask. Prefer cheap paths: recorded commands, existing artefacts, TikZ or pgfplots for a schematic. No new experiments or long runs unless asked.\n");
     out.push_str("3. Make the smallest change that does the job. Never hand-edit generated artefacts (figures, tables, numbers copied from them); rerun their recorded command instead.\n");
     if let Some(p) = &prefix {
@@ -2284,34 +2320,48 @@ fn agent_preamble(
         out.push_str(&format!("4. Compile once at the end with `tectonic -X compile {main} --outdir .dabir/build` (tectonic is on PATH) and fix what it reports; skip this for wording-only changes. Do not install anything, inspect the PDF or explore the build folder: Dabir compiles and reviews the result.\n"));
     }
     out.push_str("5. Finish with two or three sentences: what you changed and, if the request was ambiguous, the reading you took.\n");
-    if !skills.is_empty() {
-        out.push_str(&format!("\nSkills for recurring jobs are in .dabir/skills/ ({skills}); open the matching SKILL.md only when the request names one of these jobs. Durable decisions go in .dabir/memory/ as one-fact files with `name` and `description` frontmatter.\n"));
+    out.push_str("\nSplitting the work\n");
+    out.push_str("Do the change yourself when it is one file or one section. A subagent is worth it only when the request has two or more pieces that do not depend on each other, such as the code that writes a figure and the sentence that quotes it. One subagent per piece, never one per file you might read, and never one to find its bearings, to read the map or to look something up. Tell each subagent the file, the line and the single change, and tell it not to search the tree or compile. You compile once after they return, and you write the report.\n");
+    if playbooks.is_empty() {
+        // A bibliography request still needs the check spelled out when the playbook itself is not
+        // installed, since the agent would otherwise reason about entries it cannot see the truth of.
+        let lower = prompt.to_lowercase();
+        let about_refs = [
+            "referenc",
+            "citation",
+            "cite",
+            "bibliograph",
+            ".bib",
+            "bibtex",
+            "doi",
+        ]
+        .iter()
+        .any(|k| lower.contains(k));
+        if about_refs
+            && root
+                .join(".dabir/skills/check-references/scripts/verify_refs.py")
+                .is_file()
+        {
+            out.push_str("\nThis request concerns references. Run `python3 .dabir/skills/check-references/scripts/verify_refs.py` on every .bib the paper uses; it has network access and checks each entry against Crossref, doi.org, arXiv and OpenAlex, printing verified / mismatch / not found / unchecked with the fields that differ. Fix fields of verified entries from the record, keep citation keys, and report mismatches and not-found entries to the author instead of deleting or inventing anything. Do not open the playbook: this is it.\n");
+        }
+    } else {
+        out.push_str("\nPlaybook for this request. It is already here: do not open .dabir/skills, and do not follow a playbook that is not listed.\n");
+        for (name, body) in &playbooks {
+            out.push_str(&format!("\n{name}\n{body}\n"));
+        }
+        out.push_str("Record a durable decision as one file in .dabir/memory/ with `name` and `description` frontmatter, and only when a later run would otherwise get it wrong.\n");
     }
-    // A request about the bibliography gets the online check spelled out, since the agent would
-    // otherwise reason about entries it cannot see the truth of.
-    let lower = prompt.to_lowercase();
-    let about_refs = [
-        "referenc",
-        "citation",
-        "cite",
-        "bibliograph",
-        ".bib",
-        "bibtex",
-        "doi",
-    ]
-    .iter()
-    .any(|k| lower.contains(k));
-    if about_refs
-        && root
-            .join(".dabir/skills/check-references/scripts/verify_refs.py")
-            .is_file()
-    {
-        out.push_str("\nThis request concerns references. Read .dabir/skills/check-references/SKILL.md and run its script, `python3 .dabir/skills/check-references/scripts/verify_refs.py <every .bib the paper uses>`; it has network access and checks each entry against Crossref, doi.org, arXiv and OpenAlex, printing verified / mismatch / not found / unchecked with the fields that differ. Fix fields of verified entries from the record, keep citation keys, and report mismatches and not-found entries to the author instead of deleting or inventing anything.\n");
+    let findings = memory::compile_findings(root);
+    if !findings.is_empty() {
+        out.push_str(
+            "\nLast compile, errors then warnings (already read; do not open .dabir/build)\n",
+        );
+        out.push_str(&findings);
     }
 
     if let Some(b) = brief {
         out.push_str("\nProject brief (.dabir/PROJECT.md)\n");
-        out.push_str(b.trim().chars().take(3500).collect::<String>().as_str());
+        out.push_str(b.trim().chars().take(2000).collect::<String>().as_str());
         out.push('\n');
     } else {
         out.push_str(&format!("\nMain file: {main}\n"));
@@ -3646,6 +3696,92 @@ mod tests {
                 "grok · add a figure · main.tex · rejected · Added a TikZ schematic of the clip."
             ),
             "{again}"
+        );
+        assert!(again.contains("Splitting the work"), "{again}");
+        assert!(again.contains("Do the change yourself"), "{again}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn preamble_inlines_the_matching_playbook_and_compacts_what_came_before() {
+        let dir = std::env::temp_dir().join(format!("dabir-play-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(dir.join(".dabir/skills/tighten-prose")).unwrap();
+        fs::create_dir_all(dir.join(".dabir/skills/compile-and-fix")).unwrap();
+        fs::create_dir_all(dir.join(".dabir/memory")).unwrap();
+        fs::create_dir_all(dir.join(".dabir/build")).unwrap();
+        fs::write(
+            dir.join("main.tex"),
+            "\\documentclass{article}\n\\begin{document}Anchoring holds a margin.\\end{document}\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.join(".dabir/skills/tighten-prose/SKILL.md"),
+            "---\nname: dabir-tighten-prose\ndescription: \"Edit for length.\"\n---\n\nWork paragraph by paragraph. Never change a number.\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.join(".dabir/skills/compile-and-fix/SKILL.md"),
+            "---\nname: dabir-compile-and-fix\ndescription: \"Compile and fix.\"\n---\n\nFix the first error, then recompile.\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.join(".dabir/build/main.log"),
+            "This is pdfTeX, Version 3.14\n! Undefined control sequence.\nl.12 \\foo\nLaTeX Warning: Citation `chung2023' on page 1 undefined.\n",
+        )
+        .unwrap();
+        let cwd = dir.join(".dabir/worktrees/x");
+        let out = agent_preamble(
+            &dir,
+            &cwd,
+            "tighten the abstract",
+            "tighten the abstract",
+            None,
+        );
+        assert!(out.contains("tighten-prose"), "{out}");
+        assert!(out.contains("Work paragraph by paragraph"), "{out}");
+        assert!(
+            !out.contains("Fix the first error"),
+            "an unrelated playbook stays out: {out}"
+        );
+        assert!(out.contains("do not open .dabir/skills"), "{out}");
+        assert!(!out.contains("open the matching SKILL.md"), "{out}");
+        assert!(out.contains("Undefined control sequence"), "{out}");
+        assert!(out.contains("do not open .dabir/build"), "{out}");
+        assert!(
+            !out.contains("This is pdfTeX"),
+            "the log itself is not pasted: {out}"
+        );
+        memory::log_run_with(
+            &dir,
+            "grok",
+            "first",
+            &["main.tex".into()],
+            Some("OLDER_REPORT_THAT_SHOULD_BE_DROPPED"),
+            "accepted",
+        );
+        memory::log_run_with(
+            &dir,
+            "grok",
+            "second",
+            &["main.tex".into()],
+            Some("The newest report stays."),
+            "accepted",
+        );
+        let again = agent_preamble(
+            &dir,
+            &cwd,
+            "tighten the abstract again",
+            "tighten the abstract again",
+            None,
+        );
+        assert!(again.contains("The newest report stays."), "{again}");
+        assert!(
+            !again.contains("OLDER_REPORT_THAT_SHOULD_BE_DROPPED"),
+            "{again}"
+        );
+        assert_eq!(
+            compact_text(&"a".repeat(20), 10),
+            format!("{}… {}", "a".repeat(6), "a".repeat(4))
         );
         let _ = fs::remove_dir_all(&dir);
     }

@@ -4,6 +4,9 @@ Newest first. Every merged pull request adds a line under Unreleased; a release 
 
 ## Unreleased
 
+- The sidebar opens on the outline, then Changes. Changes lists the manuscript and the code; build products, caches and binaries stay behind “Show N build and binary files”, and a commit still includes them.
+- The agent is handed the playbook that matches the request, written into the prompt, and the errors and warnings of the last compile, so it does not open skill files or the build log to find its bearings. A change in one file stays with that agent; a subagent is for two pieces of work that do not depend on each other, and it is told the file and the line. A follow-up keeps the newest report and shortens the ones before it. The Problems list starts closed: the counts stay on one line, and the list opens when you ask.
+
 ## 0.2.0
 
 - PDF view: Fit width and Fit page follow the pane as it changes (the Split divider, the window, the sidebar and inspector), and the reader's place holds through a resize, a zoom and a recompile instead of jumping to the top; the last build and its comment pins stay on screen while the next one compiles, and stay when that one ends with an error instead of emptying the pane. Only pages near the view are drawn, so a long paper at 300 % stays light. ⌘-scroll and pinch zoom around the pointer. Split keeps its own zoom, stays in Split after a compile, and its divider resets on double-click, takes focus when you press it so the arrow keys move it, and leaves both panes a usable width. Pages wider than the pane scroll from their left edge, the PDF toolbar stays put, the page number follows the scroll, and find highlights and text selection line up with the text. pdf.js is no longer downloaded at startup: 430 kB less before the window opens, fetched when the PDF view is.
