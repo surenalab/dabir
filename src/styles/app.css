@@ -226,8 +226,8 @@ button { background: none; border: 0; padding: 0; cursor: default; }
 .rail-card .files .bin { color: var(--ink-4); margin-left: auto; }
 .rail-card .files .more { font-family: var(--font-ui); color: var(--ink-4); }
 .timeline .step.peek .step-row { background: var(--wash-hover); }
-/* Along the bottom of the sidebar: the same rail turned on its side, oldest at the left, newest at the right edge,
-   dashes standing up and scaled from their foot; the card opens above it and spans the sidebar's width. */
+/* At the top of the sidebar: the same rail turned on its side, oldest at the left, newest at the right edge,
+   dashes standing up and scaled from their foot; the card opens below it and spans the sidebar's width. */
 .rail.horizontal { position: relative; display: block; width: auto; height: 26px; padding: 0 var(--space-2); margin: var(--space-2) 0 0; cursor: ew-resize; }
 .rail.horizontal .rail-col { position: absolute; right: var(--space-2); bottom: 5px; flex-direction: row; align-items: flex-end; gap: 5px; }
 .rail.horizontal .dash { width: 2px; height: 16px; transform: scaleY(.45); transform-origin: center bottom; }
@@ -240,8 +240,10 @@ button { background: none; border: 0; padding: 0; cursor: default; }
 @keyframes dash-up { from { transform: scaleY(0); } }
 .rail.horizontal .stub { width: 10px; height: 2px; margin: 0 2px 0 0; align-self: center; background: repeating-linear-gradient(to right, var(--line-strong) 0 2px, transparent 2px 4px); }
 .rail.horizontal::before { content: ""; position: absolute; left: var(--space-2); right: var(--space-2); bottom: 3px; height: 1px; background: var(--line); }
-.rail.horizontal .rail-card { left: 0; right: 0; top: auto; bottom: calc(100% + 6px); width: auto; transition: none; animation-name: card-up; }
-@keyframes card-up { from { opacity: 0; transform: translateY(4px); } }
+.rail.horizontal .rail-card { left: 0; right: 0; top: calc(100% + 6px); bottom: auto; width: auto; transition: none; animation-name: card-down; }
+@keyframes card-down { from { opacity: 0; transform: translateY(-4px); } }
+.nav-history { margin-bottom: var(--space-2); padding-bottom: var(--space-2); border-bottom: 1px solid var(--line); }
+.nav-history .rail.horizontal { margin-top: 2px; }
 @media (prefers-reduced-motion: reduce) { .rail .dash.newest, .rail-card { animation: none; } .rail .dash, .rail-card { transition: none; } }
 
 /* History: the paper's steps, newest first */

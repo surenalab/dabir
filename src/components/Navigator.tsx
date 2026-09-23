@@ -153,6 +153,16 @@ export function Navigator({ project, current, outline, git, commitFocus, busy, o
   return (
     <aside className="navigator" ref={ref} onKeyDown={onKey}>
       {find.open && <FindSection root={project.root} stamp={find.stamp} onJump={(l, f) => onJump(l, f)} onClose={onCloseFind} />}
+      {/* History first: the rail is how you move through the paper's saves and accepted changes, so it sits where
+          the eye starts rather than under a list of files that can run to any length. */}
+      {git?.isRepo && (
+        <section className="nav-section nav-history">
+          <button className="versions-toggle" onClick={() => onHistory()} title="Every save and every accepted agent change, readable and reversible, without commits.">
+            <HistoryIcon aria-hidden /> History{history.length > 0 && <span className="count">{history.length}</span>}
+          </button>
+          {history.length > 0 && <Scrubber axis="horizontal" steps={history} kindOf={stepKind} openId={null} onPick={(id) => onHistory(id)} />}
+        </section>
+      )}
       {outline.length > 0 && (
         <section className="nav-section nav-outline">
           <div className="nav-heading"><span>Outline</span></div>
@@ -210,14 +220,6 @@ export function Navigator({ project, current, outline, git, commitFocus, busy, o
               </div>
             ))}
           </div>
-        )}
-        {git?.isRepo && (
-          <>
-            <button className="versions-toggle" onClick={() => onHistory()} title="Every save and every accepted agent change, readable and reversible, without commits.">
-              <HistoryIcon aria-hidden /> History{history.length > 0 && <span className="count">{history.length}</span>}
-            </button>
-            {history.length > 0 && <Scrubber axis="horizontal" steps={history} kindOf={stepKind} openId={null} onPick={(id) => onHistory(id)} />}
-          </>
         )}
       </section>
 
