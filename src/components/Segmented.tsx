@@ -24,7 +24,7 @@ export function Segmented({ label, value, options, onChange }: { label: string; 
           onClick={() => onChange(o.value)}
         >
           {o.label}
-          {o.badge ? <span className="seg-badge" aria-label={`${o.badge} pending`}>{o.badge}</span> : null}
+          {o.badge ? <span className="seg-badge" aria-label={`${o.badge} pending`}>{o.badge > 99 ? "99+" : o.badge}</span> : null}
         </button>
       ))}
     </div>
