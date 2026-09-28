@@ -4,6 +4,8 @@ Newest first. Every merged pull request adds a line under Unreleased; a release 
 
 ## Unreleased
 
+## 0.2.2
+
 - Setup catches an agent CLI too old for Dabir. Grok up to 0.2.112 does not know `--output-format streaming-messages-json`, so every run failed at once with clap's "invalid value" while Setup showed Grok installed and signed in. Setup now asks the CLI's `--help` whether it lists the options Dabir passes (a version cut-off would be a guess: 0.2.112 lacks the format, 0.2.118 has it), marks an old one amber with its version and an Update button that runs `grok update` in the sheet's shell, and a run that still hits the error is explained as "too old, update it" with an Update… link instead of the raw CLI text.
 
 ## 0.2.1
