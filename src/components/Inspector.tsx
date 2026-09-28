@@ -595,7 +595,7 @@ export function Inspector({ project, gitRepo, askFocus, prefill, tabRequest, onP
                         {run.diff && run.diff.changes.length > 0 && <> · {run.diff.changes.length} file{run.diff.changes.length === 1 ? "" : "s"} · <em className="add">+{run.diff.changes.reduce((a, c) => a + c.add, 0)}</em> <em className="del">−{run.diff.changes.reduce((a, c) => a + c.del, 0)}</em></>}
                         {run.steps.some((x) => x.kind === "tool" && /tectonic|latexmk|pdflatex|xelatex|typst/.test(x.text)) && <> · compiled</>}
                       </span>
-                      {!run.ok && run.summary && <p>{run.summary}{/not signed in/i.test(run.summary) && <> <button className="link" onClick={() => { setSignStamp((s) => s + 1); onSetup(); }}>Sign in…</button></>}</p>}
+                      {!run.ok && run.summary && <p>{run.summary}{/not signed in/i.test(run.summary) && <> <button className="link" onClick={() => { setSignStamp((s) => s + 1); onSetup(); }}>Sign in…</button></>}{/too old for Dabir/i.test(run.summary) && <> <button className="link" onClick={() => { setSignStamp((s) => s + 1); onSetup(); }}>Update…</button></>}</p>}
                     </div>
                   </div>
                   {run.error && <p className="composer-note" role="alert">{run.error}</p>}

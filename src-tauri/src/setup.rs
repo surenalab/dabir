@@ -81,6 +81,8 @@ pub struct AgentStatus {
     pub provider: agents::Provider,
     /// Has an account behind it; `None` when the CLI cannot say without making a request.
     pub signed_in: Option<bool>,
+    /// Installed but too old for the flags Dabir passes, so every run would fail at once.
+    pub outdated: Option<agents::Outdated>,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -263,9 +265,9 @@ fn agents_with_sign_in() -> Vec<AgentStatus> {
             let installed = p.installed;
             std::thread::spawn(move || {
                 if installed {
-                    agents::signed_in(&id)
+                    (agents::signed_in(&id), agents::outdated(&id))
                 } else {
-                    None
+                    (None, None)
                 }
             })
         })
@@ -273,9 +275,13 @@ fn agents_with_sign_in() -> Vec<AgentStatus> {
     providers
         .into_iter()
         .zip(handles)
-        .map(|(provider, h)| AgentStatus {
-            provider,
-            signed_in: h.join().unwrap_or(None),
+        .map(|(provider, h)| {
+            let (signed_in, outdated) = h.join().unwrap_or((None, None));
+            AgentStatus {
+                provider,
+                signed_in,
+                outdated,
+            }
         })
         .collect()
 }

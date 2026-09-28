@@ -218,6 +218,60 @@ fn defs() -> Vec<Def> {
     ]
 }
 
+/// The output format Dabir asks Grok for. Grok releases up to 0.2.112 do not have it, and clap rejects the whole
+/// command line before the CLI looks at the sign-in, so an old Grok fails every run however it is signed in.
+const GROK_OUTPUT_FORMAT: &str = "streaming-messages-json";
+
+/// An installed CLI too old for the flags Dabir passes: the version it reports and the vendor's own update command.
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Outdated {
+    pub version: String,
+    pub update: String,
+}
+
+/// The flag value a CLI must know for Dabir's command line to parse, and the vendor's update command.
+fn required(id: &str) -> Option<(&'static str, &'static str)> {
+    match id {
+        "grok" => Some((GROK_OUTPUT_FORMAT, "grok update")),
+        _ => None,
+    }
+}
+
+/// Whether the installed CLI knows the flags Dabir will pass. Checked against its `--help` rather than a version
+/// number: xAI does not publish which release added a format (0.2.112 lacks it, 0.2.118 has it), and clap prints
+/// every accepted value in the help, so the help listing it is the fact that matters. `None` means current, not
+/// one Dabir checks, or a CLI that could not be asked in time; only a help text that answered and lacks the value
+/// counts as outdated, so a slow or broken CLI is never reported as old.
+pub fn outdated(id: &str) -> Option<Outdated> {
+    let p = detect().into_iter().find(|p| p.id == id)?;
+    outdated_at(id, &PathBuf::from(p.path.as_ref()?))
+}
+
+pub fn outdated_at(id: &str, bin: &Path) -> Option<Outdated> {
+    let (flag, update) = required(id)?;
+    let (_, help) = probe(bin, &["--help"], 6)?;
+    if !help_lacks(&help, flag) {
+        return None;
+    }
+    let version = probe(bin, &["--version"], 6)
+        .and_then(|(_, v)| {
+            v.lines()
+                .map(str::trim)
+                .find(|l| !l.is_empty())
+                .map(String::from)
+        })
+        .unwrap_or_default();
+    Some(Outdated {
+        version,
+        update: update.into(),
+    })
+}
+
+fn help_lacks(help: &str, value: &str) -> bool {
+    !help.trim().is_empty() && !help.contains(value)
+}
+
 pub fn detect() -> Vec<Provider> {
     defs()
         .into_iter()
@@ -468,7 +522,7 @@ fn args_for(id: &str, prompt: &str, cwd: &Path, steer: &Steer) -> Vec<String> {
             "-p".into(),
             prompt.into(),
             "--output-format".into(),
-            "streaming-messages-json".into(),
+            GROK_OUTPUT_FORMAT.into(),
             "--permission-mode".into(),
             "bypassPermissions".into(),
             "--cwd".into(),
@@ -956,6 +1010,21 @@ pub fn explain_failure(p: &Provider, output: &str, code: Option<i32>) -> String 
         "fetch failed",
     ];
     let exit = code.map(|c| format!(" (exit {})", c)).unwrap_or_default();
+    // clap's own wording when the CLI predates a flag value Dabir passes. Checked first: nothing else in the
+    // output means anything, since the CLI stopped before it started.
+    if l.contains("invalid value") && l.contains("--output-format") {
+        return match required(&p.id) {
+            Some((_, update)) => format!(
+                "{} is too old for Dabir: it does not know the output format Dabir asks for. Update it with `{}` in a terminal, or Help › Set Up Dabir › Agents › Update, then send again.",
+                p.label, update
+            ),
+            None => format!(
+                "{} is too old for Dabir: it does not accept the options Dabir passes. Update it, or reinstall it from Help › Set Up Dabir › Agents, then send again. Its message: {}",
+                p.label,
+                if last.is_empty() { "invalid value" } else { &last }
+            ),
+        };
+    }
     if auth.iter().any(|k| l.contains(k)) {
         format!(
             "{} is installed but not signed in, or the sign-in expired. Run `{}` in a terminal, or use Help › Set Up Dabir › Agents › Sign in, then send again.",
@@ -1194,6 +1263,45 @@ mod tests {
             let m = explain_failure(&p, out, Some(1));
             assert!(m.contains("not signed in"), "{out} → {m}");
             assert!(m.contains("claude auth login"), "{m}");
+        }
+    }
+
+    #[test]
+    fn an_old_grok_is_told_to_update_not_to_sign_in() {
+        // The exact output of Grok 0.2.112 given Dabir's command line.
+        let p = detect().into_iter().find(|p| p.id == "grok").unwrap();
+        let out = "error: invalid value 'streaming-messages-json' for '--output-format <OUTPUT_FORMAT>'\n  [possible values: plain, json, streaming-json]\n\n  tip: a similar value exists: 'streaming-json'\n\nFor more information, try '--help'.";
+        let m = explain_failure(&p, out, Some(2));
+        assert!(m.contains("too old") && m.contains("grok update"), "{m}");
+        assert!(!m.contains("not signed in"), "{m}");
+    }
+
+    #[test]
+    fn help_without_the_format_is_outdated_and_silence_is_not() {
+        let old = "      --output-format <OUTPUT_FORMAT>\n          Output format for headless mode [default: plain] [possible values: plain, json, streaming-json]";
+        let new = "          - streaming-json:          NDJSON of the agent native ACP session updates\n          Only affects `--output-format streaming-messages-json`";
+        assert!(help_lacks(old, GROK_OUTPUT_FORMAT));
+        assert!(!help_lacks(new, GROK_OUTPUT_FORMAT));
+        assert!(
+            !help_lacks("", GROK_OUTPUT_FORMAT),
+            "a CLI that printed nothing is not called old"
+        );
+        assert!(required("claude").is_none());
+    }
+
+    /// Point `DABIR_OLD_GROK` at an old Grok binary (0.2.112) and `DABIR_NEW_GROK` at a current one:
+    /// `cargo test -- --ignored grok_versions_are_told_apart`.
+    #[test]
+    #[ignore]
+    fn grok_versions_are_told_apart() {
+        let old = std::env::var("DABIR_OLD_GROK").expect("DABIR_OLD_GROK");
+        let o = outdated_at("grok", Path::new(&old)).expect("the old Grok is outdated");
+        assert!(
+            o.version.contains("0.2.112") && o.update == "grok update",
+            "{o:?}"
+        );
+        if let Ok(new) = std::env::var("DABIR_NEW_GROK") {
+            assert_eq!(outdated_at("grok", Path::new(&new)), None);
         }
     }
 

@@ -4,6 +4,8 @@ Newest first. Every merged pull request adds a line under Unreleased; a release 
 
 ## Unreleased
 
+- Setup catches an agent CLI too old for Dabir. Grok up to 0.2.112 does not know `--output-format streaming-messages-json`, so every run failed at once with clap's "invalid value" while Setup showed Grok installed and signed in. Setup now asks the CLI's `--help` whether it lists the options Dabir passes (a version cut-off would be a guess: 0.2.112 lacks the format, 0.2.118 has it), marks an old one amber with its version and an Update button that runs `grok update` in the sheet's shell, and a run that still hits the error is explained as "too old, update it" with an Update… link instead of the raw CLI text.
+
 ## 0.2.1
 
 - The sidebar shows one view at a time, Outline, Files or Changes, under a switcher like the inspector's (View › Outline, Files and Changes, ⌃⌘1 to ⌃⌘3; Ctrl+Alt+1 to 3 off the Mac), instead of one long column where a real paper's file tree pushed everything else out of sight. The history rail stays above all three. Changes carries a count of the files waiting to be committed; Commit (⌥⌘C) switches to it and puts the cursor in the message; the last view is remembered. The Commit button's tooltip named ⇧⌘C, which is Cite; it now says ⌥⌘C.
