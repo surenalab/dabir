@@ -500,7 +500,7 @@ export interface SetupStatus {
   /** The bundled engine does not start here (a glibc too old for the binary, a missing library); never Ready while set. */
   latexError: string | null; latexCacheMb: number;
   typst: SetupEngine; typstSizeMb: number;
-  agents: (Provider & { signedIn: boolean | null })[]; pandoc: string | null; pandocInstall: string | null; gh: string | null; git: string | null; gitInstall: string | null; home: string; platform: string;
+  agents: (Provider & { signedIn: boolean | null; outdated: { version: string; update: string } | null })[]; pandoc: string | null; pandocInstall: string | null; gh: string | null; git: string | null; gitInstall: string | null; home: string; platform: string;
 }
 export interface SetupProgress { task: string; message: string; fraction: number | null; done: boolean; ok: boolean }
 
@@ -508,7 +508,7 @@ export async function setupStatus(): Promise<SetupStatus> {
   if (!native) return {
     latex: { path: "/Applications/Dabir.app/Contents/MacOS/tectonic", version: "0.15.0", managed: true }, latexReady: false, latexError: null, latexCacheMb: 0,
     typst: { path: null, version: null, managed: false }, typstSizeMb: 14,
-    agents: SAMPLE_PROVIDERS.map((p, i) => ({ ...p, signedIn: p.installed ? i === 0 : null })), pandoc: null, pandocInstall: "brew install pandoc", gh: "/opt/homebrew/bin/gh", git: "/usr/bin/git", gitInstall: "xcode-select --install", home: "/Users/me", platform: "macos",
+    agents: SAMPLE_PROVIDERS.map((p, i) => ({ ...p, signedIn: p.installed ? i === 0 : null, outdated: null })), pandoc: null, pandocInstall: "brew install pandoc", gh: "/opt/homebrew/bin/gh", git: "/usr/bin/git", gitInstall: "xcode-select --install", home: "/Users/me", platform: "macos",
   };
   return invoke<SetupStatus>("setup_status");
 }

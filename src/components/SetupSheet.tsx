@@ -199,10 +199,19 @@ export function SetupSheet({ firstRun, onClose, focus }: Props) {
   );
 }
 
-function AgentRow({ a, onRun }: { a: Provider & { signedIn: boolean | null }; onRun: (command: string, label: string) => void }) {
-  // Installed and signed in is the only green; installed but signed out is the case that otherwise fails
-  // at the first message with a cryptic CLI error, so it gets the warning and the primary action.
-  const state = !a.installed ? "todo" : a.signedIn === false ? "warn" : "ok";
+function AgentRow({ a, onRun }: { a: Provider & { signedIn: boolean | null; outdated: { version: string; update: string } | null }; onRun: (command: string, label: string) => void }) {
+  // Installed and signed in is the only green; installed but signed out, or too old for the options Dabir
+  // passes, are the cases that otherwise fail at the first message with a cryptic CLI error, so they get the
+  // warning and the primary action. An old CLI fails however it is signed in, so it is named first.
+  const state = !a.installed ? "todo" : a.outdated || a.signedIn === false ? "warn" : "ok";
+  if (a.installed && a.outdated) {
+    const u = a.outdated;
+    return (
+      <Row id={`agent-${a.id}`} state="warn" title={a.label}
+        detail={<>Installed, but {u.version ? <code>{u.version}</code> : "this version"} is too old for Dabir: a message to it would fail. Update runs <code>{u.update}</code>, shown as it runs; then Check again.</>}
+        action={<button className="btn small primary" onClick={() => onRun(u.update, `the ${a.label} update`)}>Update</button>} />
+    );
+  }
   return (
     <Row id={`agent-${a.id}`} state={state} title={a.label}
       detail={!a.installed ? <>Needs {a.plan}. One command from the vendor, shown as it runs.</>
