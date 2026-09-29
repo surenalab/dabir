@@ -2,11 +2,43 @@
 
 <img src="design/dabir-logo.svg" width="96" alt="Dabir mark: a line of ink with a madder proofreader's caret beneath it" align="right">
 
-**A local-first workspace where a paper, its code, its Git history and its AI agents live in one window.**
+**Write the paper where the code is.** Dabir is a free, open source desktop editor where a scientific paper, the code behind its figures, its coauthors and your AI agents share one window.
 
-Dabir (دبیر, Persian for *scribe*) opens a folder that holds your manuscript and the code that made its figures. It shows LaTeX like a document, compiles locally, and lets the agent you already pay for, whether Claude Code, Codex, Cursor, Grok or OpenCode, rerun an experiment, update the figure and the table, and open the pull request. Nothing is uploaded. Delete the app and your project is still a plain Git repo.
+[![Latest release](https://img.shields.io/github/v/release/surenalab/dabir?label=release&color=2BD4C2)](https://github.com/surenalab/dabir/releases/latest) [![License: AGPL-3.0](https://img.shields.io/badge/licence-AGPL--3.0-22396B)](LICENSE) ![macOS, Windows and Linux](https://img.shields.io/badge/macOS%20%C2%B7%20Windows%20%C2%B7%20Linux-555)
 
-> Status: 0.1.10 released for macOS (one signed and notarised universal DMG), Windows 11 and Ubuntu 22.04. Open a folder, an Overleaf zip or a GitHub repo; write in Word too, where a .docx is a paper of its own, edited on Word-faithful pages with styles, comments and tracked changes and saved back to the .docx, or turned into a LaTeX paper when you choose (citations from Zotero, Mendeley and EndNote become `\cite` with a `refs.bib`); edit the paper visually or as source in one buffer; compile with Tectonic; click the PDF to jump to the line; commit from the sidebar; ask Claude Code, Codex, Cursor, Grok or OpenCode (model and effort set from a slider in the composer) to change the paper on a worktree, then read and compile their version in the editor before it touches your checkout (verified live with Claude Code, Codex, Cursor and Grok); keep the project brief, facts and provenance in `.dabir/` so every agent shares them. Start a live session from Share and coauthors edit with you in real time, with presence and comments; pull and push to Overleaf's Git bridge; keep references in step with Zotero (a collection, synced now or while the paper is open, through Better BibTeX when it is there) or with the .bib Mendeley, Paperpile, JabRef or EndNote maintain, add entries by DOI or arXiv id, and have the agent check every entry online against Crossref, doi.org, arXiv and OpenAlex through the check-references skill; start new papers from the official kits of NeurIPS, ICML, ICLR, CVPR, ICCV, ECCV, ACL, TMLR, SIAM, Springer Nature, Nature Portfolio, BMC, PLOS and Frontiers, fetched from the venues themselves, or from starters for IEEE, ACM, SIGGRAPH, Elsevier, LNCS, AMS, APS, JMLR and the OUP journals, or in Typst, with a visual layer for both (Typst math renders through a translation to KaTeX); export the PDF, the sources arXiv needs, a zip for Overleaf or a submission system, or Word and HTML through pandoc. Compile problems are traceable to the line and fixable by the agent. Comments live with the paper and show as pins on the compiled PDF. Offline LaTeX-aware spelling, grammar and completion are built in, each with an off switch (⌘,). What changed in each version is in [CHANGELOG.md](CHANGELOG.md).
+[![Dabir: a paper in Visual view with the agent panel open](docs/images/hero.webp)](https://surenalab.com/dabir)
+
+Dabir (دبیر, Persian for *scribe*) opens a folder that holds your manuscript and the code that made its figures. Nothing is uploaded, and if you delete the app your project is still a plain Git repository.
+
+## Download
+
+Get the installer for your machine from **[surenalab.com/dabir](https://surenalab.com/dabir)** or the [releases page](https://github.com/surenalab/dabir/releases/latest).
+
+| | |
+|---|---|
+| **macOS 12+** | `Dabir_<version>_universal.dmg`: Apple silicon and Intel, signed and notarised |
+| **Windows 11** | `Dabir_<version>_x64-setup.exe`: not code-signed yet, so SmartScreen asks once: **More info**, then **Run anyway** |
+| **Linux (x86-64)** | `.AppImage`, `.deb` or `.rpm`; tested on Ubuntu 22.04 |
+
+Dabir checks for updates itself. Setup (Help › Set Up Dabir) installs and checks what it needs, LaTeX packages and your agent CLIs included.
+
+## What it does
+
+- **One window for the paper and its code.** Visual, Source, PDF and Split views of a LaTeX, Typst or Word document; the scripts, notebooks and a terminal sit beside it.
+- **Click to jump, both ways.** Click a line and the PDF marks it; double-click the PDF and the source scrolls to that line. Compile errors are written in plain sentences and land on the line.
+- **Word documents as Word.** A `.docx` opens on Word-faithful pages with styles, comments and tracked changes, and is saved back as `.docx`. Convert it to LaTeX only when you choose to.
+- **Bring your own agent.** Claude Code, Codex, Cursor, Grok or OpenCode, on the subscription you already have and with no API key. Each run works on its own copy of the paper (a Git worktree) and hands back a diff you accept hunk by hunk.
+- **Coauthors, live.** Share a link and coauthors edit with you in real time, with presence and comments. The paper travels peer to peer, encrypted with the key in the invitation link.
+- **History and GitHub.** Every save and every accepted change is a step you can go back to. Commit from the sidebar; clone, push and pull; see your collaborators.
+- **Memory that lives in the repo.** `.dabir/` holds the paper's brief, facts and playbooks, so every coauthor's agent starts from the same knowledge whichever vendor they use.
+- **Private by default.** Compile, Git, search and agents work offline. Nothing leaves your machine unless you send it.
+
+<p>
+<img src="docs/images/split.webp" width="49%" alt="Split view: source beside the compiled PDF, with the line marked on the page">
+<img src="docs/images/agent.webp" width="49%" alt="An agent's run: the transcript, then a diff with each hunk ticked">
+</p>
+
+The full list, with every shortcut, is in [docs/FEATURES.md](docs/FEATURES.md); the [user guide](docs/GUIDE.md) walks through it step by step, and [CHANGELOG.md](CHANGELOG.md) says what changed in each version. The two-minute film is on the [website](https://surenalab.com/dabir).
 
 ## Why
 
@@ -15,65 +47,35 @@ Overleaf is where coauthors are, but it is paid, remote, and cannot run your cod
 ## Principles
 
 - **Git is the truth.** No project format. A Dabir project is a folder with a `.tex`, `.typ` or `.docx` in it and optionally a `dabir.toml`.
-- **Local by default, cloud by choice.** Compile, Git, search and agents work offline. Live sessions are opt-in and self-hostable.
+- **Local by default, cloud by choice.** Live sessions are opt-in and self-hostable.
 - **Agents are coauthors, not chatbots.** They get the repo, a terminal and the compile log, run on a worktree, and produce diffs you review.
-- **Memory lives in the repo.** `.dabir/` holds a project brief, one-fact memory files and a provenance graph, committed with the paper, so every coauthor's agent shares it whichever vendor they use.
+- **Memory lives in the repo.** Committed with the paper, shared by every coauthor's agent.
 - **Design is the product.** Every screen follows Apple's Human Interface Guidelines and is reviewed with Impeccable before merge.
 
-## Writing tools
+## Build from source
 
-A formatting bar sits above the editor with the actions a Word or Gmail user expects: undo and redo, a style menu (section, subsection, run-in heading, plain), bold, italic, emphasis, code, bulleted and numbered lists, inline math, equation, figure and table skeletons, citation and cross-reference (which open completion inside the braces), link, footnote, find, and comment on the selection. Everything writes plain LaTeX, or plain Typst when the open file is `.typ` (`*bold*`, `= headings`, `#figure`, `@key`); the same actions live in the Format menu with shortcuts (⇧⌘B, ⇧⌘I, ⇧⌘E, ⇧⌘M, ⇧⌘C, ⇧⌘R, ⌘K). Completion opens as you type a backslash command, inside `\cite{`, `\ref{`, `\input{` and `\includegraphics{`, and on ⌃Space. It knows the whole paper, not just the open file: every label across `\input` files with its kind, section and caption; your own `\newcommand` macros with their bodies; symbol names with the glyph beside them (`\alpha` α); and skeletons for figures, tables, equations, lists, theorems and algorithms with tab stops, so Tab moves through the fields. Typing `$` pairs it like a bracket. ⌘-click or F12 on a `\ref`, `\cite`, `\input` or macro jumps to where it is defined, across files; the caret in a `\begin` or `\end` marks its partner; sections and environments fold from the gutter; the status bar counts the prose words rather than the lines, and in a multi-file paper the whole paper's words too; and in a paper split over files the outline in the sidebar covers all of them. The code that made the figures opens in the same editor with its own grammar (Python, Julia, R, MATLAB, JavaScript and TypeScript, C, C++ and CUDA, Rust, Fortran, Lua, SQL, shell, Markdown, YAML, JSON, TOML, CMake, Dockerfiles); the files opened in a session sit as tabs above the editor (⇧⌘] and ⇧⌘[ cycle, × closes, a dot marks unsaved edits); and Paper › Show Terminal (⌃`) opens a terminal panel below the editor with the same PATH the agents get, so a command that works for them works at the prompt: several shells as tabs, a drag handle for its height, and a shell on the remote host when `dabir.toml` names one. When a language server is installed (pyright for Python, tinymist for Typst, typescript-language-server, clangd, rust-analyzer, the Julia and R packages, the bash and YAML servers), code files also get its completion, errors, hover, go-to-definition, references and rename; Settings › Code files says which were found. The rest of what an IDE adds around code is there too: a code bar above every code file with the path, Run, Run Selection, a REPL button and Format, the language server in charge and the problem count, and the line and column; the sidebar outline lists the file's functions and classes; TODO and FIXME in comments are badged; a Run button (⌃⏎) types the recipe for the open file into the terminal, ⇧⏎ sends the selection or the current line (with a REPL open there, it runs, and the caret moves down a line) (`python3`, `julia`, `Rscript`, `node`, `cargo run`, compile-and-run for C, C++, CUDA and Fortran); Edit › Format Document (⇧⌥F, or on ⌘S with the setting) runs the project's formatter (ruff or black, prettier, rustfmt, clang-format, JuliaFormatter, styler, shfmt, stylua, taplo) as one undoable change; a change gutter marks lines added, changed and removed since the last commit, live as you type; diagnostics and compile errors are written at the end of their line; and code files show indentation guides. Find in Paper (⇧⌘F) searches every file at once and jumps to the line. Edit › Convert Unicode to LaTeX rewrites what a word processor leaves behind (curly quotes, dashes, ×, ≤, Greek letters, 10⁻³) as LaTeX, in or out of maths. Typst source has its own grammar (folding, list continuation, syntax errors, completion of functions and symbols), and the Typst visual view understands the paper's `#let` definitions and `#grid` layouts. Settings offer a Vim keymap and a focus mode (⌥⌘F) that inks only the paragraph you are in and folds the panels away. If the code runs on another machine, `[remote]` in `dabir.toml` names the host: recorded commands run there over ssh and their artefacts are copied back, the terminal pane offers a shell on that host, and the agents are told.
-
-Predictive text finishes the word or phrase you are typing in grey, learned only from the paper itself, so it picks up your own terms and never sends text anywhere; Tab accepts it, ⌘→ takes one word, Escape dismisses. The formatting bar and the status bar fold their least-used parts into a More menu as the window narrows instead of clipping.
-
-Four views: Visual, Source, PDF, and Split (⌘4), which puts the source next to the PDF with a draggable divider, Overleaf style. Visual folds the preamble into one row that opens on click, renders equations, figures and tables in place, and while you edit an equation's source it shows the rendered result underneath it. In Split, the PDF follows the cursor line; in every view a double-click on the PDF goes to the source line and Option-click leaves a comment there, while a plain click selects text. The PDF toolbar has page navigation, zoom presets, fit to width or page, and find (⌘F when the PDF has focus).
-
-Settings (⌘,) hold every switch: spelling with bundled dictionaries for British and American English, German, Spanish, French, Italian and Portuguese (Portugal and Brazil) that skip commands, math and citation keys and run off the main thread (or the system checker), LanguageTool grammar on demand (⇧⌘G, off until you name a server, since text leaves the machine), LaTeX command and snippet completion, project completion for citation keys, labels and file paths, text sizes, wrapping, and compile on save.
-
-## Working together, from anywhere
-
-Share (⇧⌘S) offers three ways, none of which cost anything: *Anywhere*, one link for everyone, sent from your own Mail, Messages, WhatsApp or Telegram with the invitation written; the machines meet through Dabir's meeting point (a Cloudflare Worker on the free tier, `relay/signaling-worker.js`, which introduces peers and hands out TURN for strict networks without ever seeing the text; a lab can run its own and name it in Settings) and the paper travels between them, encrypted with the key in the link. *Same network*, where Dabir hosts a small relay on your machine (Tailscale extends that across the internet for free). *Direct*, where machines connect straight to each other after you swap two short codes with each coauthor, with no server at all. A joiner does not need the paper: they get a local mirror of the host's whole folder (figures, tables, the .bib) before the first keystroke, compile against it, and the host's checkout stays the record; edits to files nobody has open are written to disk on every side, sessions resume after a dropped connection, and ending a session drafts the commit. Comments carry replies, are anchored to the text, survive concurrent edits, are saved in `.dabir/comments.json` when you work alone, and appear as numbered pins on the compiled PDF; Option-click a spot on the PDF to comment there. Suggest changes (the pen in the formatting bar, or Settings) turns edits into tracked suggestions for coauthors who will not use Git: your insertions are underlined and your deletions struck through in your colour, anyone accepts or rejects each one from the People tab or by hovering the text, undo puts the marks back, and the suggestions travel in the live session or wait in `.dabir/changes.json`.
-
-## Agents, briefly
-
-Set Up Memory (Memory tab) writes three small things into the paper's repo: `.dabir/PROJECT.md`, the paper's identity and how its code runs; `.dabir/skills/`, ten playbooks every CLI discovers (six for the paper, four for the code); and `.dabir/memory/`, one fact per file plus a log of accepted runs. Every run starts with a ten-line preamble built from them and the passages most relevant to your request. Runs happen on a Git worktree seeded from your working copy, so nothing needs committing first; afterwards the editor shows the agent's version with the changes marked, ⌘B compiles it, and you accept into your files, accept and commit, or reject, hunk by hunk if you like.
-
-## Run it
-
-Prerequisites: Node 22, Rust stable (`rustup`), the Xcode command line tools, and Tectonic for compiling (`brew install tectonic`). Dabir looks for Tectonic in the usual Homebrew paths and on PATH, or at `DABIR_TECTONIC`.
+You need Node 22, Rust stable ([rustup](https://rustup.rs)), and your platform's [Tauri prerequisites](https://tauri.app/start/prerequisites/). `npm run tauri build` fetches the Tectonic LaTeX engine itself; for `tauri dev`, run `node scripts/fetch-tectonic.mjs` once or have Tectonic on your PATH (`brew install tectonic`).
 
 ```bash
 npm install
-npm run tauri dev
+npm run tauri dev      # the desktop app
+npm run dev            # the interface alone, in a browser, on the sample paper
+npm run check          # the gate every change passes: types, lint, build, tests, clippy
 ```
 
-To preview the UI in a browser without Tauri (uses the bundled sample paper):
-
-```bash
-npm run dev
-```
-
-**Take the tour** on the welcome screen (or Help › Guided Tour) copies the bundled sample paper, `examples/score-anchor`, into your Documents folder and walks through the window on it in twelve steps: files, views, compile, writing help, the agent and its memory, code, the terminal, history and sharing. The step-by-step [user guide](docs/GUIDE.md) goes deeper. In a source checkout, `python3 examples/score-anchor/code/sweep.py` regenerates the sample's figure and table.
+**Take the tour** on the welcome screen (or Help › Guided Tour) copies the sample paper, `examples/score-anchor`, into your Documents folder and walks through the window on it. Comments, suggestions and pull requests are welcome: read [CONTRIBUTING.md](CONTRIBUTING.md) first (it covers the contributor licence agreement, and how agents work on this repo), and report security problems through [SECURITY.md](SECURITY.md).
 
 ## Layout
 
 ```
-src/            React + TypeScript front end
-  styles/       tokens.css is the design system; app.css the shell
-  lib/latex.ts  LaTeX reader for the visual view (CodeMirror decorations replace it later)
-  components/   Toolbar, Navigator, Document (visual, SourceEditor, PdfView), Inspector
-src-tauri/      Rust core: project discovery, file access, Tectonic compile, native menu; later Git and agents
-examples/       sample paper projects
-.dabir/         (in a paper repo) PROJECT.md, memory/, provenance.json
+src/            React + TypeScript front end (styles/tokens.css is the design system)
+src-tauri/      Rust core: projects, files, compile, Git, agents, live sessions, native menu
+relay/          the free-tier signalling worker live sessions use (a lab can run its own)
+templates/      journal and conference starters
+examples/       the sample paper
+docs/           the guide, the full feature list and the review rubric
 ```
-
-## Design workflow
-
-UI changes go through two agent skills that ship in this repo:
-
-- **Impeccable** for direction and craft: `/impeccable critique`, `/audit` and `/polish` on every screen before merge. `DESIGN.md` is its source of truth.
-- **Apple design skill** for platform correctness: sidebars, toolbars, inspectors, sheets, dark mode and accessibility as macOS expects them.
 
 ## Licence
 
-AGPL-3.0. Editor packages that graduate into their own crates or npm modules will be MIT.
+AGPL-3.0. Editor packages that graduate into their own crates or npm modules will be MIT. The names Dabir and Surena Lab and their marks are covered by the [trademark policy](TRADEMARK.md). Built by [Surena Lab](https://surenalab.com).
