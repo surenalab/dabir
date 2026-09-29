@@ -1,10 +1,23 @@
 # What Dabir does, in full
 
-The README is the short version. This page is the complete list, kept as it grew; [the guide](GUIDE.md) is the step-by-step guide and [CHANGELOG.md](../CHANGELOG.md) says what changed in each version.
+The README is the short version. This page is the complete list, kept as it grew; [the user guide](GUIDE.md) is the step-by-step walk-through and [CHANGELOG.md](../CHANGELOG.md) says what changed in each version.
 
-## Everything, in one paragraph
+## Everything Dabir does
 
-Released for macOS (one signed and notarised universal DMG), Windows 11 and Ubuntu 22.04. Open a folder, an Overleaf zip or a GitHub repo; write in Word too, where a .docx is a paper of its own, edited on Word-faithful pages with styles, comments and tracked changes and saved back to the .docx, or turned into a LaTeX paper when you choose (citations from Zotero, Mendeley and EndNote become `\cite` with a `refs.bib`); edit the paper visually or as source in one buffer; compile with Tectonic; click the PDF to jump to the line; commit from the sidebar; ask Claude Code, Codex, Cursor, Grok or OpenCode (model and effort set from a slider in the composer) to change the paper on a worktree, then read and compile their version in the editor before it touches your checkout (verified live with Claude Code, Codex, Cursor and Grok); keep the project brief, facts and provenance in `.dabir/` so every agent shares them. Start a live session from Share and coauthors edit with you in real time, with presence and comments; pull and push to Overleaf's Git bridge; keep references in step with Zotero (a collection, synced now or while the paper is open, through Better BibTeX when it is there) or with the .bib Mendeley, Paperpile, JabRef or EndNote maintain, add entries by DOI or arXiv id, and have the agent check every entry online against Crossref, doi.org, arXiv and OpenAlex through the check-references skill; start new papers from the official kits of NeurIPS, ICML, ICLR, CVPR, ICCV, ECCV, ACL, TMLR, SIAM, Springer Nature, Nature Portfolio, BMC, PLOS and Frontiers, fetched from the venues themselves, or from starters for IEEE, ACM, SIGGRAPH, Elsevier, LNCS, AMS, APS, JMLR and the OUP journals, or in Typst, with a visual layer for both (Typst math renders through a translation to KaTeX); export the PDF, the sources arXiv needs, a zip for Overleaf or a submission system, or Word and HTML through pandoc. Compile problems are traceable to the line and fixable by the agent. Comments live with the paper and show as pins on the compiled PDF. Offline LaTeX-aware spelling, grammar and completion are built in, each with an off switch (⌘,). What changed in each version is in [CHANGELOG.md](../CHANGELOG.md).
+Builds for macOS (one signed and notarised universal DMG), Windows 11 and Linux (tested on Ubuntu 22.04). Open a folder, an Overleaf zip or a GitHub repo, and:
+
+- Write in Word too, where a .docx is a paper of its own, edited on Word-faithful pages with styles, comments and tracked changes and saved back to the .docx, or turned into a LaTeX paper when you choose (citations from Zotero, Mendeley and EndNote become `\cite` with a `refs.bib`)
+- Edit the paper visually or as source in one buffer
+- Compile with Tectonic
+- Click the PDF to jump to the line
+- Commit from the sidebar
+- Ask Claude Code, Codex, Cursor, Grok or OpenCode (model and effort set from a slider in the composer) to change the paper on a worktree, then read and compile their version in the editor before it touches your checkout (verified live with Claude Code, Codex, Cursor and Grok)
+- Keep the project brief, facts and provenance in `.dabir/` so every agent shares them. Start a live session from Share and coauthors edit with you in real time, with presence and comments
+- Pull and push to Overleaf's Git bridge
+- Keep references in step with Zotero (a collection, synced now or while the paper is open, through Better BibTeX when it is there) or with the .bib Mendeley, Paperpile, JabRef or EndNote maintain, add entries by DOI or arXiv id, and have the agent check every entry online against Crossref, doi.org, arXiv and OpenAlex through the check-references skill
+- Start new papers from the official kits of NeurIPS, ICML, ICLR, CVPR, ICCV, ECCV, ACL, TMLR, SIAM, Springer Nature, Nature Portfolio, BMC, PLOS and Frontiers, fetched from the venues themselves, or from starters for IEEE, ACM, SIGGRAPH, Elsevier, LNCS, AMS, APS, JMLR and the OUP journals, or in Typst, with a visual layer for both (Typst math renders through a translation to KaTeX)
+- Export the PDF, the sources arXiv needs, a zip for Overleaf or a submission system, or Word and HTML through pandoc. Compile problems are traceable to the line and fixable by the agent. Comments live with the paper and show as pins on the compiled PDF. Offline LaTeX-aware spelling, grammar and completion are built in, each with an off switch (⌘,). What changed in each version is in [CHANGELOG.md](../CHANGELOG.md).
+
 
 ## Writing tools
 
