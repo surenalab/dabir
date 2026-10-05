@@ -221,7 +221,7 @@ export default function App() {
   const [git, setGit] = useState<GitStatus | null>(null);
   const [gitBusy, setGitBusy] = useState(false);
   const compileOnSave = settings.compileOnSave;
-  const compileRef = useRef<() => void>(() => {});
+  const compileRef = useRef<(opts?: { stay?: boolean }) => void>(() => {});
   const autoCollapsed = useRef(false);
   // The buffer as the disk should see it. `file`, `source` and `dirty` are React state, so a callback created before
   // the last render can lag them; these refs are kept current synchronously (in render and in onSourceChange) and
@@ -459,7 +459,8 @@ export default function App() {
     catch (e) { setError(String(e)); }
   }, [refreshGit, compileOnSave, recordStep]);
 
-  const compile = useCallback(async () => {
+  // `stay` keeps the current view: the compile Dabir starts on its own must not pull the author off the page they are reading.
+  const compile = useCallback(async (opts?: { stay?: boolean }) => {
     if (!compilable(project?.mainTex) || compileState.status === "running") return;
     // While reading the agent's version, compile that version from its worktree; nothing lands in the checkout.
     const agentBuild = review && reviewShowing && !session;
@@ -474,13 +475,24 @@ export default function App() {
       if (projectRef.current?.root !== from) return;
       setCompileState({ status: "done", result, at: Date.now(), agent: agentBuild ? review.label : undefined });
       // Show the PDF, unless Split already does.
-      if (result.ok && result.pdf) setMode((m) => (m === "split" ? m : "pdf"));
+      if (result.ok && result.pdf && !opts?.stay) setMode((m) => (m === "split" ? m : "pdf"));
     } catch (e) {
       if (projectRef.current?.root !== from) return;
       setCompileState({ status: "done", at: Date.now(), result: { ok: false, pdf: null, log: String(e), engine: "", millis: 0, diagnostics: [{ severity: "error", category: "other", file: null, line: null, message: String(e), context: null }] } });
     }
   }, [project, compileState.status, review, reviewShowing, session]);
   compileRef.current = compile;
+  // A finished run is compiled at once, from its worktree: agents are told to check their work with
+  // dabir-check rather than compile it, so this is the one compile of their version, and an error lands in
+  // Problems before the author has to ask. Keyed on the patch too, so a follow-up in the same run compiles again.
+  const compiledRunRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!review || review.working || !reviewShowing || session) return;
+    const key = `${review.runId}:${review.patch.length}:${review.changes.length}`;
+    if (compiledRunRef.current === key) return;
+    compiledRunRef.current = key;
+    compileRef.current({ stay: true });
+  }, [review, reviewShowing, session]);
   /** For Export: the checked-in paper's PDF exists, compiling it now if it does not. */
   const ensurePdf = useCallback(async (): Promise<boolean> => {
     if (!project || !compilable(project.mainTex)) return false;

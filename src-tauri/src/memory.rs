@@ -640,11 +640,30 @@ const fn skill(name: &'static str, desc: &'static str, body: &'static str) -> Sk
 const CHECK_REFERENCES_V1: (&str, &str) = ("Verify citations, cross-references and bibliography entries are consistent and complete.",
 "1. Every `\\cite{key}` must exist in the `.bib` files; every `\\ref`/`\\eqref` must have a `\\label`. List the misses.\n2. Look for `??` and `[?]` in the compile log and the PDF text.\n3. Do not invent bibliography entries. If a reference is missing, say so and stop; the author adds it.\n4. Normalise obvious BibTeX problems (missing year, journal capitalisation in braces) only when the source is unambiguous.");
 
+// Earlier texts of playbooks that told the agent to compile to check its work; Dabir compiles the
+// result itself now and the agent runs `dabir-check`. Untouched copies are refreshed on the next setup.
+const RERUN_EXPERIMENT_V1: (&str, &str) = ("Regenerate a figure or table by rerunning the command that produced it, then update every number in the text that came from it.",
+"1. Find the artefact in `.dabir/PROJECT.md` → Generated artefacts, or `dabir.toml [provenance]`. Use the recorded command, prefixed with the env prefix from `dabir.toml [env]` if present.\n2. Run it from the repo root. If it fails, fix the cause in the code, never by editing the output by hand.\n3. Search the manuscript for numbers that came from this artefact (captions, `\\input` tables, inline claims). Update each one from the new output.\n4. Compile (see compile-and-fix). Report the old and new numbers in your final message.\n5. Update `producedAt` and `commit` for the artefact in `.dabir/provenance.json`.");
+const UPDATE_FIGURE_AND_TEXT_V1: (&str, &str) = ("Change a figure's content or style and keep the caption, the reference in the text, and any claims consistent.",
+"1. Edit the plotting code, not the exported file. Keep the figure's file name so `\\includegraphics` keeps working.\n2. Regenerate through the recorded command (rerun-experiment).\n3. Re-read the caption and every sentence that references the figure (`\\ref{fig:…}`). Fix wording that no longer matches.\n4. Keep the venue's rules: no colour-only encodings, fonts legible at column width.\n5. Compile and check the figure placement in the PDF log for overfull boxes.");
+const COMPILE_AND_FIX_V1: (&str, &str) = ("Compile the paper with Tectonic and fix errors at their source.",
+"1. Compile: `tectonic -X compile --keep-logs --synctex --outdir .dabir/build main.tex` (or the main file named in PROJECT.md).\n2. Read `.dabir/build/*.log` for `!` errors first, then warnings. Fix the first error, recompile, repeat.\n3. Undefined citations or references are usually a missing `\\label` or a typo in the key; do not silence them.\n4. Overfull boxes in the log point at line numbers; fix wording or table widths rather than adding `\\sloppy`.\n5. Finish with a clean compile and report the remaining warnings.");
+
 const SKILLS: &[SkillDef] = &[
-    skill("rerun-experiment", "Regenerate a figure or table by rerunning the command that produced it, then update every number in the text that came from it.",
-"1. Find the artefact in `.dabir/PROJECT.md` → Generated artefacts, or `dabir.toml [provenance]`. Use the recorded command, prefixed with the env prefix from `dabir.toml [env]` if present.\n2. Run it from the repo root. If it fails, fix the cause in the code, never by editing the output by hand.\n3. Search the manuscript for numbers that came from this artefact (captions, `\\input` tables, inline claims). Update each one from the new output.\n4. Compile (see compile-and-fix). Report the old and new numbers in your final message.\n5. Update `producedAt` and `commit` for the artefact in `.dabir/provenance.json`."),
-    skill("update-figure-and-text", "Change a figure's content or style and keep the caption, the reference in the text, and any claims consistent.",
-"1. Edit the plotting code, not the exported file. Keep the figure's file name so `\\includegraphics` keeps working.\n2. Regenerate through the recorded command (rerun-experiment).\n3. Re-read the caption and every sentence that references the figure (`\\ref{fig:…}`). Fix wording that no longer matches.\n4. Keep the venue's rules: no colour-only encodings, fonts legible at column width.\n5. Compile and check the figure placement in the PDF log for overfull boxes."),
+    SkillDef {
+        name: "rerun-experiment",
+        desc: "Regenerate a figure or table by rerunning the command that produced it, then update every number in the text that came from it.",
+        body: "1. Find the artefact in `.dabir/PROJECT.md` → Generated artefacts, or `dabir.toml [provenance]`. Use the recorded command, prefixed with the env prefix from `dabir.toml [env]` if present.\n2. Run it from the repo root. If it fails, fix the cause in the code, never by editing the output by hand.\n3. Search the manuscript for numbers that came from this artefact (captions, `\\input` tables, inline claims). Update each one from the new output.\n4. Run `dabir-check` (milliseconds); Dabir compiles the paper when you finish. Report the old and new numbers in your final message.\n5. Update `producedAt` and `commit` for the artefact in `.dabir/provenance.json`.",
+        files: &[],
+        previous: &[RERUN_EXPERIMENT_V1],
+    },
+    SkillDef {
+        name: "update-figure-and-text",
+        desc: "Change a figure's content or style and keep the caption, the reference in the text, and any claims consistent.",
+        body: "1. Edit the plotting code, not the exported file. Keep the figure's file name so `\\includegraphics` keeps working.\n2. Regenerate through the recorded command (rerun-experiment).\n3. Re-read the caption and every sentence that references the figure (`\\ref{fig:…}`). Fix wording that no longer matches.\n4. Keep the venue's rules: no colour-only encodings, fonts legible at column width.\n5. Run `dabir-check`. Dabir compiles your version when you finish; read the log for overfull boxes only when the request is about layout.",
+        files: &[],
+        previous: &[UPDATE_FIGURE_AND_TEXT_V1],
+    },
     skill("address-reviewer", "Turn a reviewer comment into a minimal, traceable change plus a response paragraph.",
 "1. Quote the comment. Decide: change the paper, add an experiment (rerun-experiment), or justify without change.\n2. Make the smallest edit that answers it. Prefer adding a sentence over rewriting a section.\n3. Record the decision as a fact: `.dabir/memory/reviewer-<n>-<slug>.md` with name and description frontmatter, what was asked, what was changed, and why.\n4. Draft the response paragraph at the end of your final message, in the paper's voice, with the section or line changed."),
     skill("tighten-prose", "Edit for clarity and length without changing claims or notation.",
@@ -670,8 +689,13 @@ const SKILLS: &[SkillDef] = &[
 "1. State what stays fixed: outputs, file names, command-line flags, the numbers in the paper. Read the recorded commands in `dabir.toml [provenance]`; their flags and paths must keep working.\n2. Run the tests or the script before touching anything, and keep the artefacts it wrote as the reference.\n3. Refactor in small steps that each leave the code runnable: rename, then extract, then move. Keep the public names other files import; grep for every use before renaming.\n4. Run again and compare: the same numbers, the same files, byte-identical where the code is deterministic. A seed that changed is a behaviour change, not a refactor.\n5. Use the project's formatter (ruff, black, prettier, rustfmt, clang-format, JuliaFormatter, styler) rather than hand-formatting.\n6. Do not touch the manuscript. Report what moved where and the command that shows the output unchanged."),
     skill("notebook-to-script", "Turn the cells of a Jupyter notebook into a script the recorded commands can run, keeping its outputs reproducible.",
 "1. Read the notebook (`.ipynb` is JSON: `cells[].source` and `cells[].outputs`). Work out what it needs (imports, data paths, parameters set at the top) and what it produces (figures saved, tables printed, numbers quoted in the paper).\n2. Write one script beside it with the same name and a `main()` guarded by `if __name__ == \"__main__\":`; parameters become arguments with the notebook's values as defaults; `display()` and bare expressions become `print()` or saved files.\n3. Drop the exploration: dead cells, plots not used by the paper, `%magic` lines. Keep the order of the ones that matter.\n4. Run the script with the `[env]` prefix and compare its outputs with the outputs saved in the notebook, number by number for anything the paper quotes.\n5. Record it: add the script's command to `dabir.toml [provenance]` for each artefact it writes, and note in `.dabir/PROJECT.md` → How the code runs that the script supersedes the notebook. Leave the notebook in place unless the author asked to remove it.\n6. Report the mapping cell → function and any output that differed."),
-    skill("compile-and-fix", "Compile the paper with Tectonic and fix errors at their source.",
-"1. Compile: `tectonic -X compile --keep-logs --synctex --outdir .dabir/build main.tex` (or the main file named in PROJECT.md).\n2. Read `.dabir/build/*.log` for `!` errors first, then warnings. Fix the first error, recompile, repeat.\n3. Undefined citations or references are usually a missing `\\label` or a typo in the key; do not silence them.\n4. Overfull boxes in the log point at line numbers; fix wording or table widths rather than adding `\\sloppy`.\n5. Finish with a clean compile and report the remaining warnings."),
+    SkillDef {
+        name: "compile-and-fix",
+        desc: "Compile the paper with Tectonic and fix errors at their source.",
+        body: "1. Run `dabir-check` first: it finds unbalanced braces, mismatched environments, missing labels, citation keys and files in milliseconds. Fix those before compiling.\n2. Compile once: `tectonic -X compile --keep-logs --synctex --outdir .dabir/build main.tex` (or the main file named in PROJECT.md).\n3. Read `.dabir/build/*.log` for `!` errors, then warnings. Fix every error you can place before compiling again, not one per compile; an error after the first is often caused by it, so recheck those after the next compile.\n4. Undefined citations or references are usually a missing `\\label` or a typo in the key; do not silence them. Overfull boxes in the log point at line numbers; fix wording or table widths rather than adding `\\sloppy`.\n5. Finish with a clean compile and report the remaining warnings.",
+        files: &[],
+        previous: &[COMPILE_AND_FIX_V1],
+    },
 ];
 
 fn render_skill(name: &str, desc: &str, body: &str) -> String {
@@ -899,7 +923,7 @@ Never hand-edit these or numbers copied from them. Rerun the command (skill: rer
             finish = if word_main.is_some() {
                 format!("- The manuscript is a Word document: never open or edit it as text. Each run gets a read-only Markdown copy under `.dabir/context/`; propose wording in the reply, the author applies it in `{}`.", main_name)
             } else {
-                "- Compile before you finish (skill: compile-and-fix).".to_string()
+                "- Run `dabir-check` before you finish; Dabir compiles your version and reports any error back (skill compile-and-fix when the request is about the build).".to_string()
             },
             sections = if sections.is_empty() { "(no sections found)".into() } else { sections.join(" · ") },
             repo_map = { let m = repo_map(root); if m.is_empty() { "- (no code files found)".to_string() } else { m.join("\n") } },
@@ -2187,5 +2211,36 @@ mod tests {
             );
         }
         let _ = fs::remove_dir_all(&dir);
+    }
+    #[test]
+    fn playbooks_that_said_compile_to_check_are_refreshed_when_untouched() {
+        let root = std::env::temp_dir().join(format!("dabir-pb-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(root.join(".dabir/skills/compile-and-fix")).unwrap();
+        fs::create_dir_all(root.join(".dabir/skills/rerun-experiment")).unwrap();
+        fs::write(
+            root.join("main.tex"),
+            "\\documentclass{article}\n\\begin{document}x\\end{document}\n",
+        )
+        .unwrap();
+        let (d, b) = COMPILE_AND_FIX_V1;
+        fs::write(
+            root.join(".dabir/skills/compile-and-fix/SKILL.md"),
+            render_skill("compile-and-fix", d, b),
+        )
+        .unwrap();
+        fs::write(
+            root.join(".dabir/skills/rerun-experiment/SKILL.md"),
+            "my own rerun steps\n",
+        )
+        .unwrap();
+        setup(&root, None).unwrap();
+        let cf = fs::read_to_string(root.join(".dabir/skills/compile-and-fix/SKILL.md")).unwrap();
+        assert!(
+            cf.contains("dabir-check") && cf.contains("not one per compile"),
+            "{cf}"
+        );
+        let rr = fs::read_to_string(root.join(".dabir/skills/rerun-experiment/SKILL.md")).unwrap();
+        assert_eq!(rr, "my own rerun steps\n", "an author's playbook is theirs");
+        let _ = fs::remove_dir_all(&root);
     }
 }

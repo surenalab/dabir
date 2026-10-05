@@ -4,6 +4,8 @@ Newest first. Every merged pull request adds a line under Unreleased; a release 
 
 ## Unreleased
 
+- Agent runs are quicker: agents no longer compile the paper to check their work. They run `dabir-check` (on their PATH, also in the terminal), which reads the manuscript through its `\input`s in a few milliseconds and reports unbalanced braces, mismatched `\begin`/`\end`, `\ref`s with no `\label`, citation keys missing from the bibliography, and `\input` or `\includegraphics` files that do not exist. Dabir compiles the agent's version itself as soon as the run finishes, so an error is in Problems before you read the change. The agent still compiles, once, when the request is about the build or it changed the preamble or macros; compile-and-fix fixes every error it can place per compile instead of one. Playbooks Dabir wrote that told agents to compile are refreshed on the next Set Up Memory; edited ones are left alone.
+
 ## 0.2.2
 
 - Setup catches an agent CLI too old for Dabir. Grok up to 0.2.112 does not know `--output-format streaming-messages-json`, so every run failed at once with clap's "invalid value" while Setup showed Grok installed and signed in. Setup now asks the CLI's `--help` whether it lists the options Dabir passes (a version cut-off would be a guess: 0.2.112 lacks the format, 0.2.118 has it), marks an old one amber with its version and an Update button that runs `grok update` in the sheet's shell, and a run that still hits the error is explained as "too old, update it" with an Update… link instead of the raw CLI text.
