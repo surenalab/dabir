@@ -14,7 +14,9 @@ export type EntryKind = "dir" | "tex" | "bib" | "code" | "figure" | "data" | "wo
 export interface Entry { name: string; path: string; kind: EntryKind; children: Entry[] }
 /** Where the code runs when `dabir.toml [remote]` names a host: an ssh destination and the repository's path there. */
 export interface Remote { host: string; dir: string }
-export interface Project { root: string; name: string; mainTex: string | null; hasGit: boolean; hasMemory: boolean; tree: Entry[]; treeTruncated?: boolean; remote?: Remote | null }
+/** `single`: opened through one file, not a folder. The tree is only what the paper reads, nothing is written into the
+ * folder, and history and agents wait until File › Make Paper a Project. */
+export interface Project { root: string; name: string; mainTex: string | null; hasGit: boolean; hasMemory: boolean; tree: Entry[]; treeTruncated?: boolean; remote?: Remote | null; single?: boolean }
 
 export interface Diagnostic { severity: "error" | "warning" | "info"; category: string; file: string | null; line: number | null; message: string; context: string | null }
 export interface CompileResult { ok: boolean; pdf: string | null; log: string; diagnostics: Diagnostic[]; engine: string; millis: number }
@@ -332,11 +334,24 @@ export async function importWord(docx: string, parent: string, name: string): Pr
 
 // ---------------------------------------------------------------- Word documents
 
-/** File › Open Word Document…: a .docx anywhere; its folder opens with it as the paper. Null when cancelled. */
-export async function pickWordToOpen(): Promise<string | null> {
+/** File › Open File…: one .tex, .typ or .docx anywhere, opened on its own. Null when cancelled. */
+export async function pickFileToOpen(): Promise<string | null> {
   if (!native) return `${SAMPLE_WORD_ROOT}/manuscript.docx`;
-  const picked = await openDialog({ multiple: false, title: "Open Word Document", filters: [{ name: "Word document", extensions: ["docx"] }] });
+  const picked = await openDialog({ multiple: false, title: "Open File", filters: [{ name: "Paper", extensions: ["tex", "typ", "docx"] }, { name: "LaTeX", extensions: ["tex"] }, { name: "Typst", extensions: ["typ"] }, { name: "Word document", extensions: ["docx"] }] });
   return typeof picked === "string" ? picked : null;
+}
+/** File › Make Paper a Project: copy a file opened on its own, and what it reads, into `parent/name`, set up with Git and memory. */
+export async function makeProject(main: string, parent: string, name: string): Promise<string> {
+  if (!native) throw new Error("Making a project needs the desktop app.");
+  return invoke<string>("make_project", { main, parent, name });
+}
+/** Files and folders the system asked Dabir to open (a double-click, the Dock, Open With): the ones that came before
+ * the window loaded, then each later one as it arrives. Returns the unsubscribe. */
+export async function onOpenPath(open: (path: string) => void): Promise<() => void> {
+  if (!native) return () => {};
+  const un = await listen<string>("open-path", (e) => open(e.payload));
+  for (const p of await invoke<string[]>("take_opened")) open(p);
+  return un;
 }
 /** The document as Markdown (headings, lists, tables, footnotes; insertions kept, deletions left out), read from disk. */
 export async function wordMarkdown(path: string): Promise<string> {

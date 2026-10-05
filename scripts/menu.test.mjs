@@ -62,7 +62,7 @@ test("the Word chords are the ones the guide names", () => {
   const by = (id) => items.find((i) => i.id === id);
   const chord = (id, platform = "mac") => normalise(by(id)?.[platform] ?? "", platform);
   assert.equal(chord("new-word"), "alt+mod+n");
-  assert.equal(chord("open-word"), "alt+mod+o");
+  assert.equal(chord("open-file"), "alt+mod+o");
   assert.equal(chord("import-word"), "alt+mod+shift+i", "Import takes the Shift of the inspector's chord");
   assert.equal(chord("toggle-inspector"), "alt+mod+i", "the inspector keeps the plain Alt chord");
   assert.equal(chord("toggle-inspector", "other"), "alt+mod+i", "and the same one off the Mac, where Ctrl+Shift+I is Italic");

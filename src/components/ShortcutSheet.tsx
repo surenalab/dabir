@@ -6,7 +6,7 @@ const ROWS: [string, string[]][] = [
   ["New Paper…", ["⌘", "N"]],
   ["Open Paper…", ["⌘", "O"]],
   ["New Word Document…", ["⌥", "⌘", "N"]],
-  ["Open Word Document…", ["⌥", "⌘", "O"]],
+  ["Open File… (.tex, .typ, .docx)", ["⌥", "⌘", "O"]],
   ["Import Word Document…", ["⇧", "⌥", "⌘", "I"]],
   ["Share…", ["⇧", "⌘", "S"]],
   ["Export…", ["⌥", "⌘", "E"]],

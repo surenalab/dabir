@@ -32,7 +32,7 @@ import { proseWords } from "./lib/spell";
 import {
   agentComplete, checkForUpdates, projectSnapshot, sessionMaterialize, checkpoint, checkpoints, checkpointRestore, checkpointUndo, gitDiscard, type Checkpoint, newPaper, compile as runCompile, compileCancel, gitClone, gitPull, gitPush, gitRemoteAdd, gitRemoteUrl, isMac, onCompileProgress, relayStart, relayStop, gitCommit, gitInit, gitStatus, importOverleaf, native, onMenu, onWindowFocus,
   openProject, pickFolder, pickNewPaperPath, readText, authorName, setWindowTitle, synctexForward, synctexInverse, writeText, openSample, openGuide, onDeepLink,
-  writeBinary, wordMarkdown, pickWordToOpen, pickSavePath,
+  writeBinary, wordMarkdown, pickFileToOpen, makeProject, onOpenPath, pickSavePath,
   type CompileResult, type GitStatus, type PdfPos, type Project, type Focus, paperMap, type PaperMap, gitHeadText, type WordImport } from "./lib/backend";
 import { runRecipe, replCommand, formattersFor, formatText } from "./lib/code-tools";
 import { serversFor } from "./lib/lsp";
@@ -301,7 +301,8 @@ export default function App() {
     const p = await openProject(folder, main ?? null);
     setProject(p); setCompileState({ status: "idle" }); setError(null); setPdfTarget(null);
     setOpenFiles([]);
-    try { localStorage.setItem("dabir.lastPaper", p.root); if (p.mainTex) localStorage.setItem("dabir.lastMain", p.mainTex); else localStorage.removeItem("dabir.lastMain"); } catch { /* private mode */ }
+    // A file opened on its own is remembered as the file, so the next launch opens it on its own again.
+    try { localStorage.setItem("dabir.lastPaper", p.single && p.mainTex ? p.mainTex : p.root); if (p.mainTex) localStorage.setItem("dabir.lastMain", p.mainTex); else localStorage.removeItem("dabir.lastMain"); } catch { /* private mode */ }
     setWindowTitle(p.name);
     loadBib(p);
     loadMap(p.root);
@@ -334,7 +335,7 @@ export default function App() {
   // a History step or a reference sync must not move the paper to another file under the open document.
   const reloadProject = useCallback(async () => {
     if (!project) return;
-    try { const p = await openProject(project.root, project.mainTex); setProject(p); loadBib(p); loadMap(p.root); refreshGit(p); } catch (e) { setError(String(e)); }
+    try { const p = await openProject(project.single && project.mainTex ? project.mainTex : project.root, project.mainTex); setProject(p); loadBib(p); loadMap(p.root); refreshGit(p); } catch (e) { setError(String(e)); }
   }, [project, loadBib, loadMap, refreshGit]);
 
   // Browser preview only: ?open=sample&view=split&inspector=1&file=code/sweep.py&demo=run&compile=1 opens the sample in a given state,
@@ -414,10 +415,32 @@ export default function App() {
     setNote("New paper created with Git and memory set up.");
     return true;
   }, [openFolder, chooseNewPaperFolder]);
-  // File › Open Word Document…: the document's folder opens as the paper, with that document as its manuscript.
-  const openWordFile = useCallback(async () => {
-    try { const path = await pickWordToOpen(); if (path) await openFolder(parentFolder(path), path); } catch (e) { setError(String(e)); }
+  // File › Open File…: a .tex, .typ or .docx on its own. The preview's sample is a folder, so it opens as one there.
+  const openFile = useCallback(async () => {
+    try { const path = await pickFileToOpen(); if (path) await (native ? openFolder(path) : openFolder(parentFolder(path), path)); } catch (e) { setError(String(e)); }
   }, [openFolder]);
+  // File › Make Paper a Project: history and agents need a folder with Git, so the file and what it reads are copied
+  // into a new one beside it, and that opens. The original stays where it was.
+  const makePaperProject = useCallback(async () => {
+    if (!project?.single || !project.mainTex) return;
+    try {
+      await flushRef.current();
+      const stem = project.name.replace(/\.[^.]+$/, "");
+      const folder = await chooseNewPaperFolder(`${project.root}/${stem}`);
+      if (!folder) return;
+      const dest = await makeProject(project.mainTex, folder.parent, folder.name);
+      await openFolder(dest);
+      setNote("This paper is a project now, with Git, history and memory. The original file is where it was.");
+    } catch (e) { setError(String(e)); }
+  }, [project, chooseNewPaperFolder, openFolder]);
+  // Files the system hands over (a double-click, the Dock, Open With) open as they arrive; a folder opens as a paper.
+  const openPathRef = useRef<(path: string) => void>(() => {});
+  useEffect(() => { openPathRef.current = (path: string) => { openFolder(path).catch((e) => setError(String(e))); }; }, [openFolder]);
+  useEffect(() => {
+    let un: (() => void) | null = null, gone = false;
+    onOpenPath((p) => openPathRef.current(p)).then((u) => { if (gone) u(); else un = u; }).catch(() => {});
+    return () => { gone = true; un?.(); };
+  }, []);
   const newWordPaper = useCallback(async () => {
     try { await createPaper("word-manuscript", "word-paper"); } catch (e) { setError(String(e)); }
   }, [createPaper]);
@@ -1086,7 +1109,8 @@ export default function App() {
     }
     switch (id) {
       case "new-word": void newWordPaper(); break;
-      case "open-word": void openWordFile(); break;
+      case "open-file": void openFile(); break;
+      case "make-project": void makePaperProject(); break;
       case "convert-latex": if (fileKind(file) === "word") wordExportRef.current("latex"); else setNote("Open a Word document first; Convert to LaTeX Paper… makes a LaTeX copy of it."); break;
       case "open": open(); break;
       case "close-paper": if (project) closePaper(); break;
@@ -1152,7 +1176,7 @@ export default function App() {
         checkForUpdates(async (v, notes) => window.confirm(`Dabir ${v} is available.\n\n${notes}\n\nDownload and restart now?`)).then(setNote).catch((e) => setNote(String(e)));
         break;
     }
-  }, [setNavTab, open, startTour, openSetup, closePaper, importFromOverleaf, openWordImport, newWordPaper, openWordFile, wordStats, setWordMode, save, compile, showInPdf, toggleNav, toggleInspector, toggleTerminal, openFindPaper, toggleFocusMode, inspectorOpen, navOpen, runGrammar, mode, cycleFile, closeFile, file, project, runFile, runSelection, openRepl, formatDocument, settings.formatOnSave]);
+  }, [setNavTab, open, startTour, openSetup, closePaper, importFromOverleaf, openWordImport, newWordPaper, openFile, makePaperProject, wordStats, setWordMode, save, compile, showInPdf, toggleNav, toggleInspector, toggleTerminal, openFindPaper, toggleFocusMode, inspectorOpen, navOpen, runGrammar, mode, cycleFile, closeFile, file, project, runFile, runSelection, openRepl, formatDocument, settings.formatOnSave]);
 
   useEffect(() => onMenu(command), [command]);
   useEffect(() => onCompileProgress((line) => setProgress(line.length > 90 ? line.slice(0, 87) + "…" : line)), []);
@@ -1184,7 +1208,7 @@ export default function App() {
       if (e.shiftKey && (e.key === "[" || e.key === "{" || e.code === "BracketLeft")) { e.preventDefault(); command("prev-file"); return; }
       if (e.altKey && !e.shiftKey && k === "c") { e.preventDefault(); command("commit"); return; }
       if (e.altKey && !e.shiftKey && (k === "n" || e.code === "KeyN")) { e.preventDefault(); command("new-word"); return; }
-      if (e.altKey && !e.shiftKey && (k === "o" || e.code === "KeyO")) { e.preventDefault(); command("open-word"); return; }
+      if (e.altKey && !e.shiftKey && (k === "o" || e.code === "KeyO")) { e.preventDefault(); command("open-file"); return; }
       // The third of the Word chords. ⌥⌘I, the obvious one, is Show/Hide Inspector below, so Import
       // takes the Shift of it; Option+I on the Mac is a dead key, hence the e.code fallback.
       if (e.altKey && e.shiftKey && (k === "i" || e.code === "KeyI")) { e.preventDefault(); command("import-word"); return; }
@@ -1452,7 +1476,7 @@ export default function App() {
       <Document project={project} onSetup={(f) => openSetup(f ?? null)} file={file} source={source} bib={bib} paperWords={paperWordsNow} openFiles={openFiles} dirty={dirty} onCloseFile={closeFile} headText={headText} code={codeState} mode={mode} jumpLine={jumpLine} jumpStamp={jumpStamp}
         compileState={compileState} progress={progress} showLog={showLog} onToggleLog={() => setShowLog((v) => !v)} terminal={terminal} onToggleTerminal={toggleTerminal} findRequest={findRequest}
         error={error ?? note} onDismissError={() => { setError(null); setNote(null); }} pdfTarget={pdfTarget}
-        onOpen={open} onOpenWord={() => void openWordFile()} onImport={importFromOverleaf} onClone={() => setSheet("clone")} onNew={openNew} onTour={startTour} onJoin={() => setSheet("share")} hostAway={hostAway} onOutline={setOutline}
+        onOpen={open} onOpenFile={() => void openFile()} onImport={importFromOverleaf} onClone={() => setSheet("clone")} onNew={openNew} onTour={startTour} onJoin={() => setSheet("share")} hostAway={hostAway} onOutline={setOutline}
         onSourceChange={onSourceChange} onSave={save} onCursorLine={onCursor} onSelectFile={selectFile} onJump={jumpTo} onPdfClick={onPdfClick}
         compileOnSave={compileOnSave} onToggleCompileOnSave={toggleCompileOnSave}
         agentReady={agentReady} onJumpFile={jumpToFile} onFix={fixWithAgent}
@@ -1462,7 +1486,7 @@ export default function App() {
         onPdfComment={onPdfComment} pdfFindRequest={pdfFindRequest} editorRef={editorRef} onFind={() => command("find")} onCommentSelection={() => { if (!inspectorOpen) toggleInspector(); setAskFocus(0); setNote("Type the comment in the People tab; it attaches to your selection."); }} hasSelection={selection.to > selection.from}
         review={docReview} dictionary={dictionary} onAddWord={addWord} onContinue={continueWithAgent} splitRatio={splitRatio} onSplitRatio={setSplitRatio} onPin={(id) => { const c = allComments.find((x) => x.id === id); if (c) jumpToComment(c); }}
         assist={assist} word={wordPane} wordRef={wordRef} />
-      <Inspector project={project} onSetup={() => openSetup("agents")} gitRepo={!!git?.isRepo} askFocus={askFocus} prefill={prefill} tabRequest={tabRequest} onProviderReady={setAgentReady} onChanged={onChanged} onBeforeRun={flush} onOpenFile={selectFile} history={versions} historyBusy={historyBusy} onRestoreStep={restoreVersion} onUndoStep={undoVersion} historyFocus={historyFocus} onNote={setNote} autoRun={autoRun} onReview={setReview}
+      <Inspector project={project} onMakeProject={() => void makePaperProject()} onSetup={() => openSetup("agents")} gitRepo={!!git?.isRepo} askFocus={askFocus} prefill={prefill} tabRequest={tabRequest} onProviderReady={setAgentReady} onChanged={onChanged} onBeforeRun={flush} onOpenFile={selectFile} history={versions} historyBusy={historyBusy} onRestoreStep={restoreVersion} onUndoStep={undoVersion} historyFocus={historyFocus} onNote={setNote} autoRun={autoRun} onReview={setReview}
         live={!!live} peers={peers} following={followId} onJumpPeer={jumpToPeer} onFollowPeer={followPeer} comments={allComments} currentFile={rel(file)} hasSelection={selection.to > selection.from} focus={agentFocus}
         changes={changeItems} suggesting={settings.suggesting} onToggleSuggesting={toggleSuggesting} onResolveChanges={resolveChange} onJumpChange={jumpToChange}
         onAddComment={(t) => addCommentAtSelection(t)} onResolveComment={resolveAnyComment} onReplyComment={replyAnyComment} onRemoveComment={removeAnyComment} onJumpComment={jumpToComment} onShare={() => setSheet("share")} />

@@ -24,7 +24,7 @@ Dabir checks for updates itself. Setup (Help › Set Up Dabir) installs and chec
 
 ## What it does
 
-- **One window for the paper and its code.** Visual, Source, PDF and Split views of a LaTeX, Typst or Word document; the scripts, notebooks and a terminal sit beside it.
+- **One window for the paper and its code.** Visual, Source, PDF and Split views of a LaTeX, Typst or Word document; the scripts, notebooks and a terminal sit beside it. Open a whole project folder, or just one `.tex`, `.typ` or `.docx` file.
 - **Click to jump, both ways.** Click a line and the PDF marks it; double-click the PDF and the source scrolls to that line. Compile errors are written in plain sentences and land on the line.
 - **Word documents as Word.** A `.docx` opens on Word-faithful pages with styles, comments and tracked changes, and is saved back as `.docx`. Convert it to LaTeX only when you choose to.
 - **Bring your own agent.** Claude Code, Codex, Cursor, Grok or OpenCode, on the subscription you already have and with no API key. Each run works on its own copy of the paper (a Git worktree) and hands back a diff you accept hunk by hunk.

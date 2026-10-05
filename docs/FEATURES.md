@@ -6,6 +6,7 @@ The README is the short version. This page is the complete list, kept as it grew
 
 Builds for macOS (one signed and notarised universal DMG), Windows 11 and Linux (tested on Ubuntu 22.04). Open a folder, an Overleaf zip or a GitHub repo, and:
 
+- Open a single .tex, .typ or .docx on its own, without its folder, and make it a project when you want history and agents
 - Write in Word too, where a .docx is a paper of its own, edited on Word-faithful pages with styles, comments and tracked changes and saved back to the .docx, or turned into a LaTeX paper when you choose (citations from Zotero, Mendeley and EndNote become `\cite` with a `refs.bib`)
 - Edit the paper visually or as source in one buffer
 - Compile with Tectonic
