@@ -32,6 +32,18 @@ Pass rates per vendor are the artifact that matters; publish them with a release
 
 Running several providers at once is fine (each task works in its own temp copy), but build the test binary once first (`cargo test --no-run`) and start the runs from that binary, or the second `cargo test` will wait on the build lock and may rewrite the binary under the first.
 
+## Results, 2026-10-05: dabir-check instead of compiling
+
+Agents were told to compile before finishing; now they run `dabir-check` (a few milliseconds: braces, environments, refs, cite keys, missing files) after a structural LaTeX change, skip it after wording, and compile only for build requests, while the app compiles their version when the run ends. Grok 1.0.41, full suite, one run before (main at 0.2.2) and two after (v1 checked after every edit; v2, shipped, only after structural edits). `check` is a new tool-call kind.
+
+| Run | Passed | Median per task | Mean, the 10 tasks that compiled before | Compiles in the suite | Checks |
+|---|---|---|---|---|---|
+| Before | 30/31 | 20.7 s | 28.3 s | 10 | 0 |
+| After v1 (check after every edit) | 30/31 | 17.2 s | 24.7 s | 2 | 29 |
+| After v2 (check after structural edits) | 31/31 | 19.4 s | 24.7 s | 4 | 13 |
+
+Where the compile was most of the work the time halves (10-broken-ref 24 s → 12 s, 24-mf-broken-cref 34 s → 18–20 s); the vague task, which timed out before, passes. Elsewhere the paired median difference is under a second either way: v1's check after a wording edit cost an extra model turn, which is why v2 skips it. Means are not a fair summary of a single run: each run had one to three 100 s+ tasks from the model's response time (19-stale-claim-note took 39 s, 51 s and 159 s with no check in it). Claude Code was not run: its sign-in on the machine had expired.
+
 ## Results, 2026-09-12, evening: files by role and deny rules
 
 The preamble's file list is grouped by role (manuscript with main first, bibliography, generated artefacts with their command, code, figures, data, other), and Claude and Grok runs carry a deny list for the tools the prompt makes redundant (`git log/status/diff/show/branch/stash/checkout/reset`, `tree`; Claude `--disallowedTools`, Grok `--deny`). Full suites, one CLI at a time:

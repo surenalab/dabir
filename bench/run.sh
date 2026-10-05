@@ -13,4 +13,6 @@ for k in $(env | sed -n 's/^\(CLAUDE_CODE_[^=]*\)=.*/\1/p'); do unset "$k"; done
 export DABIR_LIVE_PROVIDER="$provider"
 export CARGO_TARGET_DIR=target/test
 if [[ -n "$task" ]]; then export DABIR_BENCH_TASK="$task"; else unset DABIR_BENCH_TASK || true; fi
+# The app binary, for the dabir-check the bench puts on the agents' PATH as the app does.
+cargo build --bin dabir
 cargo test agent_bench -- --ignored --nocapture
