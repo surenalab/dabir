@@ -47,9 +47,7 @@ pub fn synctex_path(main_tex: &Path) -> PathBuf {
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or("main".into());
-    root.join(".dabir")
-        .join("build")
-        .join(format!("{}.synctex.gz", stem))
+    crate::single::build_dir(root).join(format!("{}.synctex.gz", stem))
 }
 
 pub fn load(path: &Path) -> Result<SyncTex, String> {

@@ -16,6 +16,7 @@ mod paper;
 mod refs;
 mod relay;
 mod setup;
+mod single;
 mod spawn;
 mod synctex;
 mod templates;
@@ -68,6 +69,9 @@ pub struct Project {
     pub tree_truncated: bool,
     /// Where the code runs when `dabir.toml [remote]` names a host.
     pub remote: Option<memory::Remote>,
+    /// Opened through one file rather than a folder: the tree lists only what the paper reads, nothing is
+    /// written into the folder, and history and agents wait until the paper is made a project.
+    pub single: bool,
 }
 
 /// The most files the sidebar tree will list. A paper has hundreds; a home folder has hundreds of thousands.
@@ -392,6 +396,9 @@ fn session_materialize(name: String, files: Vec<SnapFile>) -> Result<String, Str
 #[tauri::command]
 fn open_project(path: String, main: Option<String>) -> Result<Project, String> {
     let root = PathBuf::from(&path);
+    if root.is_file() {
+        return open_single(&root);
+    }
     if !root.is_dir() {
         return Err(format!("{} is not a folder", path));
     }
@@ -415,7 +422,125 @@ fn open_project(path: String, main: Option<String>) -> Result<Project, String> {
         tree,
         tree_truncated: budget == 0,
         remote: memory::remote(&root),
+        single: false,
     })
+}
+
+/// The manuscripts Dabir opens on their own: LaTeX, Typst and Word.
+fn is_manuscript(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| matches!(e.to_ascii_lowercase().as_str(), "tex" | "typ" | "docx"))
+}
+
+/// A paper opened through one file: its folder is the root, but the tree holds only the files the paper reads.
+fn open_single(main: &Path) -> Result<Project, String> {
+    if !is_manuscript(main) {
+        return Err(format!(
+            "{} is not a .tex, .typ or .docx file",
+            main.display()
+        ));
+    }
+    let root = main.parent().ok_or("The file has no folder")?.to_path_buf();
+    single::register(&root);
+    let mut tree: Vec<Entry> = vec![];
+    for f in single::files(&root, main) {
+        let rel = f.strip_prefix(&root).unwrap_or(&f).to_path_buf();
+        insert_entry(&mut tree, &root, &rel);
+    }
+    Ok(Project {
+        root: root.to_string_lossy().to_string(),
+        name: main
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "Untitled".into()),
+        main_tex: Some(main.to_string_lossy().to_string()),
+        has_git: false,
+        has_memory: false,
+        tree,
+        tree_truncated: false,
+        remote: None,
+        single: true,
+    })
+}
+
+/// Put `rel` (a file under `root`) into a tree of entries, making its folders on the way.
+fn insert_entry(tree: &mut Vec<Entry>, root: &Path, rel: &Path) {
+    let parts: Vec<_> = rel.components().collect();
+    let mut level = tree;
+    let mut at = root.to_path_buf();
+    for (i, c) in parts.iter().enumerate() {
+        at = at.join(c);
+        let name = c.as_os_str().to_string_lossy().to_string();
+        let last = i + 1 == parts.len();
+        let pos = match level.iter().position(|e| e.name == name) {
+            Some(p) => p,
+            None => {
+                level.push(Entry {
+                    name,
+                    path: at.to_string_lossy().to_string(),
+                    kind: if last { classify(&at) } else { EntryKind::Dir },
+                    children: vec![],
+                });
+                level.len() - 1
+            }
+        };
+        level = &mut level[pos].children;
+    }
+}
+
+/// File › Make Paper a Project: the file opened on its own and what it reads, copied into a new folder
+/// `parent/name` and set up as New Paper sets one up (Git, a first commit, the memory scaffold). The
+/// original is left where it was. Returns the new folder.
+#[tauri::command]
+fn make_project(main: String, parent: String, name: String) -> Result<String, String> {
+    let dest = PathBuf::from(&parent).join(paper_folder_name(&name)?);
+    single::copy_into(Path::new(&main), &dest)?;
+    if let Err(e) = scaffold_paper(&dest, "Paper made a project in Dabir") {
+        let _ = fs::remove_dir_all(&dest);
+        return Err(e);
+    }
+    Ok(dest.to_string_lossy().to_string())
+}
+
+/// Files the system asked Dabir to open before the window was ready to hear it (a double-click that
+/// launched the app); the front end takes them once it has loaded.
+static OPENED: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+/// Set once the front end has taken the queue; from then on files go to it as events.
+static OPEN_READY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[tauri::command]
+fn take_opened() -> Vec<String> {
+    OPEN_READY.store(true, std::sync::atomic::Ordering::SeqCst);
+    std::mem::take(&mut *OPENED.lock().unwrap())
+}
+
+/// A file or folder the system asked Dabir to open: queued for a front end that has not loaded yet, and sent
+/// as `open-path` to one that has.
+fn hand_over(app: &AppHandle, path: PathBuf) {
+    if !(path.is_dir() || (path.is_file() && is_manuscript(&path))) {
+        return;
+    }
+    let p = path.to_string_lossy().to_string();
+    if OPEN_READY.load(std::sync::atomic::Ordering::SeqCst) {
+        let _ = app.emit("open-path", p);
+    } else {
+        OPENED.lock().unwrap().push(p);
+    }
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.show();
+        let _ = w.set_focus();
+    }
+}
+
+/// Paths among a launch's arguments (Windows and Linux pass a double-clicked file this way; flags and
+/// `dabir://` links are not paths).
+fn path_args(argv: &[String], cwd: &Path) -> Vec<PathBuf> {
+    argv.iter()
+        .filter(|a| !a.starts_with('-') && !a.contains("://"))
+        .map(|a| cwd.join(a))
+        .filter(|p| p.exists())
+        .collect()
 }
 
 #[tauri::command]
@@ -425,6 +550,15 @@ fn read_text(path: String) -> Result<String, String> {
 
 #[tauri::command]
 fn write_text(path: String, contents: String) -> Result<(), String> {
+    // Comments, tracked changes and the paper's dictionary go to `.dabir/` when the author makes the first one;
+    // a paper opened through one file, or a folder never compiled, has no `.dabir/` yet.
+    let p = Path::new(&path);
+    if let Some(dir) = p
+        .parent()
+        .filter(|d| d.file_name().is_some_and(|n| n == ".dabir") && !d.exists())
+    {
+        fs::create_dir_all(dir).map_err(|e| format!("Could not save {}: {}", path, e))?;
+    }
     fs::write(&path, contents).map_err(|e| format!("Could not save {}: {}", path, e))
 }
 
@@ -779,7 +913,7 @@ fn compile(app: AppHandle, main_tex: String) -> Result<CompileResult, String> {
     let root = main
         .parent()
         .ok_or("The main .tex file has no parent folder")?;
-    let outdir = root.join(".dabir").join("build");
+    let outdir = single::build_dir(root);
     fs::create_dir_all(&outdir).map_err(|e| e.to_string())?;
     if main.extension().map(|e| e == "typ").unwrap_or(false) {
         return compile_typst(&app, &main, root, &outdir);
@@ -2657,7 +2791,7 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
                 .build(app)?,
         )
         .item(
-            &MenuItemBuilder::with_id("open-word", "Open Word Document…")
+            &MenuItemBuilder::with_id("open-file", "Open File…")
                 .accelerator(if cfg!(target_os = "macos") {
                     "Alt+Cmd+O"
                 } else {
@@ -2688,6 +2822,7 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
                 .accelerator("CmdOrCtrl+S")
                 .build(app)?,
         )
+        .item(&MenuItemBuilder::with_id("make-project", "Make Paper a Project…").build(app)?)
         .item(
             &MenuItemBuilder::with_id("close-paper", "Close Paper")
                 .accelerator("CmdOrCtrl+Shift+W")
@@ -2984,11 +3119,15 @@ pub fn run() {
     // the URL to the running app itself.
     #[cfg(desktop)]
     {
-        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
             use tauri::Manager;
             if let Some(w) = app.get_webview_window("main") {
                 let _ = w.show();
                 let _ = w.set_focus();
+            }
+            // A file double-clicked while Dabir runs (Windows, Linux): the second launch's arguments.
+            for p in path_args(argv.get(1..).unwrap_or(&[]), Path::new(&cwd)) {
+                hand_over(app, p);
             }
         }));
     }
@@ -3021,6 +3160,13 @@ pub fn run() {
             }
             if let Some(dir) = setup::init(app.handle()) {
                 agents::register_tool_dir(dir);
+            }
+            // A file that launched Dabir on Windows or Linux arrives as an argument.
+            let argv: Vec<String> = std::env::args().skip(1).collect();
+            if let Ok(cwd) = std::env::current_dir() {
+                for p in path_args(&argv, &cwd) {
+                    hand_over(app.handle(), p);
+                }
             }
             append_ui_log(
                 app.handle(),
@@ -3124,10 +3270,23 @@ pub fn run() {
             memory_read,
             memory_setup,
             provenance_rerun,
-            context_pack
+            context_pack,
+            make_project,
+            take_opened
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Dabir");
+        .build(tauri::generate_context!())
+        .expect("error while building Dabir")
+        .run(|_app, _event| {
+            // macOS hands a double-clicked file (or one dropped on the Dock icon) to the running app.
+            #[cfg(any(target_os = "macos", target_os = "ios"))]
+            if let tauri::RunEvent::Opened { urls } = _event {
+                for u in urls {
+                    if let Ok(p) = u.to_file_path() {
+                        hand_over(_app, p);
+                    }
+                }
+            }
+        });
 }
 
 #[cfg(test)]

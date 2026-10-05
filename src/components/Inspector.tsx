@@ -303,6 +303,8 @@ interface Props {
   tabRequest?: { tab: Tab; stamp: number } | null;
   onProviderReady: (ready: boolean) => void;
   onSetup: () => void;
+  /** File › Make Paper a Project, for a paper opened through one file. */
+  onMakeProject: () => void;
   onChanged: () => void;         // git status or files changed; reloads the open buffer from disk
   /** Writes the open buffer to disk when it is dirty, so a run starts from, and Accept lands on, what the author sees. */
   onBeforeRun: () => Promise<void>;
@@ -336,7 +338,7 @@ export interface ReviewHandle {
   reject: () => void;
 }
 
-export function Inspector({ project, gitRepo, askFocus, prefill, tabRequest, onProviderReady, onSetup, onChanged, onBeforeRun, onOpenFile, onNote, live, peers, following, onJumpPeer, onFollowPeer, comments, currentFile, hasSelection, focus, onAddComment, onResolveComment, onReplyComment, onRemoveComment, onJumpComment, onShare, autoRun, changes, suggesting, onToggleSuggesting, onResolveChanges, onJumpChange, onReview, history, historyBusy, onRestoreStep, onUndoStep, historyFocus }: Props) {
+export function Inspector({ project, onMakeProject, gitRepo, askFocus, prefill, tabRequest, onProviderReady, onSetup, onChanged, onBeforeRun, onOpenFile, onNote, live, peers, following, onJumpPeer, onFollowPeer, comments, currentFile, hasSelection, focus, onAddComment, onResolveComment, onReplyComment, onRemoveComment, onJumpComment, onShare, autoRun, changes, suggesting, onToggleSuggesting, onResolveChanges, onJumpChange, onReview, history, historyBusy, onRestoreStep, onUndoStep, historyFocus }: Props) {
   const [commentDraft, setCommentDraft] = useState("");
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [replyDraft, setReplyDraft] = useState("");
@@ -547,6 +549,13 @@ export function Inspector({ project, gitRepo, askFocus, prefill, tabRequest, onP
           {current?.installed && signedIn === false && (
             <p className="composer-note warn" role="status"><TriangleAlert aria-hidden /><span>{current.label} is installed but not signed in; a message to it would fail. <button className="link" onClick={onSetup}>Sign in…</button></span></p>
           )}
+          {project?.single ? (
+            <div className="single-offer">
+              <p className="composer-note">This file is open on its own, so Dabir has written nothing into its folder. An agent works on a copy of the paper and hands back a diff, and History keeps every step; both need the paper in a folder of its own, with Git.</p>
+              <button className="btn primary" onClick={onMakeProject}>Make This a Project…</button>
+              <p className="composer-note">Copies this file and the files it reads into a new folder, sets up Git and memory, and opens it there. The original stays where it is.</p>
+            </div>
+          ) : (<>
           <div className="composer">
             <textarea ref={textarea}
               placeholder={project ? (run.phase === "review" && run.diff && run.diff.changes.length > 0 ? "Ask for more on top of these changes…" : current?.installed ? `Ask ${current.label} to change the paper or rerun an experiment…` : "Choose an installed agent first") : "Open a paper first"}
@@ -630,12 +639,18 @@ export function Inspector({ project, gitRepo, askFocus, prefill, tabRequest, onP
               ? "The agent works on a copy of the paper as it is now. It reads the Word document and can change the code and data beside it; it does not edit the .docx itself yet. When it finishes, review its changes, then Accept (lands them and takes a snapshot), Reject, or open a pull request."
               : <>The agent works on a copy of the paper as it is now. When it finishes, the document shows its version with the changes marked and Dabir compiles it; then Accept (lands the change and takes a snapshot), Reject, or open a pull request.</>}{gitRepo ? "" : " This folder is not a Git repository yet; the first run makes it one, with your files left uncommitted."}</p>
           )}
+          </>)}
         </div>
       )}
 
       {tab === "memory" && (
         <div className="inspector-body">
-          {!project ? <p className="memory-note">Open a paper to see its memory.</p> : !memory?.brief ? (
+          {!project ? <p className="memory-note">Open a paper to see its memory.</p> : project.single ? (
+            <>
+              <p className="memory-note">Memory lives in the paper&rsquo;s folder, in <code>.dabir/</code>, and this file is open on its own. Make it a project to give it a brief, playbooks and a record of accepted runs.</p>
+              <button className="btn" onClick={onMakeProject}>Make This a Project…</button>
+            </>
+          ) : !memory?.brief ? (
             <>
               <p className="memory-note">This paper has no memory yet. Dabir can draft <code>.dabir/PROJECT.md</code> from the manuscript, add a provenance file, and write pointer files so Claude Code, Codex and Cursor all read the same brief.</p>
               <div className="actions"><button className="btn primary" onClick={setup}>Set Up Memory</button></div>

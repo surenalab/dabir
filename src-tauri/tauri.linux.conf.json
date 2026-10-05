@@ -1,19 +1,4 @@
 {
-  "app": {
-    "windows": [
-      {
-        "title": "Dabir",
-        "width": 1320,
-        "height": 860,
-        "minWidth": 1040,
-        "minHeight": 600,
-        "titleBarStyle": "Overlay",
-        "hiddenTitle": true,
-        "transparent": true
-      }
-    ],
-    "macOSPrivateApi": false
-  },
   "bundle": {
     "fileAssociations": [
       {

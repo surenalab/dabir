@@ -528,6 +528,39 @@ pub fn check(root: &Path, main: &Path) -> Vec<Finding> {
     out
 }
 
+/// Every file the paper reads besides `main`: its `\\input`s, the images it includes and its bibliography
+/// files, as they resolve on disk. Files that do not exist are left out (`check` reports them).
+pub fn referenced(root: &Path, main: &Path) -> Vec<PathBuf> {
+    let mut p = Paper::default();
+    p.walk(root, main, 0);
+    let mut out: Vec<PathBuf> = p
+        .seen
+        .iter()
+        .filter(|f| f.as_path() != main)
+        .cloned()
+        .collect();
+    for b in &p.bib_files {
+        let f = root.join(b);
+        if f.is_file() {
+            out.push(f);
+        }
+    }
+    let mut dirs: Vec<PathBuf> = vec![root.to_path_buf()];
+    dirs.extend(p.graphic_dirs.iter().map(|d| root.join(d)));
+    for (g, _, _) in &p.graphics {
+        if let Some(f) = dirs
+            .iter()
+            .flat_map(|d| GRAPHIC_EXTS.iter().map(move |e| d.join(format!("{g}{e}"))))
+            .find(|f| f.is_file())
+        {
+            out.push(f);
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
 /// The paper's main file under `root`: `main = ` in `dabir.toml`, else `main.tex`, else the one `.tex`
 /// at the top level with a `\documentclass`.
 pub fn find_main(root: &Path) -> Option<PathBuf> {

@@ -86,10 +86,7 @@ fn is_residue(p: &Path) -> bool {
 }
 
 fn build_dir(main: &Path) -> PathBuf {
-    main.parent()
-        .unwrap_or(Path::new("."))
-        .join(".dabir")
-        .join("build")
+    crate::single::build_dir(main.parent().unwrap_or(Path::new(".")))
 }
 
 /// The last compile's PDF, copied to `dest`.
