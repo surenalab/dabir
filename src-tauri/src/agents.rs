@@ -981,6 +981,11 @@ pub fn explain_failure(p: &Provider, output: &str, code: Option<i32>) -> String 
         "login required",
         "requires login",
         "credentials",
+        // Claude Code when its stored sign-in has lapsed: "Failed to authenticate: OAuth session expired and
+        // could not be refreshed". Its stream also carries rate-limit events, so without these the message was
+        // read as a usage limit.
+        "failed to authenticate",
+        "session expired",
     ];
     let quota = [
         "rate limit",
@@ -1264,6 +1269,15 @@ mod tests {
             assert!(m.contains("not signed in"), "{out} → {m}");
             assert!(m.contains("claude auth login"), "{m}");
         }
+    }
+
+    #[test]
+    fn an_expired_sign_in_is_not_called_a_usage_limit() {
+        let p = claude();
+        let out = "{\"type\":\"rate_limit_event\",\"rate_limit_info\":{\"status\":\"allowed\"}}\nFailed to authenticate: OAuth session expired and could not be refreshed";
+        let m = explain_failure(&p, out, Some(1));
+        assert!(m.contains("sign-in expired"), "{m}");
+        assert!(!m.contains("usage limit"), "{m}");
     }
 
     #[test]

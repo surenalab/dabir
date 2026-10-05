@@ -653,7 +653,7 @@ const SKILLS: &[SkillDef] = &[
     SkillDef {
         name: "rerun-experiment",
         desc: "Regenerate a figure or table by rerunning the command that produced it, then update every number in the text that came from it.",
-        body: "1. Find the artefact in `.dabir/PROJECT.md` → Generated artefacts, or `dabir.toml [provenance]`. Use the recorded command, prefixed with the env prefix from `dabir.toml [env]` if present.\n2. Run it from the repo root. If it fails, fix the cause in the code, never by editing the output by hand.\n3. Search the manuscript for numbers that came from this artefact (captions, `\\input` tables, inline claims). Update each one from the new output.\n4. Run `dabir-check` (milliseconds); Dabir compiles the paper when you finish. Report the old and new numbers in your final message.\n5. Update `producedAt` and `commit` for the artefact in `.dabir/provenance.json`.",
+        body: "1. Find the artefact in `.dabir/PROJECT.md` → Generated artefacts, or `dabir.toml [provenance]`. Use the recorded command, prefixed with the env prefix from `dabir.toml [env]` if present.\n2. Run it from the repo root. If it fails, fix the cause in the code, never by editing the output by hand.\n3. Search the manuscript for numbers that came from this artefact (captions, `\\input` tables, inline claims). Update each one from the new output.\n4. If you changed LaTeX beyond the numbers, run `dabir-check`; Dabir compiles the paper when you finish. Report the old and new numbers in your final message.\n5. Update `producedAt` and `commit` for the artefact in `.dabir/provenance.json`.",
         files: &[],
         previous: &[RERUN_EXPERIMENT_V1],
     },
@@ -923,7 +923,7 @@ Never hand-edit these or numbers copied from them. Rerun the command (skill: rer
             finish = if word_main.is_some() {
                 format!("- The manuscript is a Word document: never open or edit it as text. Each run gets a read-only Markdown copy under `.dabir/context/`; propose wording in the reply, the author applies it in `{}`.", main_name)
             } else {
-                "- Run `dabir-check` before you finish; Dabir compiles your version and reports any error back (skill compile-and-fix when the request is about the build).".to_string()
+                "- Do not compile to check your work: Dabir compiles your version. After changing LaTeX structure, run `dabir-check` (skill compile-and-fix when the request is about the build).".to_string()
             },
             sections = if sections.is_empty() { "(no sections found)".into() } else { sections.join(" · ") },
             repo_map = { let m = repo_map(root); if m.is_empty() { "- (no code files found)".to_string() } else { m.join("\n") } },
