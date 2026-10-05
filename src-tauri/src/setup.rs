@@ -22,7 +22,36 @@ pub fn init(app: &AppHandle) -> Option<PathBuf> {
     let dir = app.path().app_data_dir().ok()?.join("bin");
     let _ = fs::create_dir_all(&dir);
     let _ = MANAGED_BIN.set(dir.clone());
+    if let Ok(exe) = std::env::current_exe() {
+        let _ = write_check_wrapper(&dir, &exe);
+    }
     Some(dir)
+}
+
+/// `dabir-check` on the agents' PATH: a two-line script that runs this binary with `--check`, written at
+/// every launch so it follows the app when an update or a move changes where the binary lives.
+pub fn write_check_wrapper(dir: &Path, exe: &Path) -> std::io::Result<PathBuf> {
+    let exe = exe.to_string_lossy();
+    if cfg!(windows) {
+        let path = dir.join("dabir-check.cmd");
+        fs::write(&path, format!("@echo off\r\n\"{exe}\" --check %*\r\n"))?;
+        Ok(path)
+    } else {
+        let path = dir.join("dabir-check");
+        fs::write(
+            &path,
+            format!(
+                "#!/bin/sh\nexec \"{}\" --check \"$@\"\n",
+                exe.replace('"', "\\\"")
+            ),
+        )?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o755))?;
+        }
+        Ok(path)
+    }
 }
 
 pub fn managed_bin() -> Option<PathBuf> {

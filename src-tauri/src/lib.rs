@@ -5,6 +5,7 @@
 //! not ask for, except the build directory under `.dabir/build`.
 
 mod agents;
+pub mod check;
 mod export;
 mod git;
 mod github;
@@ -2297,7 +2298,7 @@ fn agent_preamble(
     // so it does not compile the paper after a code fix or rewrite a script to change a sentence.
     let mode = request_mode(prompt, focus);
     match mode {
-        RequestMode::Code => out.push_str("This request is about the code, not the manuscript. Work in the code files: run the script or its tests before and after the change (skills run-and-test, debug-failing-run, refactor-safely, notebook-to-script), and do not edit .tex, .typ or .bib files unless a figure, table or number the paper quotes changed because of your change; then update those from the new output and compile once.\n\n"),
+        RequestMode::Code => out.push_str("This request is about the code, not the manuscript. Work in the code files: run the script or its tests before and after the change (skills run-and-test, debug-failing-run, refactor-safely, notebook-to-script), and do not edit .tex, .typ or .bib files unless a figure, table or number the paper quotes changed because of your change; then update those from the new output and run `dabir-check`.\n\n"),
         RequestMode::Paper if word_paper => out.push_str("This request is about the manuscript, a Word document: read its Markdown copy and answer in your reply, with any new wording quoted there. Do not edit code, notebooks or generated artefacts unless the request asks for a rerun, in which case follow rerun-experiment and change the code that writes the artefact.\n\n"),
         RequestMode::Paper => out.push_str("This request is about the manuscript. Work in the .tex, .typ and .bib files; do not edit code, notebooks or generated artefacts unless the request asks for a rerun, in which case follow rerun-experiment and change the code that writes the artefact.\n\n"),
         RequestMode::Both => {}
@@ -2316,15 +2317,15 @@ fn agent_preamble(
     if word_paper {
         out.push_str("4. There is nothing to compile: the manuscript is a Word document. If you changed code, check it by running it (the recorded command, the tests or the script, with the env prefix if there is one). Do not install packages.\n");
     } else if mode == RequestMode::Code {
-        out.push_str("4. Check the code by running it: the recorded command, the project's tests, or the script itself, with the env prefix if there is one. Compile the paper only if you changed a manuscript file. Do not install packages, inspect PDFs or explore build folders.\n");
+        out.push_str("4. Check the code by running it: the recorded command, the project's tests, or the script itself, with the env prefix if there is one. If you changed a manuscript file, run `dabir-check` (milliseconds) rather than compiling: Dabir compiles your version when you finish. Do not install packages, inspect PDFs or explore build folders.\n");
     } else if is_typst {
         out.push_str(&format!("4. If `typst` is on PATH, compile once at the end with `typst compile {main}` and fix what it reports. Do not install anything, inspect the PDF or explore the build folder: Dabir compiles and reviews the result.\n"));
     } else {
-        out.push_str(&format!("4. Compile once at the end with `tectonic -X compile {main} --outdir .dabir/build` (tectonic is on PATH) and fix what it reports; skip this for wording-only changes. Do not install anything, inspect the PDF or explore the build folder: Dabir compiles and reviews the result.\n"));
+        out.push_str(&format!("4. Do not compile to check your work: Dabir compiles your version as soon as you finish and shows the author the result, with any error sent back to you. Instead run `dabir-check` (on PATH; it reads `{main}` and its inputs in milliseconds) and fix what it reports: unbalanced braces, mismatched environments, references with no label, citation keys not in the bibliography, missing files. Compile with `tectonic -X compile {main} --outdir .dabir/build` only when the request is about the build or its errors, or you changed the preamble, packages or macro definitions, and then once. This replaces any \"compile before you finish\" in the project brief or an older playbook. Do not install anything, inspect the PDF or explore the build folder.\n"));
     }
     out.push_str("5. Finish with two or three sentences: what you changed and, if the request was ambiguous, the reading you took.\n");
     out.push_str("\nSplitting the work\n");
-    out.push_str("Do the change yourself when it is one file or one section. A subagent is worth it only when the request has two or more pieces that do not depend on each other, such as the code that writes a figure and the sentence that quotes it. One subagent per piece, never one per file you might read, and never one to find its bearings, to read the map or to look something up. Tell each subagent the file, the line and the single change, and tell it not to search the tree or compile. You compile once after they return, and you write the report.\n");
+    out.push_str("Do the change yourself when it is one file or one section. A subagent is worth it only when the request has two or more pieces that do not depend on each other, such as the code that writes a figure and the sentence that quotes it. One subagent per piece, never one per file you might read, and never one to find its bearings, to read the map or to look something up. Tell each subagent the file, the line and the single change, and tell it not to search the tree or compile. You run `dabir-check` once after they return, and you write the report.\n");
     if playbooks.is_empty() {
         // A bibliography request still needs the check spelled out when the playbook itself is not
         // installed, since the agent would otherwise reason about entries it cannot see the truth of.
@@ -3683,6 +3684,12 @@ mod tests {
         assert!(!out.contains("Read .dabir/PROJECT.md"));
         assert!(out.contains("figures/psnr.pdf (2 KB)"), "file map: {out}");
         assert!(out.contains("tectonic -X compile main.tex"));
+        // The agent checks with dabir-check and leaves the compile to Dabir, which compiles its version.
+        assert!(
+            out.contains("Do not compile to check your work") && out.contains("run `dabir-check`"),
+            "{out}"
+        );
+        assert!(!out.contains("Compile once at the end"), "{out}");
         assert!(out.contains("do not stop to ask"));
         assert!(out.ends_with("Request\nadd a figure"));
         assert!(out.contains("Paper map"), "{out}");

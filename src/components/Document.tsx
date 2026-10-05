@@ -417,7 +417,7 @@ export function Document(p: Props) {
             {rv.working ? (
               <>{rv.label} is working on its version{rv.text != null && previewing ? "; you are reading it as it stood" : ""}.</>
             ) : rv.text != null ? (
-              <>{rv.label} changed this file{rv.files.length > 1 ? ` and ${rv.files.length - 1} other${rv.files.length > 2 ? "s" : ""}` : ""}.{previewing ? (project && fileKind(project.mainTex) === "word" ? " You are reading its version." : chord(" You are reading its version; ⌘B compiles it.")) : rv.canShow ? " Showing your version." : ""}</>
+              <>{rv.label} changed this file{rv.files.length > 1 ? ` and ${rv.files.length - 1} other${rv.files.length > 2 ? "s" : ""}` : ""}.{previewing ? (project && fileKind(project.mainTex) === "word" ? " You are reading its version." : chord(" You are reading its version, compiled as it finished; ⌘B compiles it again.")) : rv.canShow ? " Showing your version." : ""}</>
             ) : (
               <>{rv.label} changed {rv.files.slice(0, 3).map((f, i) => <span key={f}>{i ? ", " : ""}<button className="link" onClick={() => rv.onOpenFile(f)}>{f}</button></span>)}{rv.files.length > 3 ? ` and ${rv.files.length - 3} more` : ""}, not this file.</>
             )}
