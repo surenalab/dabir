@@ -2410,13 +2410,19 @@ fn agent_preamble(
         })
         .collect();
 
+    // Two parts. `stable` is the same for every request on this paper until the paper changes (the rules, the
+    // brief, the map, the files), so it goes first: Claude Code gets it as its system prompt, which the API
+    // caches between runs, and a CLI that caches the start of a prompt sees the same start each time. `out`
+    // is this run: its folder, the request's mode, playbook, findings, the author's position, the relevant
+    // lines, what happened before, and the request. `PREAMBLE_SPLIT` joins them.
+    let mut stable = String::new();
     let mut out = String::new();
-    out.push_str(&format!(
-        "You are a coauthor on a {} paper. You work in `{}`, a copy of the paper's folder in a Git worktree; your changes are reviewed hunk by hunk before they reach the author's checkout.\n",
+    stable.push_str(&format!(
+        "You are a coauthor on a {} paper. You work in a copy of the paper's folder in a Git worktree (its path is given with the request); your changes are reviewed hunk by hunk before they reach the author's checkout.\n",
         if word_paper { "Word" } else if is_typst { "Typst" } else { "LaTeX" },
-        cwd.display()
     ));
-    out.push_str("This folder is the whole task. Directories above it belong to other projects: do not read, search or edit anything outside it, and ignore instruction files (AGENTS.md, CLAUDE.md) found above it.\n\n");
+    out.push_str(&format!("Working folder: `{}`\n\n", cwd.display()));
+    stable.push_str("This folder is the whole task. Directories above it belong to other projects: do not read, search or edit anything outside it, and ignore instruction files (AGENTS.md, CLAUDE.md) found above it.\n\n");
     if !word_copies.is_empty() {
         out.push_str("Word documents\n");
         for (doc, copy) in &word_copies {
@@ -2438,28 +2444,29 @@ fn agent_preamble(
         RequestMode::Both => {}
     }
 
-    out.push_str("How to work\n");
-    out.push_str("1. This message already holds the project brief, the paper map (every section, label, figure, table, equation and macro with its file and line), the file list, the likely relevant lines, the playbook that applies and, when the last compile failed, its errors (and its warnings when the request is about building the paper). Do not list directories, search the tree, run git, or open AGENTS.md, CLAUDE.md, .dabir/PROJECT.md, .dabir/memory, .dabir/skills or .dabir/build to orient yourself; go straight to the file and line the map gives and read only the lines around it.\n");
-    out.push_str("2. Decide on one reading of the request and carry it out in one pass. If the request is short or ambiguous, choose the most useful reading given the paper as it stands and do not stop to ask. Prefer cheap paths: recorded commands, existing artefacts, TikZ or pgfplots for a schematic. No new experiments or long runs unless asked.\n");
-    out.push_str("3. Make the smallest change that does the job. Never hand-edit generated artefacts (figures, tables, numbers copied from them); rerun their recorded command instead.\n");
+    stable.push_str("How to work\n");
+    stable.push_str("1. This message already holds the project brief, the paper map (every section, label, figure, table, equation and macro with its file and line), the file list, the likely relevant lines, the playbook that applies and, when the last compile failed, its errors (and its warnings when the request is about building the paper). Do not list directories, search the tree, run git, or open AGENTS.md, CLAUDE.md, .dabir/PROJECT.md, .dabir/memory, .dabir/skills or .dabir/build to orient yourself; go straight to the file and line the map gives and read only the lines around it.\n");
+    stable.push_str("2. Decide on one reading of the request and carry it out in one pass. If the request is short or ambiguous, choose the most useful reading given the paper as it stands and do not stop to ask. Prefer cheap paths: recorded commands, existing artefacts, TikZ or pgfplots for a schematic. No new experiments or long runs unless asked.\n");
+    stable.push_str("3. Make the smallest change that does the job. Never hand-edit generated artefacts (figures, tables, numbers copied from them); rerun their recorded command instead.\n");
     if let Some(p) = &prefix {
-        out.push_str(&format!("   Run code with the prefix `{p}`.\n"));
+        stable.push_str(&format!("   Run code with the prefix `{p}`.\n"));
     }
     if let Some(r) = memory::remote(root) {
-        out.push_str(&format!("   The code runs on the host `{h}` in `{d}`, not here: run every experiment or artefact command as `ssh {h} 'cd {d} && <command>'` and copy results back with `scp {h}:{d}/<path> <path>`. The repository there is a clone of this one; push or pull before running if the code changed.\n", h = r.host, d = r.dir));
+        stable.push_str(&format!("   The code runs on the host `{h}` in `{d}`, not here: run every experiment or artefact command as `ssh {h} 'cd {d} && <command>'` and copy results back with `scp {h}:{d}/<path> <path>`. The repository there is a clone of this one; push or pull before running if the code changed.\n", h = r.host, d = r.dir));
     }
+    stable.push_str("4. Finish with two or three sentences: what you changed and, if the request was ambiguous, the reading you took. Do not reread a file or grep it to confirm an edit you just made: the author reviews the diff, and Dabir compiles it.\n");
+    out.push_str("Checking your work\n");
     if word_paper {
-        out.push_str("4. There is nothing to compile: the manuscript is a Word document. If you changed code, check it by running it (the recorded command, the tests or the script, with the env prefix if there is one). Do not install packages.\n");
+        out.push_str("There is nothing to compile: the manuscript is a Word document. If you changed code, check it by running it (the recorded command, the tests or the script, with the env prefix if there is one). Do not install packages.\n");
     } else if mode == RequestMode::Code {
-        out.push_str("4. Check the code by running it: the recorded command, the project's tests, or the script itself, with the env prefix if there is one. If you changed LaTeX structure in a manuscript file, run `dabir-check` (milliseconds) rather than compiling: Dabir compiles your version when you finish. Do not install packages, inspect PDFs or explore build folders.\n");
+        out.push_str("Check the code by running it: the recorded command, the project's tests, or the script itself, with the env prefix if there is one. If you changed LaTeX structure in a manuscript file, run `dabir-check` (milliseconds) rather than compiling: Dabir compiles your version when you finish. Do not install packages, inspect PDFs or explore build folders.\n");
     } else if is_typst {
-        out.push_str(&format!("4. If `typst` is on PATH, compile once at the end with `typst compile {main}` and fix what it reports. Do not install anything, inspect the PDF or explore the build folder: Dabir compiles and reviews the result.\n"));
+        out.push_str(&format!("If `typst` is on PATH, compile once at the end with `typst compile {main}` and fix what it reports. Do not install anything, inspect the PDF or explore the build folder: Dabir compiles and reviews the result.\n"));
     } else {
-        out.push_str(&format!("4. Do not compile to check your work: Dabir compiles your version as soon as you finish and shows the author the result, with any error sent back to you. When you changed LaTeX structure (commands, environments, braces, math, `\\label`/`\\ref`/`\\cite` keys, `\\input` or image paths), run `dabir-check` once (on PATH; it reads `{main}` and its inputs in milliseconds) and fix what it reports: unbalanced braces, mismatched environments, references with no label, citation keys not in the bibliography, missing files. After a change to wording only, finish without it. Compile with `tectonic -X compile {main} --outdir .dabir/build` only when the request is about the build or its errors, or you changed the preamble, packages or macro definitions, and then once. This replaces any \"compile before you finish\" in the project brief or an older playbook. Do not install anything, inspect the PDF or explore the build folder.\n"));
+        out.push_str(&format!("Do not compile to check your work: Dabir compiles your version as soon as you finish and shows the author the result, with any error sent back to you. When you changed LaTeX structure (commands, environments, braces, math, `\\label`/`\\ref`/`\\cite` keys, `\\input` or image paths), run `dabir-check` once (on PATH; it reads `{main}` and its inputs in milliseconds) and fix what it reports: unbalanced braces, mismatched environments, references with no label, citation keys not in the bibliography, missing files. After a change to wording only, finish without it. Compile with `tectonic -X compile {main} --outdir .dabir/build` only when the request is about the build or its errors, or you changed the preamble, packages or macro definitions, and then once. This replaces any \"compile before you finish\" in the project brief or an older playbook. Do not install anything, inspect the PDF or explore the build folder.\n"));
     }
-    out.push_str("5. Finish with two or three sentences: what you changed and, if the request was ambiguous, the reading you took.\n");
-    out.push_str("\nSplitting the work\n");
-    out.push_str("Do the change yourself when it is one file or one section. A subagent is worth it only when the request has two or more pieces that do not depend on each other, such as the code that writes a figure and the sentence that quotes it. One subagent per piece, never one per file you might read, and never one to find its bearings, to read the map or to look something up. Tell each subagent the file, the line and the single change, and tell it not to search the tree or compile. After they return you run `dabir-check` once if any of them changed LaTeX structure, and you write the report.\n");
+    stable.push_str("\nSplitting the work\n");
+    stable.push_str("Do the change yourself when it is one file or one section. A subagent is worth it only when the request has two or more pieces that do not depend on each other, such as the code that writes a figure and the sentence that quotes it. One subagent per piece, never one per file you might read, and never one to find its bearings, to read the map or to look something up. Tell each subagent the file, the line and the single change, and tell it not to search the tree or compile. After they return you run `dabir-check` once if any of them changed LaTeX structure, and you write the report.\n");
     if playbooks.is_empty() {
         // A bibliography request still needs the check spelled out when the playbook itself is not
         // installed, since the agent would otherwise reason about entries it cannot see the truth of.
@@ -2505,22 +2512,23 @@ fn agent_preamble(
     }
 
     if let Some(b) = brief {
-        out.push_str("\nProject brief (.dabir/PROJECT.md)\n");
-        out.push_str(b.trim().chars().take(2000).collect::<String>().as_str());
-        out.push('\n');
+        stable.push_str("\nProject brief (.dabir/PROJECT.md)\n");
+        stable.push_str(b.trim().chars().take(2000).collect::<String>().as_str());
+        stable.push('\n');
     } else {
-        out.push_str(&format!("\nMain file: {main}\n"));
+        stable.push_str(&format!("\nMain file: {main}\n"));
     }
     // DABIR_BENCH_BARE=1 leaves out the map, the author's position and the memory blocks, so the
     // bench can measure what they buy; the app never sets it.
     let bare = std::env::var("DABIR_BENCH_BARE").is_ok();
     if !bare && !map_text.trim().is_empty() {
-        out.push_str(if word_paper {
+        stable.push_str(if word_paper {
             "\nDocument outline (the Word headings)\n"
         } else {
             "\nPaper map\n"
         });
-        out.push_str(&map_text);
+        stable.push_str(&map_text);
+        stable.push('\n');
     }
     if let Some(f) = focus.filter(|_| !bare) {
         out.push_str("\nWhere the author is\n");
@@ -2528,22 +2536,22 @@ fn agent_preamble(
         out.push('\n');
     }
     if !bare && !facts.is_empty() {
-        out.push_str("\nDecisions on record (.dabir/memory; already applied, do not reopen)\n");
-        out.push_str(&facts.join("\n"));
-        out.push('\n');
+        stable.push_str("\nDecisions on record (.dabir/memory; already applied, do not reopen)\n");
+        stable.push_str(&facts.join("\n"));
+        stable.push('\n');
     }
     if !bare && !artefacts.is_empty() {
-        out.push_str("\nGenerated artefacts and the command that makes each (to change one, change the code that writes it and rerun the command; edit the artefact itself only when the author asks, since the next run overwrites it)\n");
-        out.push_str(&artefacts.join("\n"));
-        out.push('\n');
+        stable.push_str("\nGenerated artefacts and the command that makes each (to change one, change the code that writes it and rerun the command; edit the artefact itself only when the author asks, since the next run overwrites it)\n");
+        stable.push_str(&artefacts.join("\n"));
+        stable.push('\n');
     }
     if !files.is_empty() {
-        out.push_str("\nFiles, by role (path, size)\n");
-        out.push_str(&files.join("\n"));
+        stable.push_str("\nFiles, by role (path, size)\n");
+        stable.push_str(&files.join("\n"));
         if files.iter().map(|g| g.lines().count() - 1).sum::<usize>() >= 80 {
-            out.push_str("\n(more files not listed)");
+            stable.push_str("\n(more files not listed)");
         }
-        out.push('\n');
+        stable.push('\n');
     }
     if !pack.is_empty() {
         out.push_str("\nLikely relevant places (path:lines)\n");
@@ -2571,7 +2579,7 @@ fn agent_preamble(
     }
     out.push_str("\n---\nRequest\n");
     out.push_str(prompt);
-    out
+    format!("{stable}{}{out}", agents::PREAMBLE_SPLIT)
 }
 
 #[tauri::command]
@@ -3291,6 +3299,66 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_file_opened_on_its_own_shows_what_it_reads_and_becomes_a_project_beside_it() {
+        let root = std::env::temp_dir().join(format!("dabir-open-one-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(root.join("sections")).unwrap();
+        fs::write(
+            root.join("talk.tex"),
+            "\\documentclass{article}\n\\begin{document}\n\\input{sections/one}\n\\end{document}\n",
+        )
+        .unwrap();
+        fs::write(root.join("sections/one.tex"), "One.\n").unwrap();
+        fs::write(root.join("other.tex"), "\\documentclass{article}").unwrap();
+        fs::write(root.join("holiday.jpg"), "x").unwrap();
+
+        let p = open_project(root.join("talk.tex").to_string_lossy().to_string(), None).unwrap();
+        assert!(p.single && !p.has_git && !p.has_memory);
+        assert_eq!(
+            p.main_tex.as_deref(),
+            Some(root.join("talk.tex").to_string_lossy().as_ref())
+        );
+        let names: Vec<&str> = p.tree.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(
+            names,
+            ["talk.tex", "sections"],
+            "only what the paper reads, main first"
+        );
+        assert_eq!(p.tree[1].children[0].name, "one.tex");
+        assert!(
+            open_project(root.join("holiday.jpg").to_string_lossy().to_string(), None).is_err()
+        );
+        // A folder opened as a folder is unchanged.
+        assert!(
+            !open_project(root.to_string_lossy().to_string(), None)
+                .unwrap()
+                .single
+        );
+
+        let dest = make_project(
+            root.join("talk.tex").to_string_lossy().to_string(),
+            root.to_string_lossy().to_string(),
+            "talk paper".into(),
+        )
+        .unwrap();
+        let dest = PathBuf::from(dest);
+        assert_eq!(dest, root.join("talk-paper"));
+        assert!(dest.join("talk.tex").is_file() && dest.join("sections/one.tex").is_file());
+        assert!(!dest.join("other.tex").exists() && !dest.join("holiday.jpg").exists());
+        assert!(dest.join(".git").exists() && dest.join(".dabir/PROJECT.md").exists());
+        assert!(
+            !root.join(".dabir").exists(),
+            "nothing was written beside the original"
+        );
+        let reopened = open_project(dest.to_string_lossy().to_string(), None).unwrap();
+        assert!(!reopened.single && reopened.has_git);
+        assert_eq!(
+            reopened.main_tex.as_deref(),
+            Some(dest.join("talk.tex").to_string_lossy().as_ref())
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
     /// A repository for a test: `git::init` plus `core.autocrlf=false`, so the files the test writes
     /// with `\n` come back with `\n` on a Windows machine whose global Git config converts line endings.
     fn init_repo(dir: &Path) {
