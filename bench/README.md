@@ -34,15 +34,19 @@ Running several providers at once is fine (each task works in its own temp copy)
 
 ## Results, 2026-10-05: dabir-check instead of compiling
 
-Agents were told to compile before finishing; now they run `dabir-check` (a few milliseconds: braces, environments, refs, cite keys, missing files) after a structural LaTeX change, skip it after wording, and compile only for build requests, while the app compiles their version when the run ends. Grok 1.0.41, full suite, one run before (main at 0.2.2) and two after (v1 checked after every edit; v2, shipped, only after structural edits). `check` is a new tool-call kind.
+Agents were told to compile before finishing; now they run `dabir-check` (a few milliseconds: braces, environments, refs, cite keys, missing files) after a structural LaTeX change, skip it after wording, and compile only for build requests, while the app compiles their version when the run ends. Grok 1.0.41 and Claude Code 2.1.267, full suite, one run before (main at 0.2.2) and two after (v1 checked after every edit; v2, shipped, only after structural edits). `check` is a new tool-call kind.
 
 | Run | Passed | Median per task | Mean, the 10 tasks that compiled before | Compiles in the suite | Checks |
 |---|---|---|---|---|---|
-| Before | 30/31 | 20.7 s | 28.3 s | 10 | 0 |
-| After v1 (check after every edit) | 30/31 | 17.2 s | 24.7 s | 2 | 29 |
-| After v2 (check after structural edits) | 31/31 | 19.4 s | 24.7 s | 4 | 13 |
+| Grok, before | 30/31 | 20.7 s | 28.3 s | 10 | 0 |
+| Grok, after v1 (check after every edit) | 30/31 | 17.2 s | 24.7 s | 2 | 29 |
+| Grok, after v2 (check after structural edits) | 31/31 | 19.4 s | 24.7 s | 4 | 13 |
+| Claude Code, before (2026-10-06) | 31/31 | 17.6 s | | 12 | 0 |
+| Claude Code, after, with the stable preamble as a cached system prompt | 31/31 | 15.3 s | | 3 | 4 |
 
-Where the compile was most of the work the time halves (10-broken-ref 24 s → 12 s, 24-mf-broken-cref 34 s → 18–20 s); the vague task, which timed out before, passes. Elsewhere the paired median difference is under a second either way: v1's check after a wording edit cost an extra model turn, which is why v2 skips it. Means are not a fair summary of a single run: each run had one to three 100 s+ tasks from the model's response time (19-stale-claim-note took 39 s, 51 s and 159 s with no check in it). Claude Code was not run: its sign-in on the machine had expired.
+Claude Code also made fewer calls per task (2.90 → 2.32) and fewer orientation calls in the suite (22 → 7); 19 of 31 tasks were faster, and the time to the first tool call did not change (median 6.3 s → 6.5 s). Its means are not comparable: two tasks in the after run waited 124 s and 162 s for the model's first word and then finished in under 20 s, as one task in the before run waited 88 s.
+
+Where the compile was most of the work the time halves (10-broken-ref 24 s → 12 s, 24-mf-broken-cref 34 s → 18–20 s); the vague task, which timed out before, passes. Elsewhere the paired median difference is under a second either way: v1's check after a wording edit cost an extra model turn, which is why v2 skips it. Means are not a fair summary of a single run: each run had one to three 100 s+ tasks from the model's response time (19-stale-claim-note took 39 s, 51 s and 159 s with no check in it). 
 
 ## Results, 2026-09-12, evening: files by role and deny rules
 
