@@ -488,7 +488,19 @@ fn deny_args(id: &str, rules: &[String]) -> Vec<String> {
     }
 }
 
+/// Between the part of a run's prompt that is the same for every request on a paper (rules, brief, map,
+/// files) and the part that is this run's. Claude Code gets the first part as `--append-system-prompt`,
+/// which the API caches between runs, so a follow-up request reads the paper's context from the cache
+/// instead of sending it again; the other CLIs get the two parts joined, the stable part first.
+pub const PREAMBLE_SPLIT: &str = "\n\n\u{1e}dabir-run\u{1e}\n\n";
+
 fn args_for(id: &str, prompt: &str, cwd: &Path, steer: &Steer) -> Vec<String> {
+    let (system, prompt) = match prompt.split_once(PREAMBLE_SPLIT) {
+        Some((stable, run)) if id == "claude" => (Some(stable.to_string()), run.to_string()),
+        Some((stable, run)) => (None, format!("{stable}\n{run}")),
+        None => (None, prompt.to_string()),
+    };
+    let prompt = prompt.as_str();
     let cwd_s = cwd.to_string_lossy().to_string();
     let deny = deny_args(id, &deny_rules(cwd));
     let mut args: Vec<String> = match id {
@@ -533,6 +545,9 @@ fn args_for(id: &str, prompt: &str, cwd: &Path, steer: &Steer) -> Vec<String> {
     // Steering flags go before the positional prompt where the CLI takes one.
     match id {
         "claude" => {
+            if let Some(sys) = &system {
+                args.extend(["--append-system-prompt".into(), sys.clone()]);
+            }
             if let Some(m) = steer.model() {
                 args.extend(["--model".into(), m.into()]);
             }
@@ -1269,6 +1284,31 @@ mod tests {
             assert!(m.contains("not signed in"), "{out} → {m}");
             assert!(m.contains("claude auth login"), "{m}");
         }
+    }
+
+    #[test]
+    fn claude_gets_the_stable_preamble_as_a_cached_system_prompt_and_others_get_it_inline() {
+        let prompt = format!("rules and map{PREAMBLE_SPLIT}Request\nfix it");
+        let steer = Steer {
+            model: None,
+            effort: None,
+        };
+        let c = args_for("claude", &prompt, Path::new("/tmp/w"), &steer);
+        let at = c
+            .iter()
+            .position(|a| a == "--append-system-prompt")
+            .expect("system prompt");
+        assert_eq!(c[at + 1], "rules and map");
+        assert_eq!(
+            c[c.iter().position(|a| a == "-p").unwrap() + 1],
+            "Request\nfix it"
+        );
+        let g = args_for("grok", &prompt, Path::new("/tmp/w"), &steer);
+        assert!(
+            g.iter().any(|a| a == "rules and map\nRequest\nfix it"),
+            "{g:?}"
+        );
+        assert!(!g.iter().any(|a| a.contains('\u{1e}')));
     }
 
     #[test]
