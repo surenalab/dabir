@@ -428,9 +428,13 @@ export function Inspector({ project, onMakeProject, gitRepo, askFocus, prefill, 
   }, [provider, current?.installed]);
   const steerLabel = [model ? (modelOpts?.models.find((m) => m.id === model)?.label ?? model) : null, effort ? (EFFORT_LABEL[effort] ?? effort).toLowerCase() + " effort" : null].filter(Boolean).join(" · ");
 
+  // A run takes a moment to start (the worktree is made and seeded first); ⌘↩ held down or pressed again in that
+  // moment must not start a second run. One run once started 25 copies of a folder this way.
+  const starting = useRef(false);
   const send = async () => {
     const prompt = draft.trim();
-    if (!prompt || !project || run.phase === "running") return;
+    if (!prompt || !project || run.phase === "running" || starting.current) return;
+    starting.current = true;
     try {
       await onBeforeRun();
       // Asking again while a run is under review continues that run: same worktree, its changes kept.
@@ -446,6 +450,8 @@ export function Inspector({ project, onMakeProject, gitRepo, askFocus, prefill, 
       // A run that failed to start may still have initialised the repository first (a signed-out agent, say):
       // the sidebar should show the state the folder is in now.
       onNote(String(e)); onChanged();
+    } finally {
+      starting.current = false;
     }
   };
 

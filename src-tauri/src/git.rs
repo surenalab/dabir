@@ -212,10 +212,92 @@ pub enum Ensured {
 /// commit holds no files: the worktree seeding carries the folder's contents into the run as its own
 /// base, so nothing of the user's is committed on their behalf and the sidebar keeps showing every
 /// file as uncommitted until they choose to commit.
+/// More files than a paper's folder ever holds; past this, a folder is a general one (Downloads, a home folder).
+const PAPER_FILES_MAX: usize = 3000;
+
+/// Why `root` is a folder Dabir must not make into a repository or copy for an agent, if it is one: the home
+/// folder and the folders in it that hold everything (Downloads, Desktop, Documents, Library), or, for a folder
+/// with no repository yet, one with more files than a paper has. Opening ~/Downloads as a paper and asking an
+/// agent once made Downloads a repository, and each run then copied its 11 GB working copy.
+pub fn general_folder(root: &Path, counting: bool) -> Option<String> {
+    let name = root.display().to_string();
+    if let Some(home) = crate::spawn::home_dir() {
+        let general = root == home
+            || [
+                "Downloads",
+                "Desktop",
+                "Documents",
+                "Library",
+                "Pictures",
+                "Movies",
+                "Music",
+            ]
+            .iter()
+            .any(|d| root == home.join(d));
+        if general {
+            return Some(format!("{name} is a general folder, not a paper's"));
+        }
+    }
+    if root.parent().is_none() {
+        return Some(format!("{name} is the top of the disk"));
+    }
+    if counting {
+        fn count(dir: &Path, n: &mut usize, depth: usize) {
+            if depth > 8 || *n > PAPER_FILES_MAX {
+                return;
+            }
+            let Ok(rd) = std::fs::read_dir(dir) else {
+                return;
+            };
+            for e in rd.flatten() {
+                let file_name = e.file_name();
+                let nm = file_name.to_string_lossy();
+                if nm.starts_with('.') || nm == "node_modules" || nm == "target" {
+                    continue;
+                }
+                *n += 1;
+                if *n > PAPER_FILES_MAX {
+                    return;
+                }
+                if e.file_type().is_ok_and(|t| t.is_dir()) {
+                    count(&e.path(), n, depth + 1);
+                }
+            }
+        }
+        let mut n = 0;
+        count(root, &mut n, 0);
+        if n > PAPER_FILES_MAX {
+            return Some(format!(
+                "{name} holds more than {PAPER_FILES_MAX} files, more than a paper's folder"
+            ));
+        }
+    }
+    None
+}
+
+fn refuse_general(why: String) -> String {
+    format!("{why}, so Dabir will not make it a Git repository or copy it for an agent. Open the paper's own folder, or open the paper's file on its own (File › Open File…) and choose Make Paper a Project.")
+}
+
 pub fn ensure_repo(root: &Path) -> Result<Ensured, String> {
     let (repo, created) = match Repository::discover(root) {
-        Ok(r) => (r, false),
-        Err(_) => (Repository::init(root).map_err(|e| e.to_string())?, true),
+        Ok(r) => {
+            // An existing repository is fine unless it is a general folder: a repository at ~/Downloads (which an
+            // earlier Dabir could make) would have every run copy all of Downloads.
+            if let Some(why) = r
+                .workdir()
+                .and_then(|w| general_folder(w.canonicalize().as_deref().unwrap_or(w), false))
+            {
+                return Err(refuse_general(why));
+            }
+            (r, false)
+        }
+        Err(_) => {
+            if let Some(why) = general_folder(root, true) {
+                return Err(refuse_general(why));
+            }
+            (Repository::init(root).map_err(|e| e.to_string())?, true)
+        }
     };
     if repo.head().is_ok() {
         return Ok(Ensured::Ready);
