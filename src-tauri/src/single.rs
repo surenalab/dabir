@@ -22,6 +22,13 @@ pub fn register(root: &Path) {
         .insert(root.to_path_buf());
 }
 
+/// The folder is opened as a folder now: a project, with its own repository and build folder.
+pub fn unregister(root: &Path) {
+    if let Some(s) = LOOSE.lock().unwrap().as_mut() {
+        s.remove(root);
+    }
+}
+
 pub fn is_loose(root: &Path) -> bool {
     LOOSE
         .lock()

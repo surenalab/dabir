@@ -1,6 +1,6 @@
 [package]
 name = "dabir"
-version = "0.2.3"
+version = "0.2.4"
 description = "Dabir: a local-first workspace for scientific writing"
 authors = ["Surena Lab"]
 license = "AGPL-3.0-only"

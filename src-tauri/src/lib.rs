@@ -402,6 +402,7 @@ fn open_project(path: String, main: Option<String>) -> Result<Project, String> {
     if !root.is_dir() {
         return Err(format!("{} is not a folder", path));
     }
+    single::unregister(&root);
     let chosen = main
         .map(PathBuf::from)
         .filter(|m| m.is_file() && m.parent() == Some(root.as_path()));
@@ -1421,18 +1422,40 @@ fn synctex_inverse(
 
 // ---------------------------------------------------------------- git
 
+/// A file opened on its own has no repository, even when a folder above it is one: its Git state, steps and
+/// commits would otherwise be those of the enclosing repository (all of Downloads, once).
+fn loose(root: &str) -> bool {
+    single::is_loose(Path::new(root))
+}
+const LOOSE_NO_GIT: &str = "This file is open on its own. Make it a project first (File › Make Paper a Project…) for history, commits and agents.";
+
 #[tauri::command]
 fn git_status(root: String) -> Result<git::GitStatus, String> {
+    if loose(&root) {
+        return Ok(git::GitStatus {
+            is_repo: false,
+            branch: None,
+            changes: vec![],
+            recent: vec![],
+            remote: None,
+        });
+    }
     git::status(Path::new(&root))
 }
 
 #[tauri::command]
 fn git_init(root: String) -> Result<(), String> {
+    if loose(&root) {
+        return Err(LOOSE_NO_GIT.into());
+    }
     git::ensure_repo(Path::new(&root)).map(|_| ())
 }
 
 #[tauri::command]
 fn git_commit(root: String, message: String, paths: Option<Vec<String>>) -> Result<String, String> {
+    if loose(&root) {
+        return Err(LOOSE_NO_GIT.into());
+    }
     git::commit(Path::new(&root), &message, paths)
 }
 
@@ -1870,6 +1893,9 @@ async fn agent_run(
     follow_up: Option<FollowUp>,
     focus: Option<Focus>,
 ) -> Result<RunStarted, String> {
+    if loose(&root) {
+        return Err(LOOSE_NO_GIT.into());
+    }
     tauri::async_runtime::spawn_blocking(move || {
         agent_run_blocking(app, root, provider, prompt, model, effort, follow_up, focus)
     })
@@ -1949,6 +1975,9 @@ async fn agent_complete(
     model: Option<String>,
     effort: Option<String>,
 ) -> Result<String, String> {
+    if loose(&root) {
+        return Err(LOOSE_NO_GIT.into());
+    }
     tauri::async_runtime::spawn_blocking(move || {
         let root_p = PathBuf::from(&root);
         let run_id = format!("c{}", &uuid::Uuid::new_v4().to_string()[..7]);
@@ -2690,6 +2719,9 @@ fn checkpoint(
     message: String,
     coalesce: Option<bool>,
 ) -> Result<Option<String>, String> {
+    if loose(&root) {
+        return Ok(None);
+    }
     git::checkpoint_with(Path::new(&root), &message, coalesce.unwrap_or(false))
 }
 /// The diff of one step. Spawned rather than run on the main thread: a step that touched a Word document
@@ -2710,10 +2742,16 @@ fn git_discard(root: String, path: String) -> Result<(), String> {
 }
 #[tauri::command]
 fn checkpoints(root: String) -> Result<Vec<git::Checkpoint>, String> {
+    if loose(&root) {
+        return Ok(vec![]);
+    }
     git::checkpoints(Path::new(&root), 60)
 }
 #[tauri::command]
 fn checkpoint_restore(root: String, id: String) -> Result<(), String> {
+    if loose(&root) {
+        return Err(LOOSE_NO_GIT.into());
+    }
     git::checkpoint_restore(Path::new(&root), &id)
 }
 
@@ -3357,6 +3395,48 @@ mod tests {
             Some(dest.join("talk.tex").to_string_lossy().as_ref())
         );
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn dabir_never_makes_a_general_folder_a_repository_and_a_lone_file_never_uses_one_above_it() {
+        // More files than a paper's folder: refused, and no .git left behind.
+        let big = std::env::temp_dir().join(format!("dabir-general-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(big.join("a")).unwrap();
+        for i in 0..3100 {
+            fs::write(big.join("a").join(format!("f{i}.txt")), "").unwrap();
+        }
+        let e = git::ensure_repo(&big).unwrap_err();
+        assert!(e.contains("will not make it a Git repository"), "{e}");
+        assert!(!big.join(".git").exists());
+        // The home folder and Downloads are refused by name, even when already a repository.
+        let home = crate::spawn::home_dir().unwrap();
+        assert!(git::general_folder(&home.join("Downloads"), false).is_some());
+        assert!(git::general_folder(&home, false).is_some());
+        assert!(
+            git::general_folder(&big.join("a"), false).is_none(),
+            "an ordinary subfolder is not refused by name"
+        );
+
+        // A file opened on its own inside a repository does not take on that repository.
+        let repo = std::env::temp_dir().join(format!("dabir-enclosing-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(repo.join("letters")).unwrap();
+        init_repo(&repo);
+        fs::write(repo.join("letters/visa.tex"), "\\documentclass{article}").unwrap();
+        let p = open_project(
+            repo.join("letters/visa.tex").to_string_lossy().to_string(),
+            None,
+        )
+        .unwrap();
+        assert!(p.single);
+        assert!(!git_status(p.root.clone()).unwrap().is_repo);
+        assert_eq!(
+            checkpoint(p.root.clone(), "You edited visa.tex".into(), Some(true)).unwrap(),
+            None
+        );
+        assert!(checkpoints(p.root.clone()).unwrap().is_empty());
+        assert!(git_commit(p.root.clone(), "x".into(), None).is_err());
+        let _ = fs::remove_dir_all(&big);
+        let _ = fs::remove_dir_all(&repo);
     }
 
     /// A repository for a test: `git::init` plus `core.autocrlf=false`, so the files the test writes

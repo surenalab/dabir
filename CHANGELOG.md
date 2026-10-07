@@ -4,6 +4,11 @@ Newest first. Every merged pull request adds a line under Unreleased; a release 
 
 ## Unreleased
 
+## 0.2.4
+
+- Fixed: Dabir could make a general folder a Git repository and copy it for every agent run. With ~/Downloads open as a paper, asking an agent made Downloads a repository, and pressing ⌘↩ again while the first run was still starting (making its working copy takes a moment in a big folder) started more runs: one session left 25 copies of an 11 GB folder, 2.8 GB on disk. Dabir now refuses to make the home folder, Downloads, Desktop, Documents, Library or any folder with more than 3,000 files into a repository, refuses agent runs in such a folder even when it already is one, and starts one run per press.
+- Fixed: a file opened on its own inside a folder that is a Git repository took on that repository, so every save took a snapshot of the whole enclosing folder and Dabir slowed to a halt under a large one. A lone file now has no repository, history or commits of its own until it is made a project, and a folder opened as a folder after one of its files stops being treated as a lone file's.
+
 ## 0.2.3
 
 - Claude Code gets the parts of a run's brief that stay the same for a paper (the rules, the project brief, the paper map, the files) as its system prompt, which the API caches between runs, so a second request on the same paper reads that context from the cache instead of sending it again: quicker to the first step and lighter on the plan's limits. Every agent gets the stable part first, which helps CLIs that cache the start of a prompt. Agents are told not to reread a file or grep it to confirm an edit they just made, since the diff is reviewed and Dabir compiles it.
