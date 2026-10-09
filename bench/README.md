@@ -43,8 +43,9 @@ Agents were told to compile before finishing; now they run `dabir-check` (a few 
 | Grok, after v2 (check after structural edits) | 31/31 | 19.4 s | 24.7 s | 4 | 13 |
 | Claude Code, before (2026-10-06) | 31/31 | 17.6 s | | 12 | 0 |
 | Claude Code, after, with the stable preamble as a cached system prompt | 31/31 | 15.3 s | | 3 | 4 |
+| Codex 0.160.1 (0.2.4, 2026-10-09) | 31/31 | 12.3 s | | 5 | 14 |
 
-Claude Code also made fewer calls per task (2.90 → 2.32) and fewer orientation calls in the suite (22 → 7); 19 of 31 tasks were faster, and the time to the first tool call did not change (median 6.3 s → 6.5 s). Its means are not comparable: two tasks in the after run waited 124 s and 162 s for the model's first word and then finished in under 20 s, as one task in the before run waited 88 s.
+Codex, run once on 0.2.4 with a ChatGPT subscription, was the quickest and the steadiest of the three: no task over 24 s (the vague figure task included, which took the others 160 s or more), no orientation calls at all, 2.6 calls per task, the multi-file paper at the same 12 s median as the single file. Claude Code also made fewer calls per task (2.90 → 2.32) and fewer orientation calls in the suite (22 → 7); 19 of 31 tasks were faster, and the time to the first tool call did not change (median 6.3 s → 6.5 s). Its means are not comparable: two tasks in the after run waited 124 s and 162 s for the model's first word and then finished in under 20 s, as one task in the before run waited 88 s.
 
 Where the compile was most of the work the time halves (10-broken-ref 24 s → 12 s, 24-mf-broken-cref 34 s → 18–20 s); the vague task, which timed out before, passes. Elsewhere the paired median difference is under a second either way: v1's check after a wording edit cost an extra model turn, which is why v2 skips it. Means are not a fair summary of a single run: each run had one to three 100 s+ tasks from the model's response time (19-stale-claim-note took 39 s, 51 s and 159 s with no check in it). 
 
