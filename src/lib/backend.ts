@@ -261,6 +261,19 @@ export async function openGuide(): Promise<void> {
   const { openUrl } = await import("@tauri-apps/plugin-opener");
   await openUrl(url);
 }
+/** Help › Send Feedback opens a new Ideas discussion; Help › Report a Problem opens the bug form with the version and
+ *  platform filled in, the one field people most often leave out. */
+export async function openFeedback(bug: boolean): Promise<void> {
+  const repo = "https://github.com/surenalab/dabir";
+  let url = `${repo}/discussions/new?category=ideas`;
+  if (bug) {
+    const version = native ? await (await import("@tauri-apps/api/app")).getVersion() : "dev";
+    const ua = navigator.userAgent;
+    const os = isMac ? "macOS" : /Windows/.test(ua) ? "Windows" : /Linux/.test(ua) ? "Linux" : "";
+    url = `${repo}/issues/new?template=bug.yml&version=${encodeURIComponent(os ? `${version} · ${os}` : version)}`;
+  }
+  await openExternal(url);
+}
 /** Open a URL in the user's own app for it: mailto: in Mail, sms: in Messages, https: in the browser. */
 export async function openExternal(url: string): Promise<void> {
   if (!native) { window.open(url, "_blank"); return; }

@@ -4,6 +4,11 @@ Newest first. Every merged pull request adds a line under Unreleased; a release 
 
 ## Unreleased
 
+## 0.2.5
+
+- Help › Send Feedback… opens a new idea in the project's GitHub Discussions, and Help › Report a Problem… opens the bug form with Dabir's version and platform already filled in.
+- Updated dependencies: Tauri 2.12 and its plugins (the updater, dialogs, file access, shell, deep links), pdf.js 6.4, KaTeX 0.19, the Word editor 1.15 (tables whose rows start or end on different columns keep their layout through an edit and a save; scaled text keeps its spaces), CodeMirror, ProseMirror, React 19.3.1 and Yjs.
+
 ## 0.2.4
 
 - Fixed: Dabir could make a general folder a Git repository and copy it for every agent run. With ~/Downloads open as a paper, asking an agent made Downloads a repository, and pressing ⌘↩ again while the first run was still starting (making its working copy takes a moment in a big folder) started more runs: one session left 25 copies of an 11 GB folder, 2.8 GB on disk. Dabir now refuses to make the home folder, Downloads, Desktop, Documents, Library or any folder with more than 3,000 files into a repository, refuses agent runs in such a folder even when it already is one, and starts one run per press.

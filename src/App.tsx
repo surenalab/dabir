@@ -31,7 +31,7 @@ import { safeColor, type Change, type ChangeRange } from "./lib/changes";
 import { proseWords } from "./lib/spell";
 import {
   agentComplete, checkForUpdates, projectSnapshot, sessionMaterialize, checkpoint, checkpoints, checkpointRestore, checkpointUndo, gitDiscard, type Checkpoint, newPaper, compile as runCompile, compileCancel, gitClone, gitPull, gitPush, gitRemoteAdd, gitRemoteUrl, isMac, onCompileProgress, relayStart, relayStop, gitCommit, gitInit, gitStatus, importOverleaf, native, onMenu, onWindowFocus,
-  openProject, pickFolder, pickNewPaperPath, readText, authorName, setWindowTitle, synctexForward, synctexInverse, writeText, openSample, openGuide, onDeepLink,
+  openProject, pickFolder, pickNewPaperPath, readText, authorName, setWindowTitle, synctexForward, synctexInverse, writeText, openSample, openGuide, openFeedback, onDeepLink,
   writeBinary, wordMarkdown, pickFileToOpen, makeProject, onOpenPath, pickSavePath,
   type CompileResult, type GitStatus, type PdfPos, type Project, type Focus, paperMap, type PaperMap, gitHeadText, type WordImport } from "./lib/backend";
 import { runRecipe, replCommand, formattersFor, formatText } from "./lib/code-tools";
@@ -1166,6 +1166,7 @@ export default function App() {
       case "tour": startTour(); break;
       case "setup": openSetup(); break;
       case "guide": openGuide().catch((e) => setNote(String(e))); break;
+      case "feedback": case "report-bug": openFeedback(id === "report-bug").catch((e) => setNote(String(e))); break;
       // A fit mode steps from the scale that view last had on screen, not from 100 % and not from the other view's.
       case "zoom-in": (mode === "split" ? setSplitZoom : setPdfZoom)((z) => stepZoom(typeof z === "number" ? z : pdfScale.current[mode === "split" ? "split" : "pdf"], 1)); if (mode !== "pdf" && mode !== "split") setMode("pdf"); break;
       case "zoom-out": (mode === "split" ? setSplitZoom : setPdfZoom)((z) => stepZoom(typeof z === "number" ? z : pdfScale.current[mode === "split" ? "split" : "pdf"], -1)); break;

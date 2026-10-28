@@ -3146,6 +3146,9 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
         .separator()
         .item(&MenuItemBuilder::with_id("tour", "Guided Tour on the Sample Paper").build(app)?)
         .item(&MenuItemBuilder::with_id("guide", "User Guide").build(app)?)
+        .separator()
+        .item(&MenuItemBuilder::with_id("feedback", "Send Feedback…").build(app)?)
+        .item(&MenuItemBuilder::with_id("report-bug", "Report a Problem…").build(app)?)
         .build()?;
 
     let menu = MenuBuilder::new(app)
