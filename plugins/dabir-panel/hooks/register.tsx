@@ -127,20 +127,23 @@ async function compile($: $) {
   await update($, build, (): Build => ({ isOk, message, at }))
   if (isOk) await update($, paper, x => (x ? { ...x, pdf } : x))
   await update($, busy, () => '')
-  if (isOk) await openPdf($)
 }
 
-async function openPdf($: $) {
+// The side panel shows a file only when Claude itself sends it (a plugin's own call renders nowhere), so the
+// panel asks Claude: one short turn, and the PDF opens where Claude shows files.
+async function showPdf($: $) {
+  const p = await read($, paper)
+  if (p?.pdf) await $.prompt.submit({ text: `Show me ${p.pdf} in the side panel (SendUserFile with display "render"). Nothing else.` })
+}
+
+async function openInViewer($: $) {
   const p = await read($, paper)
   if (!p?.pdf) return
-  // In the desktop app the PDF opens in the side panel, as Claude shows files; elsewhere in the system viewer.
-  const canShow = (await $.tool.list()).some(t => t.name === 'SendUserFile')
-  const shown = canShow
-    ? await $.tool.call({ tool: 'SendUserFile', files: [p.pdf], display: 'render', status: 'normal' }).catch(() => null)
-    : null
-  if (shown && shown.deny === undefined && !shown.isError) return
-  const viewer = await $.process.run(['open', p.pdf]).catch(() => null)
-  if (!viewer || viewer.exitCode !== 0) await $.process.run(['xdg-open', p.pdf]).catch(() => $.ui.toast(`The PDF is at ${p.pdf}`))
+  for (const argv of [['/usr/bin/open', p.pdf], ['xdg-open', p.pdf]]) {
+    const r = await $.process.run(argv).catch(() => null)
+    if (r && r.exitCode === 0) return
+  }
+  $.ui.toast(`The PDF is at ${p.pdf}`)
 }
 
 async function undo($: $, id: string) {
@@ -225,6 +228,7 @@ export const register: Register = on => {
     const b = await read($, build)
     const working = await read($, busy)
     const list = (await read($, changes)).filter(x => !x.isUndone)
+    const canShow = (await $.tool.list()).some(t => t.name === 'SendUserFile')
     const rel = (f: string) => (f.startsWith(`${p.root}/`) ? f.slice(p.root.length + 1) : basename(f))
 
     return (
@@ -237,9 +241,15 @@ export const register: Register = on => {
           <Box flexDirection="row" gap={1}>
             <Button key="check" label="Check" variant="secondary" onPress={() => void runCheck($)} />
             <Button key="compile" label={working || 'Compile'} variant="secondary" onPress={() => void compile($)} />
-            {p.pdf && <Button key="pdf" label="Open PDF" variant="primary" onPress={() => void openPdf($)} />}
           </Box>
         </Box>
+        {p.pdf && (
+          <Box flexDirection="row" gap={1} alignItems="center">
+            <Text dimColor>PDF</Text>
+            {canShow && <Button key="show-pdf" label="Show PDF" variant="primary" onPress={() => void showPdf($)} />}
+            <Button key="open-pdf" label="Open in viewer" variant="secondary" onPress={() => void openInViewer($)} />
+          </Box>
+        )}
 
         {c === null && <Text dimColor>Checking…</Text>}
         {c?.isMissing && <Text dimColor>dabir-check is not available yet: it downloads on first use and needs the network once.</Text>}

@@ -48,7 +48,13 @@ test('undo takes back exactly one edit, and refuses when the text moved on', () 
 })
 
 test('a paper session: the panel opens, shows the error, records an edit and undoes it', async ($, on) => {
-  const files: Record<string, string> = { '/paper/main.tex': '\\documentclass{article}\nin the end\n' }
+  const files: Record<string, string> = { '/paper/main.tex': '\\documentclass{article}\nin the end\n', '/paper/main.pdf': '%PDF' }
+  const prompts: string[] = []
+  on('tool.list', () => ({ value: [{ name: 'SendUserFile' }] }))
+  on('prompt.submit', (_, e) => {
+    prompts.push(e.text)
+    return { drop: 'recorded by the test' }
+  })
   const written: string[] = []
   let opened = 0
   on('clock.now', () => ({ value: 1_000 }))
@@ -109,5 +115,9 @@ test('a paper session: the panel opens, shows the error, records an edit and und
   expect(files['/paper/main.tex']).toBe('\\documentclass{article}\nin the end\n')
   expect(written).toEqual(['/paper/main.tex'])
   expect((await ui.find({ type: 'Text', text: /Changes this session/ }))?.text).toBe('Changes this session')
+  const show = await ui.find({ type: 'Button', text: /^Show PDF$/ })
+  await ui.press({ plugin: 'dabir-panel', key: show!.key! })
+  expect(prompts.length).toBe(1)
+  expect(prompts[0]).toContain('/paper/main.pdf')
   await ui.unmount()
 })
