@@ -10,7 +10,7 @@ From Dabir, the open-source paper workspace (surenalab.com/dabir). These are the
 ## Checking your work
 
 - After a change to LaTeX structure (commands, environments, braces, math, `\label`/`\ref`/`\cite` keys, `\input` or image paths), run `dabir-check` once from the paper's folder and fix what it reports: unbalanced braces, mismatched environments, references with no label, citation keys not in the bibliography, missing files. It reads the main file and everything it inputs in milliseconds. Pass the main file if it is not found: `dabir-check paper.tex`.
-- If `dabir-check` is not a command here, run `scripts/dabir-check` from this skill's folder. On the first run it downloads a small binary for this platform.
+- If `dabir-check` is not a command here, run `scripts/dabir-check` from this skill's folder. On the first run it downloads a small binary for this platform; if it says it could not download, run it once with network access, outside the sandbox if you are in one (ask for approval), and it works offline after that.
 - After a change to wording only, do not check or compile.
 - Compile only when the request is about the build or its errors, or when you changed the preamble, packages or macro definitions, and then once, at the end. Use the project's own build if it has one (a Makefile, `latexmk`, a recorded command); otherwise `tectonic -X compile main.tex` or `latexmk -pdf main.tex`, whichever is installed. Do not install a TeX distribution or packages.
 - Do not open the PDF or explore build folders. Read the `.log` only for the errors a compile printed.
