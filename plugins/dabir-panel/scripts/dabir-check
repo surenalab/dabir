@@ -1,0 +1,29 @@
+#!/bin/sh
+# Dabir's LaTeX check: braces, environments, labels, citation keys and missing files in milliseconds,
+# without a compile. Downloads the small binary for this platform once per version, then runs it.
+# Exit 0: no errors. 1: errors (listed). 2: no main .tex found here. 3: no binary for this machine.
+set -eu
+V=0.2.5
+case "$(uname -s)-$(uname -m)" in
+  Darwin-*) T=macos ;;
+  Linux-x86_64) T=linux-x86_64 ;;
+  Linux-aarch64 | Linux-arm64) T=linux-aarch64 ;;
+  MINGW*-* | MSYS*-* | CYGWIN*-*) T=windows-x86_64.exe ;;
+  *) echo "dabir-check: no build for $(uname -sm); compile to check instead" >&2; exit 3 ;;
+esac
+B="${XDG_CACHE_HOME:-$HOME/.cache}/dabir/$V/dabir-check"
+case "$T" in *.exe) B="$B.exe" ;; esac
+if [ ! -x "$B" ]; then
+  U=https://github.com/surenalab/dabir/releases
+  # The version this plugin was made with, else the latest release (a plugin from main can be ahead of it).
+  # A sandbox without network or without write access to the cache stops here; once is enough.
+  { mkdir -p "$(dirname "$B")" &&
+    { curl -fsSL -o "$B.part" "$U/download/v$V/dabir-check-$T" ||
+      curl -fsSL -o "$B.part" "$U/latest/download/dabir-check-$T"; } &&
+    chmod +x "$B.part" && mv "$B.part" "$B"; } 2>/dev/null || {
+    rm -f "$B.part" 2>/dev/null
+    echo "dabir-check: could not download it to $B. Run this command once with network access (outside the sandbox); after that it works offline. Or compile to check instead." >&2
+    exit 3
+  }
+fi
+exec "$B" "$@"

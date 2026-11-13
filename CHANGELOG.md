@@ -4,6 +4,8 @@ Newest first. Every merged pull request adds a line under Unreleased; a release 
 
 ## Unreleased
 
+- The Dabir panel for Claude Code (`plugins/dabir-panel`, `claude plugin install dabir-panel@dabir`): beside the chat, whether the paper's LaTeX holds together after each edit, with a button that asks Claude to fix what it found; every change the agent made to the paper, with its diff and an Undo; and Compile, which opens the PDF in the desktop app's side panel. `/dabir-panel` opens it.
+
 - Dabir as a plugin for Claude Code and Codex (`plugins/dabir`): `dabir-check` on its own (a small download per platform, attached to each release), a skill with the playbook Dabir gives its agents, and the reference check against Crossref, arXiv and OpenAlex. In Claude Code the check runs after every edit to a `.tex` file and returns errors to the agent. Install with `claude plugin marketplace add surenalab/dabir` or `codex plugin marketplace add surenalab/dabir`.
 
 ## 0.2.5

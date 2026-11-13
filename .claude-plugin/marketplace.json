@@ -12,6 +12,11 @@
       "name": "dabir",
       "source": "./plugins/dabir",
       "description": "Write LaTeX papers with Claude: a millisecond structure check after every edit, a playbook for fast, minimal paper edits, and citation verification."
+    },
+    {
+      "name": "dabir-panel",
+      "source": "./plugins/dabir-panel",
+      "description": "A panel beside the chat: whether the paper's LaTeX holds together after each edit, every change the agent made with its diff and an Undo, and one press to compile and open the PDF. Needs the dabir plugin."
     }
   ]
 }

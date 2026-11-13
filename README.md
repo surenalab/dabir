@@ -30,6 +30,12 @@ The `dabir` plugin gives the agent you already use what Dabir gives its own: `da
 claude plugin marketplace add surenalab/dabir && claude plugin install dabir@dabir
 ```
 
+In Claude Code you can add a panel beside the chat: whether the LaTeX holds together after each edit, every change the agent made with its diff and an **Undo**, and **Compile**, which opens the PDF in the side panel of the desktop app. Open it with `/dabir-panel`.
+
+```bash
+claude plugin install dabir-panel@dabir
+```
+
 In Codex, run `codex plugin marketplace add surenalab/dabir`, then install **Dabir** from the Plugins directory. `dabir-check` downloads once, a small file for your platform, on first use; macOS, Linux, and Windows under Git Bash.
 
 ## What it does
