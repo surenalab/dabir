@@ -180,19 +180,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target || 'aarch64-apple-darwin,x86_64-apple-darwin' }}
-      - name: Build
-        run: |
-          set -eu
-          if [ -z "${{ matrix.target }}" ]; then
-            cargo build --release --target aarch64-apple-darwin
-            cargo build --release --target x86_64-apple-darwin
-            lipo -create -output "${{ matrix.asset }}" target/{aarch64,x86_64}-apple-darwin/release/dabir-check
-          else
-            cargo build --release --target "${{ matrix.target }}"
-            cp "target/${{ matrix.target }}/release/dabir-check$([ "$RUNNER_OS" = Windows ] && echo .exe)" "${{ matrix.asset }}"
-          fi
-          bin="$PWD/${{ matrix.asset }}"
-          cd ../../examples/score-anchor && "$bin"
+      - run: ./build.sh "${{ matrix.asset }}" ${{ matrix.target }}
       - name: Attach to the draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

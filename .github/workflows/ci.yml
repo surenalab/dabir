@@ -22,6 +22,7 @@ jobs:
     outputs:
       web: ${{ steps.filter.outputs.web }}
       rust: ${{ steps.filter.outputs.rust }}
+      check: ${{ steps.filter.outputs.check }}
     steps:
       - uses: actions/checkout@v7
       - uses: dorny/paths-filter@v4
@@ -45,6 +46,10 @@ jobs:
               - 'examples/**'
               - 'scripts/fetch-tectonic.mjs'
               - 'plugins/**'
+              - '.github/workflows/ci.yml'
+            check:
+              - 'src-tauri/src/check.rs'
+              - 'src-tauri/check-cli/**'
               - '.github/workflows/ci.yml'
 
   web:
@@ -103,17 +108,49 @@ jobs:
       - name: dabir-check builds on its own
         run: cargo build --manifest-path src-tauri/check-cli/Cargo.toml
 
+  # The standalone dabir-check the agent plugin downloads, built and run on every platform it ships for, only
+  # when the check changed. The builds are kept as artifacts for a look before a release attaches its own.
+  check-cli:
+    name: dabir-check (${{ matrix.asset }})
+    needs: changes
+    if: needs.changes.outputs.check == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, asset: dabir-check-macos }
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-musl, asset: dabir-check-linux-x86_64 }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl, asset: dabir-check-linux-aarch64 }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc, asset: dabir-check-windows-x86_64.exe }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+        working-directory: src-tauri/check-cli
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target || 'aarch64-apple-darwin,x86_64-apple-darwin' }}
+      - run: ./build.sh "${{ matrix.asset }}" ${{ matrix.target }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: src-tauri/check-cli/${{ matrix.asset }}
+          retention-days: 7
+
   # One check for branch protection to require, whatever ran. Skipped jobs count as passed, failed ones fail it.
   gate:
     name: Gate
-    needs: [web, rust]
+    needs: [web, rust, check-cli]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
       - name: Every job that ran is green
         run: |
-          echo "web: ${{ needs.web.result }}  rust: ${{ needs.rust.result }}"
-          case "${{ needs.web.result }} ${{ needs.rust.result }}" in
+          echo "web: ${{ needs.web.result }}  rust: ${{ needs.rust.result }}  dabir-check: ${{ needs.check-cli.result }}"
+          case "${{ needs.web.result }} ${{ needs.rust.result }} ${{ needs.check-cli.result }}" in
             *failure*|*cancelled*) exit 1 ;;
           esac

@@ -14,15 +14,16 @@ esac
 B="${XDG_CACHE_HOME:-$HOME/.cache}/dabir/$V/dabir-check"
 case "$T" in *.exe) B="$B.exe" ;; esac
 if [ ! -x "$B" ]; then
-  mkdir -p "$(dirname "$B")"
   U=https://github.com/surenalab/dabir/releases
   # The version this plugin was made with, else the latest release (a plugin from main can be ahead of it).
-  curl -fsSL -o "$B.part" "$U/download/v$V/dabir-check-$T" 2>/dev/null ||
-    curl -fsSL -o "$B.part" "$U/latest/download/dabir-check-$T" 2>/dev/null || {
-    rm -f "$B.part"
-    echo "dabir-check: could not download it from $U; compile to check instead" >&2
+  # A sandbox without network or without write access to the cache stops here; once is enough.
+  { mkdir -p "$(dirname "$B")" &&
+    { curl -fsSL -o "$B.part" "$U/download/v$V/dabir-check-$T" ||
+      curl -fsSL -o "$B.part" "$U/latest/download/dabir-check-$T"; } &&
+    chmod +x "$B.part" && mv "$B.part" "$B"; } 2>/dev/null || {
+    rm -f "$B.part" 2>/dev/null
+    echo "dabir-check: could not download it to $B. Run this command once with network access (outside the sandbox); after that it works offline. Or compile to check instead." >&2
     exit 3
   }
-  chmod +x "$B.part" && mv "$B.part" "$B"
 fi
 exec "$B" "$@"
