@@ -43,8 +43,10 @@ jobs:
           for v in "$(sed -n 's/^version = "\(.*\)"/\1/p' src-tauri/check-cli/Cargo.toml)" \
                    "$(sed -n 's/^V=//p' plugins/dabir/skills/dabir/scripts/dabir-check)" \
                    "$(node -p "require('./plugins/dabir/.claude-plugin/plugin.json').version")" \
-                   "$(node -p "require('./plugins/dabir/.codex-plugin/plugin.json').version")"; do
-            [ "$v" = "$pkg" ] || { echo "plugins/dabir or check-cli says $v, not $pkg"; exit 1; }
+                   "$(node -p "require('./plugins/dabir/.codex-plugin/plugin.json').version")" \
+                   "$(node -p "require('./plugins/dabir-panel/.claude-plugin/plugin.json').version")" \
+                   "$(sed -n 's/^V=//p' plugins/dabir-panel/scripts/dabir-check)"; do
+            [ "$v" = "$pkg" ] || { echo "plugins/dabir, plugins/dabir-panel or check-cli says $v, not $pkg"; exit 1; }
           done
           case "${GITHUB_REF_NAME:-}" in v*) [ "v$pkg" = "$GITHUB_REF_NAME" ] || { echo "tag does not match the version"; exit 1; } ;; esac
 

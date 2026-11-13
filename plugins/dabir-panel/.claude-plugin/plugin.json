@@ -1,0 +1,13 @@
+{
+  "name": "dabir-panel",
+  "displayName": "Dabir panel",
+  "version": "0.2.5",
+  "description": "A panel beside the chat for LaTeX papers: whether the source holds together after each edit, every change the agent made with its diff and an Undo, and one press to compile and open the PDF.",
+  "author": { "name": "Surena Lab", "url": "https://surenalab.com" },
+  "homepage": "https://surenalab.com/dabir",
+  "repository": "https://github.com/surenalab/dabir",
+  "license": "AGPL-3.0-only",
+  "keywords": ["latex", "paper", "pdf", "diff"],
+  "dependencies": ["dabir"],
+  "types": "./types/index.d.ts"
+}

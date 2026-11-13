@@ -2214,6 +2214,16 @@ mod tests {
     }
 
     #[test]
+    fn plugin_panel_runs_the_same_dabir_check_launcher() {
+        // The Claude Code panel cannot reach the dabir plugin's folder, so it carries its own copy.
+        assert_eq!(
+            include_str!("../../plugins/dabir-panel/scripts/dabir-check"),
+            include_str!("../../plugins/dabir/skills/dabir/scripts/dabir-check"),
+            "plugins/dabir-panel/scripts/dabir-check must match the dabir plugin's launcher"
+        );
+    }
+
+    #[test]
     fn plugin_check_references_follows_the_app_playbook() {
         // The Claude Code and Codex plugin carries the same playbook with its paths outside the app;
         // every other line must match, so an edit to BODY.md that misses the plugin fails here.
