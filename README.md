@@ -22,6 +22,16 @@ Get the installer for your machine from **[surenalab.com/dabir](https://surenala
 
 Dabir checks for updates itself. Setup (Help › Set Up Dabir) installs and checks what it needs, LaTeX packages and your agent CLIs included.
 
+### In Claude Code or Codex, without the app
+
+The `dabir` plugin gives the agent you already use what Dabir gives its own: `dabir-check`, which finds unbalanced braces, unclosed environments, missing labels, unknown citation keys and missing files in milliseconds instead of a compile; a playbook for quick, minimal paper edits; and a reference check that verifies every bibliography entry against Crossref, arXiv and OpenAlex. In Claude Code the check also runs by itself after every edit to a `.tex` file and hands any error straight back to the agent.
+
+```bash
+claude plugin marketplace add surenalab/dabir && claude plugin install dabir@dabir
+```
+
+In Codex, run `codex plugin marketplace add surenalab/dabir`, then install **Dabir** from the Plugins directory. `dabir-check` downloads once, a small file for your platform, on first use; macOS, Linux, and Windows under Git Bash.
+
 ## What it does
 
 - **One window for the paper and its code.** Visual, Source, PDF and Split views of a LaTeX, Typst or Word document; the scripts, notebooks and a terminal sit beside it. Open a whole project folder, or just one `.tex`, `.typ` or `.docx` file.

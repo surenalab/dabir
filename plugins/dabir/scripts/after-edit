@@ -1,0 +1,22 @@
+#!/bin/sh
+# Claude Code PostToolUse hook: after an edit to a .tex file, run dabir-check on the paper that file belongs
+# to and hand any errors back to the agent (exit 2), so a broken brace or label is fixed in the same turn.
+# Silent when the check passes, when the file is not LaTeX, and when no paper or binary is found.
+f=$(sed -n 's/.*"file_path" *: *"\([^"]*\)".*/\1/p' | head -1)
+case "$f" in *.tex) ;; *) exit 0 ;; esac
+check="$(dirname "$0")/../skills/dabir/scripts/dabir-check"
+d=$(dirname "$f")
+stop="${CLAUDE_PROJECT_DIR:-/}"
+# The edited file may be a chapter: walk up until a folder has the paper's main file.
+while :; do
+  out=$(cd "$d" 2>/dev/null && "$check" 2>&1) && exit 0
+  rc=$?
+  if [ "$rc" = 1 ]; then
+    echo "dabir-check found errors in the paper at $d:" >&2
+    printf '%s\n' "$out" | grep -E ': error: |^dabir-check:' >&2
+    exit 2
+  fi
+  [ "$rc" = 2 ] || exit 0
+  case "$d" in "$stop" | / | .) exit 0 ;; esac
+  d=$(dirname "$d")
+done

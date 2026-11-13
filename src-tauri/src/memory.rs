@@ -674,7 +674,7 @@ const SKILLS: &[SkillDef] = &[
         body: include_str!("../skills/check-references/BODY.md"),
         files: &[(
             "scripts/verify_refs.py",
-            include_str!("../skills/check-references/verify_refs.py"),
+            include_str!("../../plugins/dabir/skills/check-references/scripts/verify_refs.py"),
         )],
         previous: &[CHECK_REFERENCES_V1],
     },
@@ -2211,6 +2211,18 @@ mod tests {
             );
         }
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn plugin_check_references_follows_the_app_playbook() {
+        // The Claude Code and Codex plugin carries the same playbook with its paths outside the app;
+        // every other line must match, so an edit to BODY.md that misses the plugin fails here.
+        let plugin = include_str!("../../plugins/dabir/skills/check-references/SKILL.md")
+            .replace("\r\n", "\n");
+        let body = include_str!("../skills/check-references/BODY.md").replace("\r\n", "\n");
+        for line in body.lines().filter(|l| !l.contains(".dabir/")) {
+            assert!(plugin.contains(line), "plugin skill lacks: {line}");
+        }
     }
     #[test]
     fn playbooks_that_said_compile_to_check_are_refreshed_when_untouched() {

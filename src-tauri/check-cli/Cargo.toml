@@ -1,0 +1,16 @@
+# `dabir-check` on its own, for agents outside the app (the Claude Code and Codex plugin in plugins/dabir).
+# Standard library only, so it builds in seconds and ships as one small file per platform.
+[package]
+name = "dabir-check"
+version = "0.2.5"
+edition = "2021"
+license = "AGPL-3.0-only"
+publish = false
+
+[[bin]]
+name = "dabir-check"
+path = "main.rs"
+
+[profile.release]
+strip = true
+lto = true

@@ -39,6 +39,13 @@ jobs:
           cargo=$(sed -n 's/^version = "\(.*\)"/\1/p' src-tauri/Cargo.toml | head -1)
           echo "package.json $pkg · tauri.conf.json $tauri · Cargo.toml $cargo · tag ${GITHUB_REF_NAME:-}"
           [ "$pkg" = "$tauri" ] && [ "$pkg" = "$cargo" ] || { echo "the three version fields differ"; exit 1; }
+          # The agent plugin and its dabir-check download the binaries this release attaches.
+          for v in "$(sed -n 's/^version = "\(.*\)"/\1/p' src-tauri/check-cli/Cargo.toml)" \
+                   "$(sed -n 's/^V=//p' plugins/dabir/skills/dabir/scripts/dabir-check)" \
+                   "$(node -p "require('./plugins/dabir/.claude-plugin/plugin.json').version")" \
+                   "$(node -p "require('./plugins/dabir/.codex-plugin/plugin.json').version")"; do
+            [ "$v" = "$pkg" ] || { echo "plugins/dabir or check-cli says $v, not $pkg"; exit 1; }
+          done
           case "${GITHUB_REF_NAME:-}" in v*) [ "v$pkg" = "$GITHUB_REF_NAME" ] || { echo "tag does not match the version"; exit 1; } ;; esac
 
   build:
@@ -147,6 +154,49 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
+
+  # The standalone `dabir-check` the Claude Code and Codex plugin downloads (plugins/dabir), one small file
+  # per platform on the same draft release. Standard library only, so each build takes seconds.
+  check-cli:
+    needs: build
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, asset: dabir-check-macos }
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-musl, asset: dabir-check-linux-x86_64 }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl, asset: dabir-check-linux-aarch64 }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc, asset: dabir-check-windows-x86_64.exe }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+        working-directory: src-tauri/check-cli
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target || 'aarch64-apple-darwin,x86_64-apple-darwin' }}
+      - name: Build
+        run: |
+          set -eu
+          if [ -z "${{ matrix.target }}" ]; then
+            cargo build --release --target aarch64-apple-darwin
+            cargo build --release --target x86_64-apple-darwin
+            lipo -create -output "${{ matrix.asset }}" target/{aarch64,x86_64}-apple-darwin/release/dabir-check
+          else
+            cargo build --release --target "${{ matrix.target }}"
+            cp "target/${{ matrix.target }}/release/dabir-check$([ "$RUNNER_OS" = Windows ] && echo .exe)" "${{ matrix.asset }}"
+          fi
+          bin="$PWD/${{ matrix.asset }}"
+          cd ../../examples/score-anchor && "$bin"
+      - name: Attach to the draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.ref_name }}" "${{ matrix.asset }}" --clobber
 
   # 0.1.8 clients look up darwin-aarch64 / darwin-x86_64 in latest.json. A universal build only writes
   # darwin-universal; copy that artifact onto the arch keys so older Macs still update.

@@ -1,0 +1,19 @@
+{
+  "name": "dabir",
+  "displayName": "Dabir",
+  "version": "0.2.5",
+  "description": "Write LaTeX papers with Claude: a millisecond structure check after every edit, a playbook for fast, minimal paper edits, and citation verification against Crossref, arXiv and OpenAlex.",
+  "author": { "name": "Surena Lab", "url": "https://surenalab.com" },
+  "homepage": "https://surenalab.com/dabir",
+  "repository": "https://github.com/surenalab/dabir",
+  "license": "AGPL-3.0-only",
+  "keywords": ["latex", "paper", "academic-writing", "bibliography", "citations"],
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/after-edit" }]
+      }
+    ]
+  }
+}
