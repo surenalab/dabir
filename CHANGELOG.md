@@ -4,6 +4,8 @@ Newest first. Every merged pull request adds a line under Unreleased; a release 
 
 ## Unreleased
 
+- Dabir as a plugin for Claude Code and Codex (`plugins/dabir`): `dabir-check` on its own (a small download per platform, attached to each release), a skill with the playbook Dabir gives its agents, and the reference check against Crossref, arXiv and OpenAlex. In Claude Code the check runs after every edit to a `.tex` file and returns errors to the agent. Install with `claude plugin marketplace add surenalab/dabir` or `codex plugin marketplace add surenalab/dabir`.
+
 ## 0.2.5
 
 - Help › Send Feedback… opens a new idea in the project's GitHub Discussions, and Help › Report a Problem… opens the bug form with Dabir's version and platform already filled in.

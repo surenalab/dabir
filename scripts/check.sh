@@ -16,6 +16,7 @@ if [ "${SKIP_RUST:-0}" != "1" ]; then
   step "cargo fmt"     && (cd src-tauri && cargo fmt --check)
   step "cargo clippy"  && (cd src-tauri && CARGO_TARGET_DIR="$TARGET" cargo clippy --all-targets -- -D warnings)
   step "cargo test"    && (cd src-tauri && CARGO_TARGET_DIR="$TARGET" cargo test --quiet)
+  step "dabir-check on its own" && (cd src-tauri/check-cli && CARGO_TARGET_DIR="../$TARGET/check-cli" cargo build --quiet)
 fi
 DETECT="$HOME/.claude/skills/impeccable/scripts/impeccable"
 if [ -x "$DETECT" ]; then

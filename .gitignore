@@ -43,7 +43,8 @@ bench/results/
 
 # Private working notes and agent tooling: never in the repository
 .notes/
-.agents/
+.agents/*
+!.agents/plugins/
 .claude/
 .impeccable/
 skills-lock.json

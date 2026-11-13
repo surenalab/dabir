@@ -1,0 +1,17 @@
+{
+  "name": "dabir",
+  "owner": {
+    "name": "Surena Lab",
+    "url": "https://surenalab.com"
+  },
+  "metadata": {
+    "description": "Dabir, the open-source workspace for scientific papers, as a plugin for Claude Code."
+  },
+  "plugins": [
+    {
+      "name": "dabir",
+      "source": "./plugins/dabir",
+      "description": "Write LaTeX papers with Claude: a millisecond structure check after every edit, a playbook for fast, minimal paper edits, and citation verification."
+    }
+  ]
+}

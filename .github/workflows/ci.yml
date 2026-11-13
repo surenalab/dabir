@@ -44,6 +44,7 @@ jobs:
               - 'templates/**'
               - 'examples/**'
               - 'scripts/fetch-tectonic.mjs'
+              - 'plugins/**'
               - '.github/workflows/ci.yml'
 
   web:
@@ -99,6 +100,8 @@ jobs:
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
       - name: cargo test
         run: cargo test --manifest-path src-tauri/Cargo.toml --quiet
+      - name: dabir-check builds on its own
+        run: cargo build --manifest-path src-tauri/check-cli/Cargo.toml
 
   # One check for branch protection to require, whatever ran. Skipped jobs count as passed, failed ones fail it.
   gate:
