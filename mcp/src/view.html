@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Dabir</title>
+  <style>/*CSS*/</style>
+</head>
+<body>
+  <main class="panel">
+    <header class="bar">
+      <svg class="mark" viewBox="214 202 540 600" aria-hidden="true">
+        <g transform="translate(1024 0) scale(-1 1) translate(512 512) scale(1.22) translate(-586 -470)"><path fill="var(--lajvard-ink)" d="M688 236 C728 232 768 262 760 302 C752 336 722 360 696 388 C654 434 616 486 588 540 C568 580 574 616 618 634 C672 656 742 640 806 604 C766 662 684 700 598 686 C512 672 464 606 484 530 C512 428 590 328 668 250 C674 244 680 238 688 236 Z"/></g>
+        <path fill="var(--saffron)" d="M672 676 L734 730 L672 784 L610 730 Z"/>
+      </svg>
+      <div class="title"><span class="name" id="name">Dabir</span><span class="path" id="path">Opening the paper…</span></div>
+      <button class="tb-btn" id="expand" hidden>Open beside the chat</button>
+      <button class="btn" id="compile" disabled>Compile</button>
+    </header>
+    <section class="status" id="status" aria-live="polite"></section>
+    <nav class="seg" role="radiogroup" aria-label="Show">
+      <button role="radio" data-tab="pdf" aria-checked="true">PDF</button>
+      <button role="radio" data-tab="source" aria-checked="false">Source</button>
+      <button role="radio" data-tab="changes" aria-checked="false">Changes<span class="seg-badge" id="badge" hidden></span></button>
+    </nav>
+    <section class="pane pdf" id="pdf" aria-label="PDF"></section>
+    <section class="pane source" id="source" aria-label="Source" hidden>
+      <div class="srcbar">
+        <select id="file" aria-label="File"></select>
+        <span class="note" id="note" aria-live="polite"></span>
+        <button class="btn small" id="reload" hidden>Reload</button>
+        <button class="btn small primary" id="save" disabled title="Save (⌘S)">Save</button>
+      </div>
+      <div class="editor" id="editor"></div>
+    </section>
+    <section class="pane changes" id="changes" aria-label="Changes" hidden></section>
+    <footer class="foot" id="foot" aria-live="polite"></footer>
+  </main>
+  <script type="module">/*JS*/</script>
+</body>
+</html>

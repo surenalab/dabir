@@ -18,11 +18,16 @@ if [ "${SKIP_RUST:-0}" != "1" ]; then
   step "cargo test"    && (cd src-tauri && CARGO_TARGET_DIR="$TARGET" cargo test --quiet)
   step "dabir-check on its own" && (cd src-tauri/check-cli && CARGO_TARGET_DIR="../$TARGET/check-cli" cargo build --quiet)
 fi
+if [ -d mcp/node_modules ]; then
+  step "Claude Desktop extension" && (cd mcp && npx tsc --noEmit && npm test --silent)
+else
+  echo "mcp/node_modules missing; run npm ci in mcp/ to test the Claude Desktop extension."
+fi
 DETECT="$HOME/.claude/skills/impeccable/scripts/impeccable"
 if [ -x "$DETECT" ]; then
   step "Design detector"
-  n="$("$DETECT" detect --json src index.html 2>/dev/null | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s||"[]").length))')"
-  if [ "$n" != "0" ]; then "$DETECT" detect src index.html 2>/dev/null | head -40; echo "design detector: $n finding(s)"; exit 1; fi
+  n="$("$DETECT" detect --json src index.html mcp/src 2>/dev/null | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s||"[]").length))')"
+  if [ "$n" != "0" ]; then "$DETECT" detect src index.html mcp/src 2>/dev/null | head -40; echo "design detector: $n finding(s)"; exit 1; fi
   echo "0 findings"
 else
   echo "Impeccable skill not installed; design detector skipped (say so in the pull request)."

@@ -182,6 +182,12 @@ async function record($: $, file: string, tool: 'Edit' | 'Write', oldText: strin
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'dabir-panel', description: 'Show the Dabir panel: LaTeX check, the agent’s changes, compile and PDF' })
+    // So that "show me the Dabir panel" reaches this pane, not the Dabir desktop app.
+    await $.tool.register({
+      name: 'open_panel',
+      description: 'Open the Dabir panel beside this chat: whether the paper\'s LaTeX holds together, every edit made to the paper with its diff and Undo, Compile and the PDF. Use it when the author asks for the Dabir panel or to see the paper. It is not the Dabir desktop app, which opens only when the author asks for the app.',
+      isDeferred: false,
+    })
     const found = await locate($, await $.session.cwd()).catch(() => null)
     if (found) {
       await update($, paper, () => found)
@@ -189,6 +195,25 @@ export const register: Register = on => {
       void runCheck($)
     }
     return next(e)
+  })
+
+  on('tool.call', { tool: 'mcp__dabir-panel__open_panel' }, async $ => {
+    if (!(await read($, paper))) {
+      const found = await locate($, await $.session.cwd()).catch(() => null)
+      if (!found) return { result: 'No LaTeX paper (a .tex file with \\documentclass) in this folder, so the Dabir panel has nothing to show.' }
+      await update($, paper, () => found)
+      void runCheck($)
+    }
+    if (!(await $.session.surfaces()).length) return { result: 'This session has no window to show a panel in. In the Claude desktop app, the Dabir panel opens beside the chat.' }
+    await show($)
+    return { result: 'The Dabir panel is open beside the chat. It shows the LaTeX check, each edit to the paper with its diff and Undo, Compile and the PDF.' }
+  })
+
+  // In the desktop app the window joins after session.start, when there was nowhere to open the pane yet.
+  on('session.attach', async ($, e, next) => {
+    const r = await next(e)
+    if (await read($, paper)) void show($)
+    return r
   })
 
   on('command.run', { command: 'dabir-panel' }, async $ => {

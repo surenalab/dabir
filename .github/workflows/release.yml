@@ -45,8 +45,9 @@ jobs:
                    "$(node -p "require('./plugins/dabir/.claude-plugin/plugin.json').version")" \
                    "$(node -p "require('./plugins/dabir/.codex-plugin/plugin.json').version")" \
                    "$(node -p "require('./plugins/dabir-panel/.claude-plugin/plugin.json').version")" \
-                   "$(sed -n 's/^V=//p' plugins/dabir-panel/scripts/dabir-check)"; do
-            [ "$v" = "$pkg" ] || { echo "plugins/dabir, plugins/dabir-panel or check-cli says $v, not $pkg"; exit 1; }
+                   "$(sed -n 's/^V=//p' plugins/dabir-panel/scripts/dabir-check)" \
+                   "$(node -p "require('./mcp/package.json').version")"; do
+            [ "$v" = "$pkg" ] || { echo "plugins/dabir, plugins/dabir-panel, mcp or check-cli says $v, not $pkg"; exit 1; }
           done
           case "${GITHUB_REF_NAME:-}" in v*) [ "v$pkg" = "$GITHUB_REF_NAME" ] || { echo "tag does not match the version"; exit 1; } ;; esac
 
@@ -187,6 +188,34 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload "${{ github.ref_name }}" "${{ matrix.asset }}" --clobber
+
+  # The Claude Desktop extension carries dabir-check for every platform, so it waits for them.
+  mcpb:
+    needs: check-cli
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: mcp
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - run: npm ci
+      - name: dabir-check for every platform
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release download "${{ github.ref_name }}" --pattern 'dabir-check-*' --dir bin
+      - run: node build.mjs --mcpb
+      - name: Attach to the draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp dist/dabir.mcpb "Dabir_${GITHUB_REF_NAME#v}.mcpb"
+          gh release upload "${{ github.ref_name }}" "Dabir_${GITHUB_REF_NAME#v}.mcpb" --clobber
 
   # 0.1.8 clients look up darwin-aarch64 / darwin-x86_64 in latest.json. A universal build only writes
   # darwin-universal; copy that artifact onto the arch keys so older Macs still update.
