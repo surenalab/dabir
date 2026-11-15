@@ -18,7 +18,7 @@ Dabir is licensed under the AGPL-3.0 (see LICENSE). It bundles or depends on the
 
 ## The Claude Desktop extension (`mcp/`)
 
-`Dabir_<version>.mcpb` bundles, besides Dabir's own code and `dabir-check`: the MCP TypeScript SDK (`@modelcontextprotocol/server`, `-client`, `-core` 2.4.0; Apache License 2.0, copyright Anthropic, PBC and the MCP contributors), the MCP Apps SDK (`@modelcontextprotocol/ext-apps` 2.0.4; MIT), PDF.js (`pdfjs-dist` 5.4.530; Apache License 2.0, copyright Mozilla Foundation), jsdiff (`diff` 9.0.0; BSD 3-Clause, copyright Kevin Decker), Zod 4.6.7 (MIT, copyright Colin McDonnell), and, through the SDK, jose, eventsource, eventsource-parser and pkce-challenge (MIT). Their licence comments are kept at the end of `server.mjs` and `view.html`, and this file travels inside the extension.
+`Dabir_<version>.mcpb` bundles, besides Dabir's own code and `dabir-check`: the MCP TypeScript SDK (`@modelcontextprotocol/server`, `-client`, `-core` 2.4.0; Apache License 2.0, copyright Anthropic, PBC and the MCP contributors), the MCP Apps SDK (`@modelcontextprotocol/ext-apps` 2.0.4; MIT), PDF.js (`pdfjs-dist` 5.4.530; Apache License 2.0, copyright Mozilla Foundation), jsdiff (`diff` 9.0.0; BSD 3-Clause, copyright Kevin Decker), CodeMirror 6 and Lezer (MIT, copyright Marijn Haverbeke and contributors), codemirror-lang-latex 0.6.1 (AGPL-3.0-or-later), Zod 4.6.7 (MIT, copyright Colin McDonnell), and, through the SDK, jose, eventsource, eventsource-parser and pkce-challenge (MIT). Their licence comments are kept at the end of `server.mjs` and `view.html`, and this file travels inside the extension.
 
 ## npm packages (runtime)
 

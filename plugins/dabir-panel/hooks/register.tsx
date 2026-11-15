@@ -191,6 +191,13 @@ export const register: Register = on => {
     return next(e)
   })
 
+  // In the desktop app the window joins after session.start, when there was nowhere to open the pane yet.
+  on('session.attach', async ($, e, next) => {
+    const r = await next(e)
+    if (await read($, paper)) void show($)
+    return r
+  })
+
   on('command.run', { command: 'dabir-panel' }, async $ => {
     if (!(await read($, paper))) {
       const found = await locate($, await $.session.cwd()).catch(() => null)

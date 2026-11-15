@@ -6,6 +6,7 @@ import * as pdfjs from 'pdfjs-dist'
 // pdf.js runs its worker on the main thread: a sandboxed view may not start workers. A paper is a few pages.
 import * as pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs'
 
+import { createEditor } from './editor.ts'
 import type { Hunk } from './paper.ts'
 
 ;(globalThis as { pdfjsWorker?: unknown }).pdfjsWorker = pdfWorker
@@ -16,6 +17,8 @@ type State = {
   folder: string
   where: string
   main: string | null
+  files: string[]
+  mtimes: Record<string, number>
   check: { errors: Finding[]; warnings: Finding[]; report: string; isMissing: boolean }
   changes: Change[]
   pdf: { path: string; size: number; mtime: number } | null
@@ -37,7 +40,8 @@ declare const __VERSION__: string
 const app = new App({ name: 'Dabir', version: __VERSION__ }, { availableDisplayModes: ['inline', 'fullscreen'] })
 let folder: string | null = null
 let state: State | null = null
-let tab: 'pdf' | 'changes' | null = null
+type Tab = 'pdf' | 'source' | 'changes'
+let tab: Tab | null = null
 let shownPdf = 0
 let polling = false
 
@@ -65,6 +69,7 @@ function draw(s: State) {
   drawStatus(s)
   drawChanges(s)
   drawFoot(s)
+  if (tab === 'source') syncSource(s)
   if (s.pdf && s.pdf.mtime !== shownPdf) void loadPdf(s.folder, s.pdf.mtime)
   if (!s.pdf) $('pdf').replaceChildren(el('p', { class: 'empty' }, el('strong', {}, 'No PDF yet'), s.main ? 'Press Compile, or ask Claude to edit the paper; it compiles after each edit that holds together.' : 'This folder has no .tex file with \\documentclass.'))
 }
@@ -87,7 +92,7 @@ function drawStatus(s: State) {
       el('div', { class: 'head' },
         el('span', { class: 'what' }, `✗ ${errors.length} ${errors.length === 1 ? 'error' : 'errors'} a compile would stop on`),
         el('button', { class: 'btn small', onclick: () => ask(`Fix the LaTeX errors dabir-check reports in the paper at ${s.folder}:\n${errors.map((e) => `${e.at}: ${e.message}`).join('\n')}`) }, 'Ask Claude to fix')),
-      el('ul', {}, ...errors.slice(0, 5).map((e) => el('li', {}, el('code', {}, e.at), ' ', e.message))),
+      el('ul', {}, ...errors.slice(0, 5).map((e) => el('li', {}, at(e.at), ' ', e.message))),
     )
     return
   }
@@ -103,7 +108,7 @@ function drawStatus(s: State) {
   }
   box.className = 'status ok'
   box.replaceChildren(el('div', { class: 'head' }, el('span', { class: 'what' }, warnings.length ? `✓ No errors · ${warnings.length} ${warnings.length === 1 ? 'warning' : 'warnings'}` : '✓ The LaTeX holds together')))
-  if (warnings.length) box.append(el('ul', {}, ...warnings.slice(0, 3).map((w) => el('li', {}, el('code', {}, w.at), ' ', w.message))))
+  if (warnings.length) box.append(el('ul', {}, ...warnings.slice(0, 3).map((w) => el('li', {}, at(w.at), ' ', w.message))))
 }
 
 function drawChanges(s: State) {
@@ -127,7 +132,7 @@ function drawChanges(s: State) {
         ...c.hunks.map((h) => {
           const box = el('section', { class: 'hunk' },
             el('div', { class: 'row' },
-              el('span', {}, `line ${h.removed ? h.oldLine : h.newLine}`),
+              el('span', {}, el('button', { class: 'jump', title: 'Show in Source', onclick: () => void goTo(c.file, h.newLine) }, `line ${h.removed ? h.oldLine : h.newLine}`)),
               el('button', { class: 'btn small danger', onclick: () => { box.classList.add('busy'); void review(c.file, [], [h.id]) } }, 'Undo'),
               el('button', { class: 'btn small', onclick: () => { box.classList.add('busy'); void review(c.file, [h.id], []) } }, 'Keep')),
             el('pre', {}, ...lineNodes(h)))
@@ -168,13 +173,104 @@ function drawFoot(s: State) {
   else foot.replaceChildren()
 }
 
-function select(t: 'pdf' | 'changes') {
+/** `main.tex:54` as a link to that line in Source. */
+function at(where: string) {
+  const m = /^(.*):(\d+)$/.exec(where)
+  if (!m) return el('code', {}, where)
+  return el('button', { class: 'jump', title: 'Show in Source', onclick: () => void goTo(m[1]!, Number(m[2])) }, el('code', {}, where))
+}
+
+function select(t: Tab) {
   tab = t
   for (const b of document.querySelectorAll<HTMLButtonElement>('.seg button')) b.setAttribute('aria-checked', String(b.dataset.tab === t))
-  $('pdf').hidden = t !== 'pdf'
-  $('changes').hidden = t !== 'changes'
+  for (const id of ['pdf', 'source', 'changes'] as const) $(id).hidden = t !== id
   if (t === 'pdf') void renderPdf()
+  if (t === 'source' && state) void syncSource(state)
 }
+
+// ---- Source ----
+
+const editor = createEditor($('editor'), () => setDirty(true), () => void save())
+let open_: { file: string; mtime: number } | null = null
+let dirty = false
+
+function note(text: string, isWarn = false) {
+  $('note').textContent = text
+  $('note').className = isWarn ? 'note warn' : 'note'
+}
+
+function setDirty(d: boolean) {
+  dirty = d
+  ;($('save') as HTMLButtonElement).disabled = !d
+  if (d) note('Edited')
+}
+
+async function load(file: string) {
+  if (!folder) return
+  const r = await call<{ file: string; text: string; mtime: number }>('load_file', { folder, file })
+  if (!r) return
+  editor.load(r.text)
+  open_ = { file: r.file, mtime: r.mtime }
+  setDirty(false)
+  $('reload').hidden = true
+  ;($('file') as HTMLSelectElement).value = r.file
+  if (state) syncSource(state)
+}
+
+/** Keep Source in step with the disk: the file list, a reload when Claude or Undo changed the open file, and a lock while it has changes to review. */
+function syncSource(s: State) {
+  const pick = $('file') as HTMLSelectElement
+  if (pick.options.length !== s.files.length || [...pick.options].some((o, i) => o.value !== s.files[i])) {
+    pick.replaceChildren(...s.files.map((f) => el('option', { value: f, textContent: f })))
+  }
+  if (!open_) {
+    if (s.main) void load(s.main)
+    return
+  }
+  pick.value = open_.file
+  const disk = s.mtimes[open_.file]
+  if (disk !== undefined && disk !== open_.mtime) {
+    if (!dirty) return void load(open_.file)
+    note('Claude changed this file. Reload to see it; your edit here would be lost.', true)
+    $('reload').hidden = false
+  }
+  const pending = s.changes.some((c) => c.file === open_!.file)
+  editor.lock(pending)
+  if (pending) note('Claude’s changes to this file are waiting in Changes. Keep or undo them to edit here.', true)
+  else if (!dirty && $('reload').hidden) note('')
+}
+
+async function save() {
+  if (!folder || !open_ || !dirty) return
+  try {
+    const r = await call<{ file: string; mtime: number }>('save_file', { folder, file: open_.file, text: editor.text(), mtime: open_.mtime })
+    if (!r) return
+    open_ = { file: r.file, mtime: r.mtime }
+    setDirty(false)
+    note('Saved')
+    await app.updateModelContext({ content: [{ type: 'text', text: `The author edited ${r.file} in the Dabir panel. Read ${r.file} again before editing it.` }] }).catch(() => {})
+    await refresh()
+  } catch (e) {
+    note((e as Error).message, true)
+  }
+}
+
+async function goTo(file: string, line: number) {
+  select('source')
+  if (open_?.file !== file) await load(file)
+  editor.goTo(line)
+}
+
+$('save').addEventListener('click', () => void save())
+$('reload').addEventListener('click', () => open_ && void load(open_.file))
+$('file').addEventListener('change', (e) => {
+  const file = (e.target as HTMLSelectElement).value
+  if (dirty) {
+    ;(e.target as HTMLSelectElement).value = open_!.file
+    return note(`Save your edit to ${open_!.file} first.`, true)
+  }
+  void load(file)
+})
 
 // ---- The PDF ----
 
@@ -278,7 +374,7 @@ $('compile').addEventListener('click', async () => {
   }
 })
 
-for (const b of document.querySelectorAll<HTMLButtonElement>('.seg button')) b.addEventListener('click', () => select(b.dataset.tab as 'pdf' | 'changes'))
+for (const b of document.querySelectorAll<HTMLButtonElement>('.seg button')) b.addEventListener('click', () => select(b.dataset.tab as Tab))
 $('expand').addEventListener('click', () => void app.requestDisplayMode({ mode: 'fullscreen' }))
 
 function layout(ctx: McpUiHostContext | undefined) {

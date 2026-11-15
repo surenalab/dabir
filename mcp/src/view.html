@@ -21,9 +21,19 @@
     <section class="status" id="status" aria-live="polite"></section>
     <nav class="seg" role="radiogroup" aria-label="Show">
       <button role="radio" data-tab="pdf" aria-checked="true">PDF</button>
+      <button role="radio" data-tab="source" aria-checked="false">Source</button>
       <button role="radio" data-tab="changes" aria-checked="false">Changes<span class="seg-badge" id="badge" hidden></span></button>
     </nav>
     <section class="pane pdf" id="pdf" aria-label="PDF"></section>
+    <section class="pane source" id="source" aria-label="Source" hidden>
+      <div class="srcbar">
+        <select id="file" aria-label="File"></select>
+        <span class="note" id="note" aria-live="polite"></span>
+        <button class="btn small" id="reload" hidden>Reload</button>
+        <button class="btn small primary" id="save" disabled title="Save (⌘S)">Save</button>
+      </div>
+      <div class="editor" id="editor"></div>
+    </section>
     <section class="pane changes" id="changes" aria-label="Changes" hidden></section>
     <footer class="foot" id="foot" aria-live="polite"></footer>
   </main>

@@ -8,7 +8,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from '@modelcontextprotocol/ext-apps/server'
+import { getUiCapability, registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from '@modelcontextprotocol/ext-apps/server'
 import { McpServer, type CallToolResult } from '@modelcontextprotocol/server'
 import { StdioServerTransport } from '@modelcontextprotocol/server/stdio'
 import { z } from 'zod'
@@ -177,7 +177,9 @@ async function state(dir: string) {
   const files = await walk(dir)
   const main = await mainOf(dir, files)
   const changes = []
+  const mtimes: Record<string, number> = {}
   for (const rel of files) {
+    mtimes[rel] = (await fs.stat(path.join(dir, rel))).mtimeMs
     const current = await fs.readFile(path.join(dir, rel), 'utf8')
     const hs = hunks(await baseOf(dir, rel, current), current)
     if (hs.length) changes.push({ file: rel, added: hs.reduce((n, h) => n + h.added, 0), removed: hs.reduce((n, h) => n + h.removed, 0), hunks: hs })
@@ -188,6 +190,7 @@ async function state(dir: string) {
     where: dir.startsWith(os.homedir()) ? `~${dir.slice(os.homedir().length)}` : dir,
     main,
     files,
+    mtimes,
     check: await check(dir, main),
     changes,
     pdf: pdf ? { path: pdfOf(main!), size: pdf.size, mtime: pdf.mtimeMs } : null,
@@ -213,8 +216,8 @@ function createServer() {
   const folder = z.string().describe('Absolute path of the folder that holds the paper')
 
   registerAppTool(server, 'open_paper', {
-    title: 'Open the paper in Dabir',
-    description: 'Open a LaTeX paper in the Dabir panel, which shows its PDF and every change waiting for the author\'s review. Call this first, before reading or editing the paper, and again whenever the author asks to see the paper.',
+    title: 'Open paper',
+    description: 'Show a LaTeX paper in the Dabir panel inside this conversation: its PDF, its source to edit, and every change waiting for the author\'s review. This is not the Dabir desktop app and does not open it. Call this first, before reading or editing the paper, and again whenever the author asks to see the paper.',
     inputSchema: z.object({ folder }),
     _meta: { ui: { resourceUri: VIEW } },
   }, async ({ folder: f }) => {
@@ -224,6 +227,10 @@ function createServer() {
       const pdfAge = s.pdf?.mtime ?? 0
       const texAge = s.main ? (await fs.stat(path.join(dir, s.main))).mtimeMs : 0
       if (s.main && texAge > pdfAge) compileSoon(dir)
+      if (!getUiCapability(server.server.getClientCapabilities())) {
+        // Claude Code and other text-only clients: say so, or the author waits for a panel that never comes.
+        return text(`${summary(s)}\nThis app does not show MCP App panels, so the Dabir panel cannot appear here. In Claude Desktop it opens in a chat conversation.`)
+      }
       return { content: [{ type: 'text', text: summary(s) }], structuredContent: { folder: dir } }
     } catch (e) {
       return text(String((e as Error).message), true)
@@ -341,6 +348,43 @@ function createServer() {
       }
       const s = await state(dir)
       return { content: [{ type: 'text', text: summary(s) }], structuredContent: s }
+    } catch (e) {
+      return text(String((e as Error).message), true)
+    }
+  })
+
+  registerAppTool(server, 'load_file', {
+    title: 'Load a file for the editor',
+    description: 'A file of the paper for the Dabir panel\'s editor. The model should not call this.',
+    inputSchema: z.object({ folder, file: z.string() }),
+    _meta: appOnly,
+  }, async ({ folder: f, file }) => {
+    try {
+      const { abs, rel } = inside(await folderOf(f), file)
+      const [body, st] = await Promise.all([fs.readFile(abs, 'utf8'), fs.stat(abs)])
+      return { content: [{ type: 'text', text: rel }], structuredContent: { file: rel, text: body, mtime: st.mtimeMs } }
+    } catch (e) {
+      return text(String((e as Error).message), true)
+    }
+  })
+
+  registerAppTool(server, 'save_file', {
+    title: 'Save the author\'s edit',
+    description: 'The author saves a file from the Dabir panel\'s editor. The model should not call this.',
+    inputSchema: z.object({ folder, file: z.string(), text: z.string(), mtime: z.number() }),
+    _meta: appOnly,
+  }, async ({ folder: f, file, text: body, mtime }) => {
+    try {
+      const dir = await folderOf(f)
+      const { abs, rel } = inside(dir, file)
+      const [current, st] = await Promise.all([fs.readFile(abs, 'utf8'), fs.stat(abs)])
+      // Never write over what someone else saved meanwhile, nor mix the author's edit into changes still under review.
+      if (st.mtimeMs !== mtime) return text(`${rel} changed since the editor opened it. Reload it, then make the edit again.`, true)
+      if ((await baseOf(dir, rel, current)) !== current) return text(`Keep or undo the changes to ${rel} waiting in Changes before editing it.`, true)
+      await fs.writeFile(abs, body)
+      await fs.writeFile(basePath(dir, rel), body)
+      compileSoon(dir)
+      return { content: [{ type: 'text', text: `Saved ${rel}` }], structuredContent: { file: rel, mtime: (await fs.stat(abs)).mtimeMs } }
     } catch (e) {
       return text(String((e as Error).message), true)
     }
