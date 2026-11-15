@@ -17,7 +17,7 @@ const highlight = HighlightStyle.define([
   { tag: [tags.operator, tags.special(tags.variableName), tags.processingInstruction], class: 'tok-math' },
 ])
 
-export function createEditor(parent: HTMLElement, onEdit: () => void, onSave: () => void) {
+export function createEditor(parent: HTMLElement, onEdit: () => void, onSave: () => void, onDoubleClick: (line: number) => void) {
   const locked = new Compartment()
   const view = new EditorView({
     parent,
@@ -28,6 +28,13 @@ export function createEditor(parent: HTMLElement, onEdit: () => void, onSave: ()
         latex({ enableAutocomplete: false, autoCloseBrackets: false, enableLinting: false }), syntaxHighlighting(highlight),
         keymap.of([{ key: 'Mod-s', preventDefault: true, run: () => (onSave(), true) }, ...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
         locked.of([]),
+        EditorView.domEventHandlers({
+          dblclick: (e, view) => {
+            const at = view.posAtCoords(e)
+            if (at !== null) onDoubleClick(view.state.doc.lineAt(at).number)
+            return false
+          },
+        }),
         EditorView.updateListener.of((u) => { if (u.docChanged && u.transactions.some((t) => t.annotation(Transaction.userEvent) !== undefined)) onEdit() }),
       ],
     }),

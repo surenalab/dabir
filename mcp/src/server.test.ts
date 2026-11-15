@@ -5,6 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { after, before, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { gzipSync } from 'node:zlib'
 
 import { Client } from '@modelcontextprotocol/client'
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio'
@@ -20,7 +21,7 @@ const plain = new Client({ name: 'plain', version: '1' })
 
 type Line = { t: string }
 // What the tools return, loosely: each test reads the fields it needs.
-type Shape = { folder: string; file: string; text: string; mtime: number; changes: { file: string; hunks: { id: string; lines: Line[] }[] }[]; check: { errors: { message: string }[] }; bytes: string; total: number; hasMore: boolean }
+type Shape = { folder: string; file: string; line: number; page: number; y: number; text: string; mtime: number; changes: { file: string; hunks: { id: string; lines: Line[] }[] }[]; check: { errors: { message: string }[] }; bytes: string; total: number; hasMore: boolean }
 type Out = { content: { type: string; text?: string }[]; structuredContent: Shape; isError?: boolean }
 const call = async (name: string, args: Record<string, unknown>) => (await client.callTool({ name, arguments: { folder: paper, ...args } })) as Out
 const said = (r: Out) => r.content.map((c) => c.text ?? '').join('\n')
@@ -39,7 +40,7 @@ after(async () => {
 test('the tools Claude sees, the ones only the panel sees, and the panel itself', async () => {
   const { tools } = await client.listTools()
   const byName = Object.fromEntries(tools.map((t) => [t.name, t]))
-  assert.deepEqual(Object.keys(byName).sort(), ['check_paper', 'compile_paper', 'edit_paper', 'load_file', 'open_paper', 'paper_state', 'read_paper_file', 'read_pdf', 'review_changes', 'save_file'])
+  assert.deepEqual(Object.keys(byName).sort(), ['check_paper', 'compile_paper', 'edit_paper', 'load_file', 'open_paper', 'paper_state', 'read_paper_file', 'read_pdf', 'review_changes', 'save_file', 'sync_to_pdf', 'sync_to_source'])
   type Meta = { ui: { resourceUri: string; visibility?: string[] } }
   assert.equal((byName.open_paper!._meta as Meta).ui.resourceUri, 'ui://dabir/panel.html')
   assert.deepEqual((byName.paper_state!._meta as Meta).ui.visibility, ['app'])
@@ -119,4 +120,14 @@ test('the author edits in Source; a stale or under-review file is not written ov
   await call('edit_paper', { file: 'main.tex', old_text: 'We ask, plainly, a', new_text: 'We ask a' })
   const again = (await call('load_file', { file: 'main.tex' })).structuredContent
   assert.match(said(await call('save_file', { file: 'main.tex', text: again.text + '%', mtime: again.mtime })), /Keep or undo/)
+})
+
+test('double-click: a source line to its place in the PDF, and a place back to the line', async () => {
+  assert.match(said(await call('sync_to_pdf', { file: 'main.tex', line: 17 })), /No SyncTeX yet/)
+  const sp = 65536
+  writeFileSync(path.join(paper, 'main.synctex.gz'), gzipSync([`Input:1:${paper}/./main.tex`, 'Input:2:', '{1', `h1,17:${72 * sp},${300 * sp}:0,0,0`, `h2,1:${72 * sp},${301 * sp}:0,0,0`, '}1'].join('\n')))
+  const at = (await call('sync_to_pdf', { file: 'main.tex', line: 17 })).structuredContent
+  assert.deepEqual([at.page, at.y], [1, 300])
+  const back = (await call('sync_to_source', { page: 1, x: 80, y: 301 })).structuredContent
+  assert.deepEqual([back.file, back.line], ['main.tex', 17])
 })

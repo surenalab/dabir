@@ -65,6 +65,11 @@ test('a paper session: the panel opens, shows the error, records an edit and und
     return { value: undefined }
   })
   on('command.register', () => ({ value: { command: 'dabir-panel' } }))
+  const tools: string[] = []
+  on('tool.register', (_, e) => {
+    tools.push(e.name)
+    return { value: { tool: `mcp__dabir-panel__${e.name}` } }
+  })
   on('ui.open', () => {
     opened += 1
     return { value: { isPlaced: true } }
@@ -98,6 +103,11 @@ test('a paper session: the panel opens, shows the error, records an edit and und
   files['/paper/main.tex'] = '\\documentclass{article}\nin the beginning\n'
   await $.tool.call({ tool: 'Edit', file_path: '/paper/main.tex', old_string: 'in the end', new_string: 'in the beginning' })
   expect(opened > 0).toBe(true)
+  expect(tools).toEqual(['open_panel'])
+  const before = opened
+  const asked = (await $.tool.call({ tool: 'mcp__dabir-panel__open_panel' })) as { result?: string }
+  expect(asked.result).toContain('open beside the chat')
+  expect(opened).toBe(before + 1)
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ ...PANE, surface })

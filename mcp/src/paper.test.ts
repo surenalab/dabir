@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { compileErrors, hunks, parseCheck, pickMain, settle } from './paper.ts'
+import { compileErrors, hunks, parseCheck, parseSynctex, pickMain, settle, toPdf, toSource } from './paper.ts'
 
 const base = 'one\ntwo\nthree\nfour\nfive\n'
 const now = 'one\nTWO\nthree\nfour\nfive\nsix\n'
@@ -43,4 +43,14 @@ test('dabir-check output, the main file and compile errors', () => {
   assert.equal(pickMain('main = "paper.tex"\n', []), 'paper.tex')
   assert.equal(pickMain(null, [{ name: 'a.tex', text: 'x' }, { name: 'b.tex', text: '\\documentclass{article}' }]), 'b.tex')
   assert.equal(compileErrors('note: Running TeX ...\nerror: main.tex:12: Undefined control sequence\nwarning: x'), 'error: main.tex:12: Undefined control sequence')
+})
+
+test('SyncTeX maps a source line to its place on the page, and a place back to its line', () => {
+  const sp = 65536
+  const s = parseSynctex(['SyncTeX Version:1', 'Input:1:/p/./main.tex', 'Input:2:/p/./tables/t.tex', 'Unit:1', '{1', `h1,10:${72 * sp},${100 * sp}:0,0,0`, `h1,12:${72 * sp},${140 * sp}:0,0,0`, `h2,3:${72 * sp},${300 * sp}:0,0,0`, '}1', '{2', `h1,40:${72 * sp},${90 * sp}:0,0,0`, '}2'].join('\n'))
+  assert.deepEqual(toPdf(s, 'main.tex', 11), { page: 1, x: 72, y: 140 })
+  assert.deepEqual(toPdf(s, 'main.tex', 13), { page: 2, x: 72, y: 90 })
+  assert.equal(toPdf(s, 'main.tex', 99), null)
+  assert.deepEqual(toSource(s, 1, 80, 295), { file: '/p/./tables/t.tex', line: 3 })
+  assert.deepEqual(toSource(s, 2, 0, 0), { file: '/p/./main.tex', line: 40 })
 })

@@ -7,6 +7,10 @@ description: "How to edit a LaTeX paper quickly and without breaking it: check s
 
 From Dabir, the open-source paper workspace (surenalab.com/dabir). These are the habits Dabir gives its own agents.
 
+## The Dabir panel
+
+When the author asks for "the Dabir panel" or to see the paper beside the chat, use the panel, not the Dabir desktop app: in Claude Code, the `open_panel` tool of the `dabir-panel` plugin (or tell them `/dabir-panel` if it is not installed); in a Claude Desktop chat, `open_paper` of the Dabir for Claude extension. Open the desktop app only when they ask for the app.
+
 ## Checking your work
 
 - After a change to LaTeX structure (commands, environments, braces, math, `\label`/`\ref`/`\cite` keys, `\input` or image paths), run `dabir-check` once from the paper's folder and fix what it reports: unbalanced braces, mismatched environments, references with no label, citation keys not in the bibliography, missing files. It reads the main file and everything it inputs in milliseconds. Pass the main file if it is not found: `dabir-check paper.tex`.

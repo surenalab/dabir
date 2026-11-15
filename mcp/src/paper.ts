@@ -125,3 +125,56 @@ export function compileErrors(log: string) {
   const picked = log.split('\n').filter((l) => /^(error|!|.*:\d+: )/.test(l.trim()))
   return picked.slice(0, 6).join('\n')
 }
+
+// ---- SyncTeX: source lines to PDF positions and back, as src-tauri/src/synctex.rs does it ----
+
+type Rec = { page: number; file: number; line: number; x: number; y: number }
+export type Sync = { files: Map<number, string>; recs: Rec[] }
+
+/** Read a .synctex stream: `Input:<n>:<path>` lines, `{<page>` blocks and `h<file>,<line>:<x>,<y>…` records, in points from the page's top left. */
+export function parseSynctex(text: string): Sync {
+  const files = new Map<number, string>()
+  const recs: Rec[] = []
+  let unit = 1
+  let page = 0
+  for (const line of text.split('\n')) {
+    if (line.startsWith('Input:')) {
+      const m = /^Input:(\d+):(.*)$/.exec(line)
+      if (m) files.set(Number(m[1]), m[2]!.trim())
+    } else if (line.startsWith('Unit:')) unit = Number(line.slice(5)) || 1
+    else if (line.startsWith('{')) page = Number(line.slice(1)) || page
+    else {
+      const m = /^[hvxkg$r[(](\d+),(\d+):(-?\d+),(-?\d+)/.exec(line)
+      if (m) recs.push({ page, file: Number(m[1]), line: Number(m[2]), x: (Number(m[3]) * unit) / 65536, y: (Number(m[4]) * unit) / 65536 })
+    }
+  }
+  return { files, recs }
+}
+
+const base = (p: string) => p.split(/[\\/]/).pop()
+
+/** Where a source line landed: the nearest record at or after it in the same file. */
+export function toPdf(s: Sync, file: string, line: number) {
+  const ids = [...s.files].filter(([, p]) => base(p) === base(file)).map(([id]) => id)
+  let best: Rec | null = null
+  for (const r of s.recs) {
+    if (!ids.includes(r.file) || r.line < line) continue
+    if (!best || r.line - line < best.line - line || (r.line === best.line && r.y < best.y)) best = r
+  }
+  return best && { page: best.page, x: best.x, y: best.y }
+}
+
+/** The source line nearest a point on a page; vertical distance counts four times horizontal. */
+export function toSource(s: Sync, page: number, x: number, y: number) {
+  let best: Rec | null = null
+  let dist = Infinity
+  for (const r of s.recs) {
+    if (r.page !== page || !s.files.get(r.file)) continue // Tectonic leaves package files without a path
+    const d = Math.abs(r.y - y) * 4 + Math.abs(r.x - x)
+    if (d < dist) {
+      dist = d
+      best = r
+    }
+  }
+  return best && { file: s.files.get(best.file) ?? '', line: best.line }
+}

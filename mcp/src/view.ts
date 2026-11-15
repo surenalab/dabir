@@ -190,7 +190,7 @@ function select(t: Tab) {
 
 // ---- Source ----
 
-const editor = createEditor($('editor'), () => setDirty(true), () => void save())
+const editor = createEditor($('editor'), () => setDirty(true), () => void save(), (line) => void showInPdf(line))
 let open_: { file: string; mtime: number } | null = null
 let dirty = false
 
@@ -314,19 +314,67 @@ async function renderPdf() {
   if (!doc || pane.hidden || width <= 0 || width === renderedWidth) return
   renderedWidth = width
   const ratio = window.devicePixelRatio || 1
-  const canvases: HTMLCanvasElement[] = []
+  const pages: HTMLElement[] = []
   for (let i = 1; i <= doc.numPages; i++) {
     const page = await doc.getPage(i)
     const base = page.getViewport({ scale: 1 })
     const vp = page.getViewport({ scale: (width / base.width) * ratio })
     const canvas = el('canvas', { width: Math.floor(vp.width), height: Math.floor(vp.height) })
-    canvas.setAttribute('aria-label', `Page ${i}`)
     await page.render({ canvas, viewport: vp }).promise
-    canvases.push(canvas)
+    // A page knows its size in points, the unit SyncTeX speaks.
+    const box = el('div', { class: 'page', title: 'Double-click to show this line in Source' }, canvas)
+    Object.assign(box.dataset, { page: String(i), w: String(base.width), h: String(base.height) })
+    box.setAttribute('aria-label', `Page ${i}`)
+    pages.push(box)
   }
   const top = pane.scrollTop
-  pane.replaceChildren(...canvases)
+  pane.replaceChildren(...pages)
   pane.scrollTop = top
+}
+
+// ---- Double-click to jump: PDF to Source and back, through SyncTeX ----
+
+$('pdf').addEventListener('dblclick', async (e) => {
+  const box = (e.target as Element).closest<HTMLElement>('.page')
+  if (!box || !folder) return
+  const r = box.getBoundingClientRect()
+  const x = ((e.clientX - r.left) / r.width) * Number(box.dataset.w)
+  const y = ((e.clientY - r.top) / r.height) * Number(box.dataset.h)
+  try {
+    const at = await call<{ file: string; line: number }>('sync_to_source', { folder, page: Number(box.dataset.page), x, y })
+    if (!at) return
+    if (dirty && open_?.file !== at.file) return void (select('source'), note(`Save your edit to ${open_!.file} first.`, true))
+    await goTo(at.file, at.line)
+  } catch (err) {
+    flash((err as Error).message)
+  }
+})
+
+async function showInPdf(line: number) {
+  if (!folder || !open_) return
+  try {
+    const at = await call<{ page: number; y: number }>('sync_to_pdf', { folder, file: open_.file, line })
+    if (!at) return
+    select('pdf')
+    await renderPdf()
+    const box = document.querySelector<HTMLElement>(`.page[data-page="${at.page}"]`)
+    if (!box) return
+    box.querySelector('.marker')?.remove()
+    const marker = el('div', { class: 'marker' })
+    marker.style.top = `${(at.y / Number(box.dataset.h)) * 100}%`
+    box.append(marker)
+    marker.scrollIntoView({ block: 'center' })
+    setTimeout(() => marker.classList.add('fade'), 1800)
+  } catch (err) {
+    flash((err as Error).message)
+  }
+}
+
+/** A short message in the foot, for a jump that found nothing. */
+function flash(text: string) {
+  const foot = $('foot')
+  foot.replaceChildren(text)
+  setTimeout(() => state && drawFoot(state), 3000)
 }
 
 let resizeTimer: ReturnType<typeof setTimeout> | undefined

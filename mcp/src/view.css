@@ -53,7 +53,11 @@ button:focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; }
 .pane[hidden] { display: none; }
 
 .pdf { background: var(--paper-2); padding: var(--space-3); display: flex; flex-direction: column; align-items: center; gap: var(--space-3); }
-.pdf canvas { display: block; width: 100%; max-width: 900px; background: var(--page); box-shadow: var(--shadow-raised); border-radius: 2px; }
+.pdf .page { flex: none; position: relative; width: 100%; max-width: 900px; box-shadow: var(--shadow-raised); border-radius: 2px; overflow: hidden; }
+.pdf canvas { display: block; width: 100%; background: var(--page); }
+/* Where a source line landed, as the app marks it (.pdf-marker): an accent band that fades. */
+.pdf .marker { position: absolute; left: 0; right: 0; height: 20px; margin-top: -10px; background: var(--accent); opacity: .22; pointer-events: none; }
+.pdf .marker.fade { transition: opacity 1.2s; opacity: 0; }
 .empty { margin: auto; max-width: 34ch; padding: var(--space-5) var(--space-3); text-align: center; color: var(--ink-3); text-wrap: balance; }
 .empty strong { display: block; color: var(--ink); font-weight: 600; margin-bottom: 4px; }
 

@@ -7,13 +7,14 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { gunzipSync } from 'node:zlib'
 
 import { getUiCapability, registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from '@modelcontextprotocol/ext-apps/server'
 import { McpServer, type CallToolResult } from '@modelcontextprotocol/server'
 import { StdioServerTransport } from '@modelcontextprotocol/server/stdio'
 import { z } from 'zod'
 
-import { compileErrors, hunks, parseCheck, pickMain, settle } from './paper.ts'
+import { compileErrors, hunks, parseCheck, parseSynctex, pickMain, settle, toPdf, toSource } from './paper.ts'
 
 declare const __VERSION__: string
 const VERSION = typeof __VERSION__ === 'string' ? __VERSION__ : 'dev'
@@ -146,7 +147,7 @@ async function compileNow(dir: string, main: string): Promise<Build> {
     const bundled = '/Applications/Dabir.app/Contents/MacOS/tectonic'
     const tectonic = existsSync(bundled) ? bundled : 'tectonic'
     let r = await run(tectonic, ['-X', 'compile', main, '--keep-logs', '--synctex'], dir, env)
-    if (r.isMissing) r = await run('latexmk', ['-pdf', '-interaction=nonstopmode', main], dir, env)
+    if (r.isMissing) r = await run('latexmk', ['-pdf', '-synctex=1', '-interaction=nonstopmode', main], dir, env)
     const missing = r.isMissing
     const build = {
       isOk: r.code === 0,
@@ -170,6 +171,21 @@ function compileSoon(dir: string) {
 }
 
 const pdfOf = (main: string) => main.replace(/\.tex$/, '.pdf')
+
+/** The last compile's SyncTeX for this paper, read again only when it changes. */
+const syncs = new Map<string, { mtime: number; sync: ReturnType<typeof parseSynctex> }>()
+async function syncOf(dir: string) {
+  const main = await mainOf(dir, await walk(dir))
+  if (!main) throw new Error('No main .tex file found.')
+  const file = path.join(dir, main.replace(/\.tex$/, '.synctex.gz'))
+  const st = await fs.stat(file).catch(() => null)
+  if (!st) throw new Error('No SyncTeX yet. Compile the paper first.')
+  const cached = syncs.get(file)
+  if (cached?.mtime === st.mtimeMs) return cached.sync
+  const sync = parseSynctex(gunzipSync(await fs.readFile(file)).toString('utf8'))
+  syncs.set(file, { mtime: st.mtimeMs, sync })
+  return sync
+}
 
 // ---- What the panel shows ----
 
@@ -385,6 +401,37 @@ function createServer() {
       await fs.writeFile(basePath(dir, rel), body)
       compileSoon(dir)
       return { content: [{ type: 'text', text: `Saved ${rel}` }], structuredContent: { file: rel, mtime: (await fs.stat(abs)).mtimeMs } }
+    } catch (e) {
+      return text(String((e as Error).message), true)
+    }
+  })
+
+  registerAppTool(server, 'sync_to_pdf', {
+    title: 'Source line to PDF',
+    description: 'Where a source line is in the PDF, for the Dabir panel. The model should not call this.',
+    inputSchema: z.object({ folder, file: z.string(), line: z.number().int().min(1) }),
+    _meta: appOnly,
+  }, async ({ folder: f, file, line }) => {
+    try {
+      const at = toPdf(await syncOf(await folderOf(f)), file, line)
+      return at ? { content: [{ type: 'text', text: `page ${at.page}` }], structuredContent: at } : text(`Line ${line} of ${file} is not in the PDF.`, true)
+    } catch (e) {
+      return text(String((e as Error).message), true)
+    }
+  })
+
+  registerAppTool(server, 'sync_to_source', {
+    title: 'PDF to source line',
+    description: 'Which source line made a point in the PDF, for the Dabir panel. The model should not call this.',
+    inputSchema: z.object({ folder, page: z.number().int().min(1), x: z.number(), y: z.number() }),
+    _meta: appOnly,
+  }, async ({ folder: f, page, x, y }) => {
+    try {
+      const dir = await folderOf(f)
+      const at = toSource(await syncOf(dir), page, x, y)
+      const rel = at && path.relative(dir, path.resolve(dir, at.file)).split(path.sep).join('/')
+      if (!at || !rel || rel.startsWith('..')) return text('Nothing in the paper\'s source is at that point.', true)
+      return { content: [{ type: 'text', text: `${rel}:${at.line}` }], structuredContent: { file: rel, line: at.line } }
     } catch (e) {
       return text(String((e as Error).message), true)
     }

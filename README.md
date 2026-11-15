@@ -30,7 +30,7 @@ The `dabir` plugin gives the agent you already use what Dabir gives its own: `da
 claude plugin marketplace add surenalab/dabir && claude plugin install dabir@dabir
 ```
 
-In Claude Code you can add a panel beside the chat: whether the LaTeX holds together after each edit, every change the agent made with its diff and an **Undo**, and **Compile**, which opens the PDF in the side panel of the desktop app. Open it with `/dabir-panel`.
+In Claude Code you can add a panel beside the chat: whether the LaTeX holds together after each edit, every change the agent made with its diff and an **Undo**, and **Compile**, which opens the PDF in the side panel of the desktop app. It opens by itself in a paper's folder; ask Claude for the Dabir panel or type `/dabir-panel` to bring it back.
 
 ```bash
 claude plugin install dabir-panel@dabir
@@ -38,7 +38,7 @@ claude plugin install dabir-panel@dabir
 
 ### In Claude Desktop
 
-Download `Dabir_<version>.mcpb` from the [releases page](https://github.com/surenalab/dabir/releases/latest) and open it; Claude Desktop installs Dabir as an extension. Then ask Claude to open your paper's folder with Dabir. The Dabir panel opens beside the chat with the compiled PDF, the source in Dabir's editor, and every change Claude makes, each changed word marked, to keep or undo hunk by hunk. It appears in a chat, not in the Code tab, which does not show extension panels. The paper recompiles by itself after each edit that holds together, and an error comes with **Ask Claude to fix**. Compiling uses Tectonic (`brew install tectonic`), latexmk, or the Dabir app if it is installed.
+Download `Dabir_<version>.mcpb` from the [releases page](https://github.com/surenalab/dabir/releases/latest) and open it; Claude Desktop installs Dabir as an extension. Then ask Claude to open your paper's folder with Dabir. The Dabir panel opens beside the chat with the compiled PDF, the source in Dabir's editor (double-click either to jump to the other), and every change Claude makes, each changed word marked, to keep or undo hunk by hunk. It appears in a chat, not in the Code tab, which does not show extension panels. The paper recompiles by itself after each edit that holds together, and an error comes with **Ask Claude to fix**. Compiling uses Tectonic (`brew install tectonic`), latexmk, or the Dabir app if it is installed.
 
 In Codex, run `codex plugin marketplace add surenalab/dabir`, then install **Dabir** from the Plugins directory. `dabir-check` downloads once, a small file for your platform, on first use; macOS, Linux, and Windows under Git Bash.
 
