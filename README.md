@@ -36,6 +36,10 @@ In Claude Code you can add a panel beside the chat: whether the LaTeX holds toge
 claude plugin install dabir-panel@dabir
 ```
 
+### In Claude Desktop
+
+Download `Dabir_<version>.mcpb` from the [releases page](https://github.com/surenalab/dabir/releases/latest) and open it; Claude Desktop installs Dabir as an extension. Then ask Claude to open your paper's folder with Dabir. The Dabir panel opens beside the chat with the compiled PDF and every change Claude makes, each changed word marked, to keep or undo hunk by hunk. The paper recompiles by itself after each edit that holds together, and an error comes with **Ask Claude to fix**. Compiling uses Tectonic (`brew install tectonic`), latexmk, or the Dabir app if it is installed.
+
 In Codex, run `codex plugin marketplace add surenalab/dabir`, then install **Dabir** from the Plugins directory. `dabir-check` downloads once, a small file for your platform, on first use; macOS, Linux, and Windows under Git Bash.
 
 ## What it does

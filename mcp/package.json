@@ -1,0 +1,30 @@
+{
+  "name": "dabir-mcp",
+  "private": true,
+  "version": "0.2.5",
+  "description": "Dabir in Claude Desktop: an MCP server whose panel shows the paper's PDF and every change to review, hunk by hunk.",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "pack": "node build.mjs --mcpb",
+    "test": "node build.mjs && node --test src/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/ext-apps": "2.0.4",
+    "@modelcontextprotocol/server": "2.4.0",
+    "diff": "9.0.0",
+    "pdfjs-dist": "5.4.530",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "2.4.0",
+    "@types/node": "22.10.0",
+    "esbuild": "0.28.2",
+    "typescript": "6.0.3"
+  }
+}

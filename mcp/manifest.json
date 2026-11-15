@@ -1,0 +1,28 @@
+{
+  "manifest_version": "0.3",
+  "name": "dabir",
+  "display_name": "Dabir",
+  "version": "0.2.5",
+  "description": "Write your LaTeX paper with Claude: a panel beside the chat shows the PDF and every change to keep or undo.",
+  "long_description": "Dabir brings its paper editor's review into Claude Desktop. Ask Claude to open a paper folder and the Dabir panel appears beside the chat: the compiled PDF, a check that finds LaTeX errors in milliseconds, and every change Claude makes with Keep and Undo for each hunk. The paper recompiles by itself after each edit that holds together. Everything runs on your computer; nothing is uploaded.",
+  "author": { "name": "Surena Lab", "url": "https://surenalab.com/dabir" },
+  "homepage": "https://surenalab.com/dabir",
+  "repository": { "type": "git", "url": "https://github.com/surenalab/dabir" },
+  "support": "https://github.com/surenalab/dabir/issues",
+  "icon": "icon.png",
+  "server": {
+    "type": "node",
+    "entry_point": "server.mjs",
+    "mcp_config": { "command": "node", "args": ["${__dirname}/server.mjs"] }
+  },
+  "tools": [
+    { "name": "open_paper", "description": "Open a LaTeX paper in the Dabir panel" },
+    { "name": "read_paper_file", "description": "Read a .tex or .bib file of the paper" },
+    { "name": "edit_paper", "description": "Replace one passage; the author keeps or undoes it in the panel" },
+    { "name": "check_paper", "description": "Find LaTeX errors in milliseconds, without compiling" },
+    { "name": "compile_paper", "description": "Compile the paper to PDF" }
+  ],
+  "keywords": ["latex", "paper", "research", "pdf", "writing"],
+  "license": "AGPL-3.0-only",
+  "compatibility": { "platforms": ["darwin", "win32", "linux"], "runtimes": { "node": ">=20.0.0" } }
+}

@@ -6,7 +6,7 @@ import reactHooks from "eslint-plugin-react-hooks";
 import globals from "globals";
 
 export default tseslint.config(
-  { ignores: ["dist/**", "src-tauri/**", "relay/dist/**", "node_modules/**", "docs/**", "examples/**", "**/.dabir/**", "templates/**"] },
+  { ignores: ["dist/**", "src-tauri/**", "relay/dist/**", "node_modules/**", "docs/**", "examples/**", "**/.dabir/**", "templates/**", "mcp/dist/**", "mcp/node_modules/**", "mcp/.stage/**"] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -24,6 +24,6 @@ export default tseslint.config(
       "no-console": ["warn", { allow: ["warn", "error"] }],
     },
   },
-  { files: ["relay/**/*.mjs", "scripts/**/*.mjs"], languageOptions: { globals: { ...globals.node } } },
+  { files: ["relay/**/*.mjs", "scripts/**/*.mjs", "mcp/*.mjs", "mcp/src/**/*.ts"], languageOptions: { globals: { ...globals.node } } },
   { files: ["relay/signaling-worker.js"], languageOptions: { globals: { ...globals.serviceworker, WebSocketPair: "readonly", Response: "readonly", Request: "readonly" } }, rules: { "@typescript-eslint/no-unused-vars": "off" } },
 );

@@ -23,6 +23,7 @@ jobs:
       web: ${{ steps.filter.outputs.web }}
       rust: ${{ steps.filter.outputs.rust }}
       check: ${{ steps.filter.outputs.check }}
+      mcp: ${{ steps.filter.outputs.mcp }}
     steps:
       - uses: actions/checkout@v7
       - uses: dorny/paths-filter@v4
@@ -48,6 +49,13 @@ jobs:
               - 'plugins/**'
               - '.github/workflows/ci.yml'
             check:
+              - 'src-tauri/src/check.rs'
+              - 'src-tauri/check-cli/**'
+              - '.github/workflows/ci.yml'
+            mcp:
+              - 'mcp/**'
+              - 'src/styles/tokens.css'
+              - 'examples/**'
               - 'src-tauri/src/check.rs'
               - 'src-tauri/check-cli/**'
               - '.github/workflows/ci.yml'
@@ -140,17 +148,39 @@ jobs:
           path: src-tauri/check-cli/${{ matrix.asset }}
           retention-days: 7
 
+  mcp:
+    name: Claude Desktop extension (types, tests, pack)
+    needs: changes
+    if: needs.changes.outputs.mcp == 'true' || github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: mcp
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v7
+        with: { node-version: 22, cache: npm, cache-dependency-path: mcp/package-lock.json }
+      - name: dabir-check for the tests
+        run: cargo build --release --manifest-path ../src-tauri/check-cli/Cargo.toml
+      - run: npm ci --prefer-offline --no-audit --no-fund
+      - run: npx tsc --noEmit
+      - run: npm test
+      - name: The extension packs
+        run: node build.mjs --mcpb
+
   # One check for branch protection to require, whatever ran. Skipped jobs count as passed, failed ones fail it.
   gate:
     name: Gate
-    needs: [web, rust, check-cli]
+    needs: [web, rust, check-cli, mcp]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
       - name: Every job that ran is green
         run: |
-          echo "web: ${{ needs.web.result }}  rust: ${{ needs.rust.result }}  dabir-check: ${{ needs.check-cli.result }}"
-          case "${{ needs.web.result }} ${{ needs.rust.result }} ${{ needs.check-cli.result }}" in
+          echo "web: ${{ needs.web.result }}  rust: ${{ needs.rust.result }}  dabir-check: ${{ needs.check-cli.result }}  mcp: ${{ needs.mcp.result }}"
+          case "${{ needs.web.result }} ${{ needs.rust.result }} ${{ needs.check-cli.result }} ${{ needs.mcp.result }}" in
             *failure*|*cancelled*) exit 1 ;;
           esac
